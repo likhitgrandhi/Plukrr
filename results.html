@@ -1,0 +1,1668 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Design Copier - Captured Design</title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+    
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, sans-serif;
+      margin: 0;
+      padding: 0;
+      background: #f5f5f0;
+      color: #3d3d3d;
+      min-height: 100vh;
+    }
+    
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 32px 24px;
+    }
+    
+    /* Header */
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 24px;
+    }
+    
+    .header h1 {
+      font-size: 24px;
+      font-weight: 600;
+      margin: 0;
+      color: #2d2d2d;
+    }
+    
+    .header-meta {
+      font-size: 14px;
+      color: #9a9a9a;
+    }
+    
+    /* Main layout */
+    .main-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 24px;
+    }
+    
+    @media (max-width: 900px) {
+      .main-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+    
+    /* Cards */
+    .card {
+      background: #ffffff;
+      border-radius: 16px;
+      padding: 20px;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+    }
+    
+    .card-header {
+      font-size: 14px;
+      font-weight: 600;
+      color: #5a5a5a;
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    
+    /* Screenshot */
+    .screenshot-container {
+      background: #fafaf8;
+      border-radius: 12px;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 200px;
+    }
+    
+    .screenshot-container img {
+      max-width: 100%;
+      max-height: 400px;
+      object-fit: contain;
+    }
+    
+    .no-screenshot {
+      color: #9a9a9a;
+      font-size: 14px;
+    }
+    
+    /* Output area */
+    .output-area {
+      position: relative;
+    }
+    
+    textarea {
+      width: 100%;
+      height: 500px;
+      padding: 16px;
+      font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas, monospace;
+      font-size: 12px;
+      line-height: 1.6;
+      border: none;
+      border-radius: 12px;
+      resize: vertical;
+      background: #fafaf8;
+      color: #3d3d3d;
+    }
+    
+    textarea:focus {
+      outline: none;
+      box-shadow: inset 0 0 0 2px #d0d0d0;
+    }
+    
+    /* Intent selector */
+    .intent-selector {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+    
+    .intent-option {
+      background: #fafaf8;
+      border: 2px solid transparent;
+      padding: 12px 14px;
+      border-radius: 10px;
+      cursor: pointer;
+      text-align: left;
+      transition: all 0.15s ease;
+    }
+    
+    .intent-option:hover {
+      background: #f0f0eb;
+    }
+    
+    .intent-option.active {
+      background: #e8f0e9;
+      border-color: #6b8f71;
+    }
+    
+    .intent-label {
+      font-size: 13px;
+      font-weight: 600;
+      color: #3d3d3d;
+      margin-bottom: 2px;
+    }
+    
+    .intent-desc {
+      font-size: 11px;
+      color: #9a9a9a;
+    }
+    
+    .intent-option.active .intent-label {
+      color: #4a6b4d;
+    }
+    
+    .intent-option.active .intent-desc {
+      color: #6b8f71;
+    }
+    
+    /* Buttons */
+    .button-group {
+      display: flex;
+      gap: 10px;
+      margin-top: 16px;
+    }
+    
+    .btn {
+      padding: 12px 20px;
+      border-radius: 10px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 500;
+      transition: all 0.2s ease;
+      border: none;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    
+    .btn-primary {
+      background: #e8dcc8;
+      color: #6b5a3d;
+    }
+    
+    .btn-primary:hover {
+      background: #ddd0b8;
+    }
+    
+    .btn-secondary {
+      background: #d4e5d6;
+      color: #4a6b4d;
+    }
+    
+    .btn-secondary:hover {
+      background: #c4d9c7;
+    }
+    
+    /* Toast */
+    .toast {
+      position: fixed;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%) translateY(100px);
+      background: #2d2d2d;
+      color: white;
+      padding: 12px 24px;
+      border-radius: 10px;
+      font-size: 14px;
+      font-weight: 500;
+      opacity: 0;
+      transition: all 0.3s ease;
+      z-index: 1000;
+    }
+    
+    .toast.show {
+      transform: translateX(-50%) translateY(0);
+      opacity: 1;
+    }
+    
+    /* Color swatches */
+    .color-swatches {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 12px;
+    }
+    
+    .color-swatch {
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+      border: 2px solid #e5e5e0;
+      cursor: pointer;
+      transition: transform 0.15s ease;
+    }
+    
+    .color-swatch:hover {
+      transform: scale(1.1);
+    }
+    
+    /* Quick stats */
+    .quick-stats {
+      display: flex;
+      gap: 16px;
+      flex-wrap: wrap;
+      margin-bottom: 16px;
+    }
+    
+    .stat {
+      background: #fafaf8;
+      padding: 10px 14px;
+      border-radius: 8px;
+      font-size: 12px;
+    }
+    
+    .stat-label {
+      color: #9a9a9a;
+      margin-bottom: 2px;
+    }
+    
+    .stat-value {
+      color: #3d3d3d;
+      font-weight: 600;
+    }
+    
+    /* Empty state */
+    .empty-state {
+      text-align: center;
+      padding: 60px 20px;
+      color: #9a9a9a;
+    }
+    
+    .empty-state h2 {
+      font-size: 18px;
+      color: #6b6b6b;
+      margin-bottom: 8px;
+    }
+    
+    /* CSS Merge UI */
+    .css-merge-section {
+      display: none;
+      margin-bottom: 16px;
+      padding: 16px;
+      background: #fafaf8;
+      border-radius: 12px;
+    }
+    
+    .css-merge-section.active {
+      display: block;
+    }
+    
+    .css-merge-header {
+      font-size: 13px;
+      font-weight: 600;
+      color: #5a5a5a;
+      margin-bottom: 12px;
+    }
+    
+    .css-option-group {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+    
+    .css-option {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 14px;
+      background: #ffffff;
+      border: 2px solid transparent;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      flex: 1;
+    }
+    
+    .css-option:hover {
+      border-color: #d0d0d0;
+    }
+    
+    .css-option.selected {
+      border-color: #6b8f71;
+      background: #e8f0e9;
+    }
+    
+    .css-option input[type="radio"] {
+      margin: 0;
+      accent-color: #6b8f71;
+    }
+    
+    .css-option-label {
+      font-size: 13px;
+      font-weight: 500;
+      color: #3d3d3d;
+    }
+    
+    .css-option-desc {
+      font-size: 11px;
+      color: #9a9a9a;
+    }
+    
+    .existing-css-input {
+      display: none;
+      margin-top: 12px;
+    }
+    
+    .existing-css-input.active {
+      display: block;
+    }
+    
+    .existing-css-input textarea {
+      width: 100%;
+      height: 150px;
+      padding: 12px;
+      font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas, monospace;
+      font-size: 12px;
+      line-height: 1.5;
+      border: 1px solid #e0e0e0;
+      border-radius: 8px;
+      resize: vertical;
+      background: #ffffff;
+      color: #3d3d3d;
+    }
+    
+    .existing-css-input textarea:focus {
+      outline: none;
+      border-color: #6b8f71;
+    }
+    
+    .existing-css-input label {
+      display: block;
+      font-size: 12px;
+      color: #5a5a5a;
+      margin-bottom: 8px;
+    }
+    
+    .merge-btn {
+      margin-top: 12px;
+      padding: 10px 16px;
+      background: #6b8f71;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 500;
+      transition: all 0.15s ease;
+    }
+    
+    .merge-btn:hover {
+      background: #5a7d5f;
+    }
+    
+    /* Format selector */
+    .format-selector {
+      display: flex;
+      gap: 8px;
+      margin-top: 12px;
+    }
+    
+    .format-option {
+      padding: 6px 12px;
+      background: #ffffff;
+      border: 1px solid #e0e0e0;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 12px;
+      color: #5a5a5a;
+      transition: all 0.15s ease;
+    }
+    
+    .format-option:hover {
+      border-color: #6b8f71;
+    }
+    
+    .format-option.selected {
+      background: #e8f0e9;
+      border-color: #6b8f71;
+      color: #4a6b4d;
+    }
+    
+    /* Adapt to Codebase Section */
+    .adapt-section {
+      display: none;
+      margin-bottom: 16px;
+      padding: 20px;
+      background: linear-gradient(135deg, #f8f9fa 0%, #f0f4f1 100%);
+      border-radius: 12px;
+      border: 1px solid #e0e5e1;
+    }
+    
+    .adapt-section.active {
+      display: block;
+    }
+    
+    .adapt-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+    
+    .adapt-header-icon {
+      width: 36px;
+      height: 36px;
+      background: linear-gradient(135deg, #6b8f71 0%, #5a7d5f 100%);
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 18px;
+    }
+    
+    .adapt-header-text h3 {
+      font-size: 15px;
+      font-weight: 600;
+      color: #2d2d2d;
+      margin: 0 0 2px 0;
+    }
+    
+    .adapt-header-text p {
+      font-size: 12px;
+      color: #6b6b6b;
+      margin: 0;
+    }
+    
+    .adapt-tabs {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 16px;
+      background: #ffffff;
+      padding: 4px;
+      border-radius: 10px;
+    }
+    
+    .adapt-tab {
+      flex: 1;
+      padding: 10px 16px;
+      background: transparent;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 500;
+      color: #6b6b6b;
+      transition: all 0.2s ease;
+    }
+    
+    .adapt-tab:hover {
+      background: #f5f5f5;
+    }
+    
+    .adapt-tab.active {
+      background: #e8f0e9;
+      color: #4a6b4d;
+    }
+    
+    .adapt-input-section {
+      margin-bottom: 16px;
+    }
+    
+    .adapt-input-label {
+      display: block;
+      font-size: 12px;
+      font-weight: 600;
+      color: #5a5a5a;
+      margin-bottom: 8px;
+    }
+    
+    .adapt-textarea {
+      width: 100%;
+      height: 140px;
+      padding: 12px;
+      font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas, monospace;
+      font-size: 12px;
+      line-height: 1.5;
+      border: 1px solid #d0d5d1;
+      border-radius: 10px;
+      resize: vertical;
+      background: #ffffff;
+      color: #3d3d3d;
+      transition: border-color 0.2s ease;
+    }
+    
+    .adapt-textarea:focus {
+      outline: none;
+      border-color: #6b8f71;
+      box-shadow: 0 0 0 3px rgba(107, 143, 113, 0.1);
+    }
+    
+    .adapt-textarea::placeholder {
+      color: #9a9a9a;
+    }
+    
+    .adapt-actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    
+    .adapt-btn {
+      padding: 12px 20px;
+      border-radius: 10px;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 600;
+      transition: all 0.2s ease;
+      border: none;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    
+    .adapt-btn-primary {
+      background: linear-gradient(135deg, #6b8f71 0%, #5a7d5f 100%);
+      color: white;
+    }
+    
+    .adapt-btn-primary:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px rgba(107, 143, 113, 0.3);
+    }
+    
+    .adapt-btn-primary:disabled {
+      background: #ccc;
+      cursor: not-allowed;
+      transform: none;
+      box-shadow: none;
+    }
+    
+    .adapt-btn-secondary {
+      background: #ffffff;
+      color: #5a5a5a;
+      border: 1px solid #d0d5d1;
+    }
+    
+    .adapt-btn-secondary:hover {
+      background: #f5f5f5;
+      border-color: #6b8f71;
+    }
+    
+    .adapt-btn-preview {
+      background: #e8dcc8;
+      color: #6b5a3d;
+    }
+    
+    .adapt-btn-preview:hover {
+      background: #ddd0b8;
+    }
+    
+    .adapt-btn-preview.active {
+      background: #6b8f71;
+      color: white;
+    }
+    
+    .adapt-status {
+      margin-top: 12px;
+      padding: 10px 14px;
+      border-radius: 8px;
+      font-size: 12px;
+      display: none;
+    }
+    
+    .adapt-status.show {
+      display: block;
+    }
+    
+    .adapt-status.info {
+      background: #e8f4fd;
+      color: #1e6bb8;
+    }
+    
+    .adapt-status.success {
+      background: #e8f5e9;
+      color: #2e7d32;
+    }
+    
+    .adapt-status.error {
+      background: #ffebee;
+      color: #c62828;
+    }
+    
+    .adapt-status.loading {
+      background: #fff8e1;
+      color: #f9a825;
+    }
+    
+    .mapping-preview {
+      margin-top: 16px;
+      padding: 14px;
+      background: #ffffff;
+      border-radius: 10px;
+      border: 1px solid #e0e5e1;
+      display: block;
+    }
+    
+    .mapping-preview-header {
+      font-size: 12px;
+      font-weight: 600;
+      color: #5a5a5a;
+      margin-bottom: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    
+    .mapping-item {
+      display: flex;
+      align-items: center;
+      padding: 8px 10px;
+      background: #fafaf8;
+      border-radius: 6px;
+      margin-bottom: 6px;
+      font-size: 12px;
+    }
+    
+    .mapping-item:last-child {
+      margin-bottom: 0;
+    }
+    
+    .mapping-from {
+      color: #9a9a9a;
+      font-family: ui-monospace, SFMono-Regular, monospace;
+      flex: 1;
+    }
+    
+    .mapping-arrow {
+      color: #6b8f71;
+      margin: 0 10px;
+      font-weight: bold;
+    }
+    
+    .mapping-to {
+      color: #4a6b4d;
+      font-family: ui-monospace, SFMono-Regular, monospace;
+      font-weight: 600;
+      flex: 1;
+      text-align: right;
+    }
+    
+    .preview-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 4px 10px;
+      background: #6b8f71;
+      color: white;
+      border-radius: 20px;
+      font-size: 11px;
+      font-weight: 600;
+    }
+    
+    .preview-badge::before {
+      content: '';
+      width: 6px;
+      height: 6px;
+      background: #8bc34a;
+      border-radius: 50%;
+      animation: pulse 1.5s infinite;
+    }
+    
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+    
+    .framework-option {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 12px 14px;
+      background: #ffffff;
+      border: 2px solid #e0e5e1;
+      border-radius: 10px;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 500;
+      color: #5a5a5a;
+      transition: all 0.15s ease;
+    }
+    
+    .framework-option:hover {
+      border-color: #6b8f71;
+      background: #f8faf8;
+    }
+    
+    .framework-option.selected {
+      border-color: #6b8f71;
+      background: #e8f0e9;
+      color: #4a6b4d;
+    }
+    
+    /* Spinner animation */
+    .spinner {
+      display: inline-block;
+      width: 14px;
+      height: 14px;
+      border: 2px solid rgba(255,255,255,0.3);
+      border-top-color: white;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    
+    /* Smart Component Mode Selector */
+    .smart-mode-section {
+      display: none;
+      margin-bottom: 16px;
+      padding: 14px;
+      background: #f8f9fa;
+      border-radius: 10px;
+      border: 1px solid #e0e5e1;
+    }
+    
+    .smart-mode-section.active {
+      display: block;
+    }
+    
+    .smart-mode-header {
+      font-size: 12px;
+      font-weight: 600;
+      color: #5a5a5a;
+      margin-bottom: 10px;
+    }
+    
+    .smart-mode-options {
+      display: flex;
+      gap: 8px;
+    }
+    
+    .smart-mode-option {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 4px;
+      padding: 12px 14px;
+      background: #ffffff;
+      border: 2px solid #e0e5e1;
+      border-radius: 10px;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 600;
+      color: #3d3d3d;
+      transition: all 0.15s ease;
+      text-align: left;
+    }
+    
+    .smart-mode-option:hover {
+      border-color: #6b8f71;
+    }
+    
+    .smart-mode-option.selected {
+      border-color: #6b8f71;
+      background: #e8f0e9;
+      color: #4a6b4d;
+    }
+    
+    .smart-mode-option small {
+      font-size: 11px;
+      font-weight: 400;
+      color: #9a9a9a;
+    }
+    
+    .smart-mode-option.selected small {
+      color: #6b8f71;
+    }
+    
+    .smart-mode-option span {
+      font-size: 16px;
+    }
+    
+    /* AI Enhancement Panel */
+    .ai-enhancement-panel {
+      background: linear-gradient(135deg, #f8f4ff 0%, #f0f4ff 100%);
+      border: 1px solid #e0d8f0;
+      border-radius: 12px;
+      padding: 14px;
+      margin-bottom: 16px;
+    }
+    
+    .ai-panel-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+    
+    .ai-panel-title {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      color: #4a3d6a;
+    }
+    
+    .ai-sparkle {
+      font-size: 16px;
+    }
+    
+    .ai-badge {
+      font-size: 10px;
+      padding: 2px 8px;
+      border-radius: 10px;
+      background: #ddd;
+      color: #666;
+      font-weight: 600;
+    }
+    
+    .ai-badge.active {
+      background: linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%);
+      color: white;
+    }
+    
+    .toggle-switch {
+      position: relative;
+      width: 44px;
+      height: 24px;
+    }
+    
+    .toggle-switch input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+    
+    .toggle-slider {
+      position: absolute;
+      cursor: pointer;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-color: #ccc;
+      transition: 0.3s;
+      border-radius: 24px;
+    }
+    
+    .toggle-slider:before {
+      position: absolute;
+      content: "";
+      height: 18px;
+      width: 18px;
+      left: 3px;
+      bottom: 3px;
+      background-color: white;
+      transition: 0.3s;
+      border-radius: 50%;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+    }
+    
+    input:checked + .toggle-slider {
+      background: linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%);
+    }
+    
+    input:checked + .toggle-slider:before {
+      transform: translateX(20px);
+    }
+    
+    .ai-panel-status {
+      font-size: 12px;
+      color: #7a6a9a;
+      margin-bottom: 10px;
+    }
+    
+    .ai-panel-actions {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+    
+    .ai-action-btn {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 12px;
+      background: white;
+      border: 1px solid #e0d8f0;
+      border-radius: 8px;
+      font-size: 12px;
+      font-weight: 500;
+      color: #4a3d6a;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    
+    .ai-action-btn:hover:not(:disabled) {
+      background: #f0e8ff;
+      border-color: #c0b0e0;
+    }
+    
+    .ai-action-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    
+    .ai-settings-btn {
+      padding: 8px;
+    }
+    
+    .ai-style-select {
+      padding: 8px 12px;
+      background: white;
+      border: 1px solid #e0d8f0;
+      border-radius: 8px;
+      font-size: 12px;
+      color: #4a3d6a;
+      cursor: pointer;
+    }
+    
+    .ai-style-select:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    
+    .ai-loading {
+      display: none;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 12px;
+      background: rgba(139, 92, 246, 0.1);
+      border-radius: 8px;
+      margin-top: 10px;
+      font-size: 12px;
+      color: #6d28d9;
+    }
+    
+    .ai-loading.active {
+      display: flex;
+    }
+    
+    .ai-loading-spinner {
+      width: 16px;
+      height: 16px;
+      border: 2px solid #e0d0f0;
+      border-top-color: #8b5cf6;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    
+    /* Shadcn Intent Styling */
+    .intent-option.shadcn-intent {
+      background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+      border: 2px solid #334155;
+    }
+    
+    .intent-option.shadcn-intent .intent-label {
+      color: #f8fafc;
+    }
+    
+    .intent-option.shadcn-intent .intent-desc {
+      color: #94a3b8;
+    }
+    
+    .intent-option.shadcn-intent:hover {
+      background: linear-gradient(135deg, #1e293b 0%, #334155 100%);
+      border-color: #475569;
+    }
+    
+    .intent-option.shadcn-intent.active {
+      background: linear-gradient(135deg, #1e293b 0%, #334155 100%);
+      border-color: #6366f1;
+      box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
+    }
+    
+    /* Shadcn Output Section */
+    .shadcn-output-section {
+      display: none;
+    }
+    
+    .shadcn-output-section.active {
+      display: block;
+    }
+    
+    .shadcn-tabs {
+      display: flex;
+      gap: 4px;
+      margin-bottom: 12px;
+      background: #f0f0eb;
+      padding: 4px;
+      border-radius: 10px;
+    }
+    
+    .shadcn-tab {
+      flex: 1;
+      padding: 10px 16px;
+      background: transparent;
+      border: none;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 500;
+      color: #5a5a5a;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    
+    .shadcn-tab:hover {
+      background: rgba(255, 255, 255, 0.5);
+    }
+    
+    .shadcn-tab.active {
+      background: white;
+      color: #2d2d2d;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    }
+    
+    .shadcn-tab-content {
+      display: none;
+    }
+    
+    .shadcn-tab-content.active {
+      display: block;
+    }
+    
+    .shadcn-tab-content textarea {
+      width: 100%;
+      height: 400px;
+      padding: 16px;
+      font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas, monospace;
+      font-size: 12px;
+      line-height: 1.6;
+      border: none;
+      border-radius: 12px;
+      resize: vertical;
+      background: #fafaf8;
+      color: #3d3d3d;
+    }
+    
+    .shadcn-detected {
+      margin-bottom: 12px;
+      padding: 12px;
+      background: #f0f0eb;
+      border-radius: 10px;
+    }
+    
+    .shadcn-detected-label {
+      font-size: 11px;
+      font-weight: 600;
+      color: #5a5a5a;
+      margin-bottom: 8px;
+    }
+    
+    .shadcn-components-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+    
+    .shadcn-component-badge {
+      padding: 4px 10px;
+      background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+      color: white;
+      font-size: 11px;
+      font-weight: 500;
+      border-radius: 12px;
+    }
+    
+    .shadcn-install-code {
+      display: block;
+      padding: 12px 14px;
+      background: #1e293b;
+      color: #e2e8f0;
+      border-radius: 10px;
+      font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas, monospace;
+      font-size: 12px;
+      word-break: break-all;
+      line-height: 1.5;
+    }
+    
+    .shadcn-building {
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      padding: 40px;
+      text-align: center;
+    }
+    
+    .shadcn-building.active {
+      display: flex;
+    }
+    
+    .shadcn-building-spinner {
+      width: 40px;
+      height: 40px;
+      border: 3px solid #e5e5e0;
+      border-top-color: #6366f1;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    
+    .shadcn-building-text {
+      font-size: 14px;
+      color: #5a5a5a;
+      font-weight: 500;
+    }
+    
+    .shadcn-building-step {
+      font-size: 12px;
+      color: #9a9a9a;
+    }
+    
+    .shadcn-error {
+      padding: 16px;
+      background: #ffebee;
+      border-radius: 10px;
+      color: #c62828;
+      font-size: 13px;
+    }
+    
+    .shadcn-error-title {
+      font-weight: 600;
+      margin-bottom: 8px;
+    }
+    
+    .shadcn-api-key-hint {
+      margin-top: 12px;
+      padding: 12px;
+      background: #fff8e1;
+      border-radius: 8px;
+      font-size: 12px;
+      color: #f57c00;
+    }
+    
+    .shadcn-api-key-hint a {
+      color: #e65100;
+      text-decoration: underline;
+      cursor: pointer;
+    }
+
+    /* Modal Styles */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0,0,0,0.5);
+      z-index: 1000;
+      align-items: center;
+      justify-content: center;
+    }
+    
+    .modal-overlay.active {
+      display: flex;
+    }
+    
+    .modal {
+      background: white;
+      border-radius: 16px;
+      padding: 24px;
+      width: 90%;
+      max-width: 400px;
+      box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+    }
+    
+    .modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+    }
+    
+    .modal-header h2 {
+      font-size: 18px;
+      font-weight: 600;
+      margin: 0;
+      color: #2d2d2d;
+    }
+    
+    .modal-close {
+      background: none;
+      border: none;
+      font-size: 24px;
+      cursor: pointer;
+      color: #9a9a9a;
+      padding: 4px;
+    }
+    
+    .modal-close:hover {
+      color: #5a5a5a;
+    }
+    
+    .form-group {
+      margin-bottom: 20px;
+    }
+    
+    .form-label {
+      display: block;
+      font-size: 13px;
+      font-weight: 600;
+      color: #5a5a5a;
+      margin-bottom: 8px;
+    }
+    
+    .form-input {
+      width: 100%;
+      padding: 12px 14px;
+      border: 2px solid #e5e5e0;
+      border-radius: 10px;
+      font-size: 14px;
+      transition: all 0.15s ease;
+    }
+    
+    .form-input:focus {
+      outline: none;
+      border-color: #8b5cf6;
+    }
+    
+    .form-hint {
+      font-size: 12px;
+      color: #9a9a9a;
+      margin-top: 8px;
+      line-height: 1.4;
+    }
+    
+    .form-hint a {
+      color: #8b5cf6;
+      text-decoration: none;
+    }
+    
+    .form-hint a:hover {
+      text-decoration: underline;
+    }
+    
+    .api-status {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      margin-top: 10px;
+      padding: 10px 12px;
+      border-radius: 8px;
+    }
+    
+    .api-status.valid {
+      background: #e8f5e9;
+      color: #2e7d32;
+    }
+    
+    .api-status.invalid {
+      background: #ffebee;
+      color: #c62828;
+    }
+    
+    .api-status.checking {
+      background: #fff3e0;
+      color: #ef6c00;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>Captured Design</h1>
+      <div class="header-meta" id="pageMeta">Loading...</div>
+    </div>
+    
+    <div class="main-grid">
+      <!-- Left: Screenshot & Info -->
+      <div>
+        <div class="card">
+          <div class="card-header">Visual Reference</div>
+          <div class="screenshot-container" id="screenshotContainer">
+            <span class="no-screenshot">No screenshot</span>
+          </div>
+        </div>
+        
+        <div class="card" style="margin-top: 16px;">
+          <div class="card-header">Quick Reference</div>
+          <div class="quick-stats" id="quickStats"></div>
+          <div id="colorSwatches"></div>
+        </div>
+      </div>
+      
+      <!-- Right: Output -->
+      <div>
+        <div class="card output-area">
+          <div class="card-header">
+            <span>What do you want to do?</span>
+          </div>
+          
+          <div class="intent-selector" id="intentSelector">
+            <button class="intent-option active" data-intent="apply-design">
+              <div class="intent-label">🎨 Apply Design</div>
+              <div class="intent-desc">Style existing component</div>
+            </button>
+            <button class="intent-option" data-intent="replicate-design">
+              <div class="intent-label">📋 Replicate</div>
+              <div class="intent-desc">Pixel-perfect copy</div>
+            </button>
+            <button class="intent-option" data-intent="global-tokens">
+              <div class="intent-label">🎯 CSS Tokens</div>
+              <div class="intent-desc">Design variables</div>
+            </button>
+            <button class="intent-option shadcn-intent" data-intent="shadcn-component">
+              <div class="intent-label">🧱 shadcn/ui</div>
+              <div class="intent-desc">React components</div>
+            </button>
+          </div>
+          
+          <!-- AI Enhancement Panel -->
+          <div class="ai-enhancement-panel" id="aiEnhancementPanel">
+            <div class="ai-panel-header">
+              <div class="ai-panel-title">
+                <span class="ai-sparkle">✨</span>
+                <span>AI Enhancement</span>
+                <span class="ai-badge" id="aiBadge">OFF</span>
+              </div>
+              <label class="toggle-switch">
+                <input type="checkbox" id="resultsAiToggle" />
+                <span class="toggle-slider"></span>
+              </label>
+            </div>
+            <div class="ai-panel-status" id="aiPanelStatus">
+              Configure API key to enable AI-enhanced prompts
+            </div>
+            <div class="ai-panel-actions">
+              <button class="ai-action-btn" id="regeneratePromptBtn" disabled>
+                <span>🔄</span> Regenerate
+              </button>
+              <select class="ai-style-select" id="promptStyleSelect" disabled>
+                <option value="auto">Auto</option>
+                <option value="concise">Concise</option>
+                <option value="detailed">Detailed</option>
+                <option value="structured">Structured</option>
+              </select>
+              <button class="ai-action-btn ai-settings-btn" id="openAISettingsBtn">
+                <span>⚙️</span>
+              </button>
+            </div>
+            <div class="ai-loading" id="aiLoadingResults">
+              <div class="ai-loading-spinner"></div>
+              <span>Enhancing with Gemini AI...</span>
+            </div>
+          </div>
+          
+          <!-- Smart Component Mode Selector -->
+          <div class="smart-mode-section" id="smartModeSection">
+            <div class="smart-mode-header">Output Mode</div>
+            <div class="smart-mode-options">
+              <button class="smart-mode-option selected" data-mode="visual">
+                <span>🎨</span> Visual Only
+                <small>Just styles, grouped by component type</small>
+              </button>
+              <button class="smart-mode-option" data-mode="structure">
+                <span>🏗️</span> With Structure
+                <small>Full hierarchy + styles</small>
+              </button>
+            </div>
+          </div>
+          
+          <!-- CSS Merge Section - shown when extract-global-theme is selected -->
+          <div class="css-merge-section" id="cssMergeSection">
+            <div class="css-merge-header">Do you have existing global CSS?</div>
+            
+            <div class="css-option-group">
+              <label class="css-option selected" data-option="no-css">
+                <input type="radio" name="cssOption" value="no-css" checked>
+                <div>
+                  <div class="css-option-label">No, generate new CSS</div>
+                  <div class="css-option-desc">Create a fresh global.css file</div>
+                </div>
+              </label>
+              
+              <label class="css-option" data-option="has-css">
+                <input type="radio" name="cssOption" value="has-css">
+                <div>
+                  <div class="css-option-label">Yes, I have existing CSS</div>
+                  <div class="css-option-desc">Merge with my current styles</div>
+                </div>
+              </label>
+            </div>
+            
+            <div class="existing-css-input" id="existingCssInput">
+              <label>Paste your existing global CSS here:</label>
+              <textarea id="existingCssTextarea" placeholder=":root {
+  --background: #ffffff;
+  --foreground: #000000;
+  ...
+}"></textarea>
+              <button class="merge-btn" id="mergeBtn">Merge Styles</button>
+            </div>
+            
+            <div class="format-selector" id="formatSelector">
+              <span style="font-size: 12px; color: #5a5a5a; margin-right: 8px;">Format:</span>
+              <button class="format-option selected" data-format="shadcn">Shadcn</button>
+              <button class="format-option" data-format="standard">Standard CSS</button>
+              <button class="format-option" data-format="tailwind">Tailwind</button>
+            </div>
+          </div>
+          
+          <!-- Adapt to Codebase Section -->
+          <div class="adapt-section" id="adaptSection">
+            <div class="adapt-header">
+              <div class="adapt-header-icon">🤖</div>
+              <div class="adapt-header-text">
+                <h3>Adapt to Your Codebase</h3>
+                <p>AI maps extracted styles to your selectors + live preview</p>
+              </div>
+            </div>
+            
+            <div class="adapt-tabs">
+              <button class="adapt-tab active" data-tab="css">Paste Your CSS</button>
+              <button class="adapt-tab" data-tab="selectors">Define Selectors</button>
+              <button class="adapt-tab" data-tab="framework">Framework</button>
+            </div>
+            
+            <!-- CSS Tab -->
+            <div class="adapt-tab-content" id="adaptTabCss">
+              <div class="adapt-input-section">
+                <label class="adapt-input-label">Paste your existing global CSS or component styles:</label>
+                <textarea class="adapt-textarea" id="userCssInput" placeholder=":root {
+  --primary: #3498db;
+  --secondary: #2ecc71;
+  --background: #ffffff;
+}
+
+.btn {
+  padding: 10px 20px;
+  border-radius: 4px;
+}
+
+.card {
+  padding: 16px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}"></textarea>
+              </div>
+            </div>
+            
+            <!-- Selectors Tab -->
+            <div class="adapt-tab-content" id="adaptTabSelectors" style="display: none;">
+              <div class="adapt-input-section">
+                <label class="adapt-input-label">Map component types to your selectors:</label>
+                <textarea class="adapt-textarea" id="userSelectorsInput" placeholder="button: .btn, .button, .cta-button
+input: .form-input, .text-field
+card: .card, .panel, .widget
+heading: .title, .heading, h1, h2, h3
+link: .link, a
+container: .container, .wrapper, .box"></textarea>
+              </div>
+            </div>
+            
+            <!-- Framework Tab -->
+            <div class="adapt-tab-content" id="adaptTabFramework" style="display: none;">
+              <div class="adapt-input-section">
+                <label class="adapt-input-label">Select your framework/UI library:</label>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px;">
+                  <button class="framework-option" data-framework="tailwind">
+                    <span style="font-size: 16px;">🌊</span> Tailwind CSS
+                  </button>
+                  <button class="framework-option" data-framework="bootstrap">
+                    <span style="font-size: 16px;">🅱️</span> Bootstrap
+                  </button>
+                  <button class="framework-option" data-framework="mui">
+                    <span style="font-size: 16px;">Ⓜ️</span> Material UI
+                  </button>
+                  <button class="framework-option" data-framework="chakra">
+                    <span style="font-size: 16px;">⚡</span> Chakra UI
+                  </button>
+                  <button class="framework-option" data-framework="shadcn">
+                    <span style="font-size: 16px;">🎨</span> Shadcn/ui
+                  </button>
+                  <button class="framework-option" data-framework="custom">
+                    <span style="font-size: 16px;">⚙️</span> Custom
+                  </button>
+                </div>
+              </div>
+            </div>
+            
+            <div class="adapt-actions">
+              <button class="adapt-btn adapt-btn-primary" id="analyzeAdaptBtn">
+                <span>🔮</span> Analyze & Adapt
+              </button>
+              <button class="adapt-btn adapt-btn-preview" id="previewStylesBtn">
+                <span>👁️</span> Preview on Website
+              </button>
+              <button class="adapt-btn adapt-btn-secondary" id="copyAIPromptBtn">
+                <span>🤖</span> Copy AI Prompt
+              </button>
+              <button class="adapt-btn adapt-btn-secondary" id="resetAdaptBtn">
+                <span>↺</span> Reset
+              </button>
+            </div>
+            
+            <div class="adapt-status" id="adaptStatus"></div>
+            
+            <div class="mapping-preview" id="mappingPreview">
+              <div class="mapping-preview-header">
+                <span>Analysis Results</span>
+                <span class="preview-badge" id="previewBadge" style="display: none;">0 matches</span>
+              </div>
+              <div id="mappingList">
+                <div style="color: #9a9a9a; text-align: center; padding: 20px; font-size: 12px;">
+                  Paste your CSS above and click "Analyze & Adapt" to see what can be mapped.
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          <!-- Shadcn Output Section -->
+          <div class="shadcn-output-section" id="shadcnOutputSection">
+            <!-- Building State -->
+            <div class="shadcn-building" id="shadcnBuilding">
+              <div class="shadcn-building-spinner"></div>
+              <div class="shadcn-building-text">Building shadcn Component...</div>
+              <div class="shadcn-building-step" id="shadcnBuildingStep">Detecting components...</div>
+            </div>
+            
+            <!-- Error State -->
+            <div class="shadcn-error" id="shadcnError" style="display: none;">
+              <div class="shadcn-error-title">Error Building Component</div>
+              <div id="shadcnErrorMessage"></div>
+              <div class="shadcn-api-key-hint" id="shadcnApiKeyHint" style="display: none;">
+                💡 This feature requires a Gemini API key. 
+                <a id="openAISettingsFromError">Click here to add your API key</a>
+              </div>
+            </div>
+            
+            <!-- Success State -->
+            <div id="shadcnSuccess" style="display: none;">
+              <!-- Detected Components -->
+              <div class="shadcn-detected">
+                <div class="shadcn-detected-label">Detected Components</div>
+                <div class="shadcn-components-list" id="shadcnComponentsList"></div>
+              </div>
+              
+              <!-- Tabs -->
+              <div class="shadcn-tabs">
+                <button class="shadcn-tab active" data-shadcn-tab="component">Component</button>
+                <button class="shadcn-tab" data-shadcn-tab="css">CSS Variables</button>
+                <button class="shadcn-tab" data-shadcn-tab="install">Install</button>
+              </div>
+              
+              <!-- Tab Contents -->
+              <div class="shadcn-tab-content active" id="shadcnTabComponent">
+                <textarea id="shadcnComponentCode" readonly placeholder="Component code will appear here..."></textarea>
+              </div>
+              
+              <div class="shadcn-tab-content" id="shadcnTabCss">
+                <textarea id="shadcnCssVars" readonly placeholder="CSS variables will appear here..."></textarea>
+              </div>
+              
+              <div class="shadcn-tab-content" id="shadcnTabInstall">
+                <div style="padding: 16px;">
+                  <div class="shadcn-detected-label" style="margin-bottom: 12px;">Installation Command</div>
+                  <code class="shadcn-install-code" id="shadcnInstallCmd">npx shadcn@latest add ...</code>
+                  
+                  <div class="shadcn-detected-label" style="margin-top: 20px; margin-bottom: 12px;">Usage Example</div>
+                  <code class="shadcn-install-code" id="shadcnUsageExample">&lt;Component /&gt;</code>
+                </div>
+              </div>
+              
+              <!-- Button Group for shadcn -->
+              <div class="button-group" style="margin-top: 16px;">
+                <button class="btn btn-primary" id="copyShadcnComponent">Copy Component</button>
+                <button class="btn btn-secondary" id="copyShadcnAll">Copy All</button>
+              </div>
+            </div>
+          </div>
+          
+          <!-- Regular Output -->
+          <div id="regularOutputSection">
+            <textarea id="output" readonly></textarea>
+            
+            <div class="button-group" id="regularButtonGroup">
+              <button class="btn btn-primary" id="copyBtn">Copy Text</button>
+              <button class="btn btn-secondary" id="copyWithImageBtn">Copy + Image</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  
+  <div class="toast" id="toast">Copied!</div>
+  
+  <!-- AI Enhancement Modal -->
+  <div class="modal-overlay" id="aiSettingsModal">
+    <div class="modal">
+      <div class="modal-header">
+        <h2>✨ AI Enhancement Settings</h2>
+        <button class="modal-close" id="closeAISettingsBtn">&times;</button>
+      </div>
+      
+      <div class="form-group">
+        <label class="form-label">Gemini API Key</label>
+        <input type="password" class="form-input" id="resultsApiKeyInput" placeholder="Enter your Gemini API key" />
+        <div class="form-hint">
+          Get your free API key from <a href="https://aistudio.google.com/app/apikey" target="_blank">Google AI Studio</a>
+        </div>
+        <div class="api-status" id="resultsApiKeyStatus" style="display: none;"></div>
+      </div>
+      
+      <button class="btn btn-primary" id="saveResultsApiKeyBtn">Save API Key</button>
+    </div>
+  </div>
+  
+  <script src="design-analyzer.js"></script>
+  <script src="gemini-service.js"></script>
+  <script src="enhanced-prompt-generator.js"></script>
+  <script src="component-detector.js"></script>
+  <script src="shadcn-fetcher.js"></script>
+  <script src="shadcn-builder.js"></script>
+  <script src="results.js"></script>
+</body>
+</html>

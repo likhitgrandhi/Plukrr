@@ -1,0 +1,34 @@
+{
+  "manifest_version": 3,
+  "name": "Design Copier for AI",
+  "version": "3.0",
+  "description": "Extract designs pixel-perfect. 4 modes: Apply styles, Replicate, CSS tokens, shadcn/ui components. Powered by Gemini AI.",
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "storage"
+  ],
+  "host_permissions": [
+    "<all_urls>",
+    "https://generativelanguage.googleapis.com/*",
+    "https://ui.shadcn.com/*"
+  ],
+  "action": {
+    "default_popup": "popup.html"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "css": ["styles.css"]
+    }
+  ],
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}
