@@ -1,18 +1,24 @@
 {
   "manifest_version": 3,
-  "name": "Design Copier for AI",
-  "version": "3.0",
-  "description": "Extract designs pixel-perfect. 4 modes: Apply styles, Replicate, CSS tokens, shadcn/ui components. Powered by Gemini AI.",
+  "name": "ExactAI",
+  "version": "1.0.0",
+  "description": "Extract designs pixel-perfect with AI. Replicate any design, extract CSS tokens, generate shadcn/ui components.",
   "permissions": [
     "activeTab",
     "scripting",
     "storage",
-    "unlimitedStorage"
+    "unlimitedStorage",
+    "identity",
+    "alarms"
   ],
   "host_permissions": [
     "<all_urls>",
     "https://generativelanguage.googleapis.com/*",
-    "https://ui.shadcn.com/*"
+    "https://ui.shadcn.com/*",
+    "https://*.supabase.co/*",
+    "https://checkout.stripe.com/*",
+    "https://api.stripe.com/*",
+    "https://buy.stripe.com/*"
   ],
   "action": {
     "default_popup": "popup.html"
@@ -37,5 +43,11 @@
     "16": "icons/icon16.png",
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
-  }
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["auth-callback.html"],
+      "matches": ["<all_urls>"]
+    }
+  ]
 }

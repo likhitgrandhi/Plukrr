@@ -1,23 +1,207 @@
 // ============================================
-// Design Copier - Simple Popup Script
-// Just two actions: Select Element or Extract Full Page
-// Intent selection happens on the results page
+// ExactAI - Popup Script
+// Main extension popup with auth and subscription integration
 // ============================================
 
 let aiEnhancementEnabled = false;
+let currentSubscription = null;
 
 // ============================================
-// UI EVENT HANDLERS
+// INITIALIZATION
 // ============================================
 
-// Select element button
-document.getElementById('selectBtn').addEventListener('click', async () => {
+document.addEventListener('DOMContentLoaded', async () => {
+    await initPopup();
+});
+
+async function initPopup() {
+    const loadingScreen = document.getElementById('loadingScreen');
+    const mainContent = document.getElementById('mainContent');
+    
+    try {
+        // Check auth and subscription status
+        await checkAuthAndSubscription();
+        
+        // Initialize AI status
+        await initializeAIStatus();
+        
+        // Set up event listeners
+        setupEventListeners();
+        
+        // Show main content
+        loadingScreen.classList.add('hidden');
+        mainContent.classList.add('active');
+        
+    } catch (error) {
+        console.error('[Popup] Init error:', error);
+        loadingScreen.classList.add('hidden');
+        mainContent.classList.add('active');
+    }
+}
+
+async function checkAuthAndSubscription() {
+    // Check if services are available
+    if (typeof AuthService === 'undefined' || typeof SubscriptionService === 'undefined') {
+        console.warn('[Popup] Auth/Subscription services not loaded');
+        return;
+    }
+    
+    const isAuth = await AuthService.isAuthenticated();
+    
+    // Get subscription status
+    currentSubscription = await SubscriptionService.getSubscriptionStatus();
+    
+    // Update UI based on subscription
+    updateSubscriptionUI(currentSubscription);
+    
+    // Check if trial/subscription expired and user not authenticated
+    if (!isAuth && currentSubscription.status === 'expired') {
+        // Redirect to auth page
+        window.location.href = 'auth.html';
+        return;
+    }
+    
+    // If no trial started yet, start one
+    if (typeof TrialService !== 'undefined') {
+        const trialStatus = await TrialService.getTrialStatus();
+        if (!trialStatus.hasTrialStarted && !isAuth) {
+            await TrialService.startTrial();
+            currentSubscription = await SubscriptionService.getSubscriptionStatus();
+            updateSubscriptionUI(currentSubscription);
+        }
+    }
+}
+
+function updateSubscriptionUI(subscription) {
+    const subBadge = document.getElementById('subBadge');
+    const trialBanner = document.getElementById('trialBanner');
+    const trialDays = document.getElementById('trialDays');
+    const extractGlobalBtn = document.getElementById('extractGlobalBtn');
+    
+    if (!subscription) return;
+    
+    // Show/update subscription badge
+    subBadge.style.display = 'inline-block';
+    subBadge.className = 'sub-badge';
+    
+    switch (subscription.tier) {
+        case 'trial':
+            subBadge.textContent = 'TRIAL';
+            subBadge.classList.add('trial');
+            // Show trial banner
+            if (subscription.trialDaysRemaining !== undefined) {
+                trialBanner.classList.add('active');
+                trialDays.textContent = subscription.trialDaysRemaining;
+            }
+            break;
+        case 'pro':
+            subBadge.textContent = 'PRO';
+            subBadge.classList.add('pro');
+            trialBanner.classList.remove('active');
+            break;
+        case 'pro-plus':
+            subBadge.textContent = 'PRO+';
+            subBadge.classList.add('pro-plus');
+            trialBanner.classList.remove('active');
+            break;
+        case 'lifetime':
+            subBadge.textContent = 'LIFETIME';
+            subBadge.classList.add('lifetime');
+            trialBanner.classList.remove('active');
+            break;
+        case 'free':
+        default:
+            if (subscription.status === 'expired') {
+                subBadge.textContent = 'EXPIRED';
+                subBadge.classList.add('expired');
+                trialBanner.classList.add('active');
+                trialDays.textContent = '0';
+            } else {
+                subBadge.textContent = 'FREE';
+                subBadge.classList.add('expired');
+            }
+            break;
+    }
+    
+    // Update feature availability
+    updateFeatureAvailability(subscription);
+}
+
+function updateFeatureAvailability(subscription) {
+    const extractGlobalBtn = document.getElementById('extractGlobalBtn');
+    
+    // Check if full page extraction is available
+    const hasFullPageAccess = subscription.isActive && 
+        ['trial', 'pro', 'pro-plus', 'lifetime'].includes(subscription.tier);
+    
+    if (!hasFullPageAccess) {
+        extractGlobalBtn.classList.add('locked');
+        extractGlobalBtn.title = 'Upgrade to Pro to unlock full page extraction';
+    } else {
+        extractGlobalBtn.classList.remove('locked');
+        extractGlobalBtn.title = '';
+    }
+}
+
+// ============================================
+// EVENT LISTENERS
+// ============================================
+
+function setupEventListeners() {
+    // Select element button
+    document.getElementById('selectBtn').addEventListener('click', handleSelectElement);
+    
+    // Extract full page button
+    document.getElementById('extractGlobalBtn').addEventListener('click', handleExtractFullPage);
+    
+    // AI Toggle
+    document.getElementById('aiToggle').addEventListener('change', handleAIToggle);
+    
+    // Settings
+    document.getElementById('settingsBtn').addEventListener('click', openSettings);
+    document.getElementById('closeSettingsBtn').addEventListener('click', closeSettings);
+    document.getElementById('saveApiKeyBtn').addEventListener('click', saveApiKey);
+    document.getElementById('settingsModal').addEventListener('click', (e) => {
+        if (e.target.id === 'settingsModal') closeSettings();
+    });
+    
+    // Account button - go to dashboard if logged in, auth if not
+    document.getElementById('accountBtn').addEventListener('click', async () => {
+        const isAuth = await AuthService.isAuthenticated();
+        if (isAuth) {
+            chrome.tabs.create({ url: chrome.runtime.getURL('dashboard.html') });
+        } else {
+            chrome.tabs.create({ url: chrome.runtime.getURL('auth.html') });
+        }
+    });
+    
+    // Account link - go to dashboard if logged in, auth if not
+    document.getElementById('accountLink').addEventListener('click', async (e) => {
+        e.preventDefault();
+        const isAuth = await AuthService.isAuthenticated();
+        if (isAuth) {
+            chrome.tabs.create({ url: chrome.runtime.getURL('dashboard.html') });
+        } else {
+            chrome.tabs.create({ url: chrome.runtime.getURL('auth.html') });
+        }
+    });
+    
+    // Upgrade button in banner
+    document.getElementById('upgradeBtnBanner').addEventListener('click', () => {
+        chrome.tabs.create({ url: chrome.runtime.getURL('dashboard.html') });
+    });
+}
+
+// ============================================
+// MAIN ACTIONS
+// ============================================
+
+async function handleSelectElement() {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     if (!tab) return;
 
     try {
         // Clear old selection data FIRST before starting new selection
-        // This ensures the results page won't show stale data
         chrome.runtime.sendMessage({ type: 'START_SELECTION' });
         
         await chrome.scripting.executeScript({
@@ -40,10 +224,15 @@ document.getElementById('selectBtn').addEventListener('click', async () => {
         console.error('Injection failed:', e);
         document.getElementById('status').innerText = 'Cannot run on this page (try a public website).';
     }
-});
+}
 
-// Extract Full Page button
-document.getElementById('extractGlobalBtn').addEventListener('click', async () => {
+async function handleExtractFullPage() {
+    // Check feature access
+    if (currentSubscription && !currentSubscription.isActive) {
+        document.getElementById('status').innerHTML = '<span style="color: #e57373;">Please upgrade to use this feature</span>';
+        return;
+    }
+    
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     if (!tab) {
         document.getElementById('status').innerText = 'Error: No active tab found.';
@@ -60,7 +249,7 @@ document.getElementById('extractGlobalBtn').addEventListener('click', async () =
     
     statusEl.innerHTML = '<span style="color: #6b8f71;">⏳ Scanning page...</span>';
     extractBtn.disabled = true;
-    extractBtn.querySelector('span:last-child').textContent = 'Scanning...';
+    extractBtn.querySelector('span').textContent = 'Scanning...';
 
     try {
         await chrome.scripting.executeScript({
@@ -78,14 +267,14 @@ document.getElementById('extractGlobalBtn').addEventListener('click', async () =
                 console.error('Error:', chrome.runtime.lastError.message);
                 statusEl.innerHTML = '<span style="color: #e57373;">Error: ' + chrome.runtime.lastError.message + '</span>';
                 extractBtn.disabled = false;
-                extractBtn.querySelector('span:last-child').textContent = 'Extract Full Page';
+                extractBtn.querySelector('span').textContent = 'Extract Full Page';
                 return;
             }
             
             if (response && response.status === 'error') {
                 statusEl.innerHTML = '<span style="color: #e57373;">Error: ' + (response.message || 'Unknown error') + '</span>';
                 extractBtn.disabled = false;
-                extractBtn.querySelector('span:last-child').textContent = 'Extract Full Page';
+                extractBtn.querySelector('span').textContent = 'Extract Full Page';
                 return;
             }
             
@@ -95,9 +284,9 @@ document.getElementById('extractGlobalBtn').addEventListener('click', async () =
         console.error('Injection failed:', e);
         statusEl.innerHTML = '<span style="color: #e57373;">Cannot run on this page.</span>';
         extractBtn.disabled = false;
-        extractBtn.querySelector('span:last-child').textContent = 'Extract Full Page';
+        extractBtn.querySelector('span').textContent = 'Extract Full Page';
     }
-});
+}
 
 // ============================================
 // AI STATUS MANAGEMENT
@@ -107,8 +296,6 @@ async function initializeAIStatus() {
     const aiToggle = document.getElementById('aiToggle');
     const aiStatus = document.getElementById('aiStatus');
     
-    // Check if GeminiService is available (it's loaded separately)
-    // For the simple popup, we just check storage
     chrome.storage.local.get(['geminiApiKey', 'aiEnabled'], async (result) => {
         if (result.geminiApiKey) {
             aiStatus.textContent = 'Ready';
@@ -122,11 +309,9 @@ async function initializeAIStatus() {
     });
 }
 
-// AI Toggle handler
-document.getElementById('aiToggle').addEventListener('change', async (e) => {
+async function handleAIToggle(e) {
     const isChecked = e.target.checked;
     
-    // Check if API key exists
     chrome.storage.local.get(['geminiApiKey'], (result) => {
         if (isChecked && !result.geminiApiKey) {
             e.target.checked = false;
@@ -137,7 +322,7 @@ document.getElementById('aiToggle').addEventListener('change', async (e) => {
         aiEnhancementEnabled = isChecked;
         chrome.storage.local.set({ aiEnabled: isChecked });
     });
-});
+}
 
 // ============================================
 // SETTINGS MODAL
@@ -231,19 +416,3 @@ async function saveApiKey() {
     
     saveBtn.disabled = false;
 }
-
-// Settings event listeners
-document.getElementById('settingsBtn').addEventListener('click', openSettings);
-document.getElementById('closeSettingsBtn').addEventListener('click', closeSettings);
-document.getElementById('saveApiKeyBtn').addEventListener('click', saveApiKey);
-document.getElementById('settingsModal').addEventListener('click', (e) => {
-    if (e.target.id === 'settingsModal') closeSettings();
-});
-
-// ============================================
-// INITIALIZATION
-// ============================================
-
-document.addEventListener('DOMContentLoaded', () => {
-    initializeAIStatus();
-});

@@ -1,0 +1,667 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>ExactAI - Dashboard</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    
+    body {
+      width: 380px;
+      min-height: 500px;
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, sans-serif;
+      background: linear-gradient(180deg, #0f0f14 0%, #1a1a24 100%);
+      color: #ffffff;
+    }
+    
+    /* Header */
+    .header {
+      padding: 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    }
+    
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    
+    .logo-text {
+      font-size: 20px;
+      font-weight: 700;
+      background: linear-gradient(135deg, #60a5fa 0%, #a78bfa 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    
+    .btn-icon {
+      width: 36px;
+      height: 36px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 10px;
+      cursor: pointer;
+      font-size: 16px;
+      transition: all 0.15s ease;
+    }
+    
+    .btn-icon:hover {
+      background: rgba(255, 255, 255, 0.1);
+    }
+    
+    /* Main Content */
+    .main-content {
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    
+    /* User Profile Section */
+    .user-section {
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      border-radius: 16px;
+      padding: 20px;
+    }
+    
+    .user-info {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+    
+    .user-avatar {
+      width: 48px;
+      height: 48px;
+      background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%);
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 20px;
+      font-weight: 600;
+      color: #ffffff;
+    }
+    
+    .user-details {
+      flex: 1;
+      min-width: 0;
+    }
+    
+    .user-email {
+      font-size: 14px;
+      font-weight: 500;
+      color: #ffffff;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    
+    .user-since {
+      font-size: 12px;
+      color: rgba(255, 255, 255, 0.4);
+      margin-top: 2px;
+    }
+    
+    .btn-logout {
+      padding: 8px 14px;
+      font-size: 12px;
+      font-weight: 500;
+      color: rgba(255, 255, 255, 0.6);
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    
+    .btn-logout:hover {
+      background: rgba(239, 68, 68, 0.1);
+      border-color: rgba(239, 68, 68, 0.3);
+      color: #f87171;
+    }
+    
+    /* Subscription Status Card */
+    .subscription-card {
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      border-radius: 16px;
+      padding: 20px;
+    }
+    
+    .subscription-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+    }
+    
+    .subscription-label {
+      font-size: 12px;
+      font-weight: 500;
+      color: rgba(255, 255, 255, 0.5);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    
+    .subscription-badge {
+      padding: 6px 12px;
+      font-size: 12px;
+      font-weight: 600;
+      border-radius: 20px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    
+    .badge-trial {
+      background: linear-gradient(135deg, rgba(251, 191, 36, 0.2) 0%, rgba(245, 158, 11, 0.1) 100%);
+      border: 1px solid rgba(251, 191, 36, 0.3);
+      color: #fbbf24;
+    }
+    
+    .badge-free {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      color: rgba(255, 255, 255, 0.6);
+    }
+    
+    .badge-pro {
+      background: linear-gradient(135deg, rgba(59, 130, 246, 0.2) 0%, rgba(96, 165, 250, 0.1) 100%);
+      border: 1px solid rgba(59, 130, 246, 0.3);
+      color: #60a5fa;
+    }
+    
+    .badge-pro-plus {
+      background: linear-gradient(135deg, rgba(139, 92, 246, 0.2) 0%, rgba(167, 139, 250, 0.1) 100%);
+      border: 1px solid rgba(139, 92, 246, 0.3);
+      color: #a78bfa;
+    }
+    
+    .badge-lifetime {
+      background: linear-gradient(135deg, rgba(34, 197, 94, 0.2) 0%, rgba(74, 222, 128, 0.1) 100%);
+      border: 1px solid rgba(34, 197, 94, 0.3);
+      color: #4ade80;
+    }
+    
+    .subscription-info {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    
+    .subscription-tier {
+      font-size: 24px;
+      font-weight: 600;
+      color: #ffffff;
+    }
+    
+    .subscription-status {
+      font-size: 13px;
+      color: rgba(255, 255, 255, 0.5);
+    }
+    
+    .trial-progress {
+      margin-top: 12px;
+    }
+    
+    .trial-progress-bar {
+      height: 6px;
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 3px;
+      overflow: hidden;
+    }
+    
+    .trial-progress-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #fbbf24 0%, #f59e0b 100%);
+      border-radius: 3px;
+      transition: width 0.3s ease;
+    }
+    
+    .trial-days-text {
+      font-size: 12px;
+      color: rgba(255, 255, 255, 0.5);
+      margin-top: 8px;
+    }
+    
+    /* Pricing Section */
+    .pricing-section {
+      margin-top: 4px;
+    }
+    
+    .pricing-header {
+      font-size: 14px;
+      font-weight: 600;
+      color: #ffffff;
+      margin-bottom: 12px;
+    }
+    
+    .pricing-cards {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    
+    .pricing-card {
+      background: rgba(255, 255, 255, 0.02);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      border-radius: 14px;
+      padding: 16px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      position: relative;
+      overflow: hidden;
+    }
+    
+    .pricing-card:hover {
+      background: rgba(255, 255, 255, 0.04);
+      border-color: rgba(255, 255, 255, 0.12);
+      transform: translateY(-1px);
+    }
+    
+    .pricing-card.popular {
+      border-color: rgba(139, 92, 246, 0.3);
+      background: linear-gradient(135deg, rgba(139, 92, 246, 0.05) 0%, rgba(59, 130, 246, 0.02) 100%);
+    }
+    
+    .pricing-card.lifetime {
+      border-color: rgba(34, 197, 94, 0.3);
+      background: linear-gradient(135deg, rgba(34, 197, 94, 0.05) 0%, rgba(74, 222, 128, 0.02) 100%);
+    }
+    
+    .popular-tag {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      padding: 4px 8px;
+      font-size: 9px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      background: linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%);
+      color: #ffffff;
+      border-radius: 6px;
+    }
+    
+    .limited-tag {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      padding: 4px 8px;
+      font-size: 9px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
+      color: #ffffff;
+      border-radius: 6px;
+    }
+    
+    .pricing-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    
+    .pricing-name {
+      font-size: 15px;
+      font-weight: 600;
+      color: #ffffff;
+    }
+    
+    .pricing-price {
+      display: flex;
+      align-items: baseline;
+      gap: 4px;
+    }
+    
+    .price-amount {
+      font-size: 20px;
+      font-weight: 700;
+      color: #ffffff;
+    }
+    
+    .price-period {
+      font-size: 12px;
+      color: rgba(255, 255, 255, 0.5);
+    }
+    
+    .pricing-features {
+      margin-top: 10px;
+      font-size: 12px;
+      color: rgba(255, 255, 255, 0.5);
+    }
+    
+    .slots-remaining {
+      margin-top: 8px;
+      font-size: 11px;
+      color: #4ade80;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+    
+    /* Action Button */
+    .action-section {
+      padding: 0 20px 20px;
+    }
+    
+    .btn-use-app {
+      width: 100%;
+      padding: 16px;
+      font-size: 15px;
+      font-weight: 600;
+      color: #ffffff;
+      background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%);
+      border: none;
+      border-radius: 12px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+    
+    .btn-use-app:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 10px 30px -5px rgba(59, 130, 246, 0.4);
+    }
+    
+    .btn-use-app:active {
+      transform: translateY(0);
+    }
+    
+    /* Loading State */
+    .loading-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: linear-gradient(180deg, #0f0f14 0%, #1a1a24 100%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+    }
+    
+    .loading-overlay.hidden {
+      display: none;
+    }
+    
+    .loading-spinner {
+      width: 40px;
+      height: 40px;
+      border: 3px solid rgba(255, 255, 255, 0.1);
+      border-top-color: #60a5fa;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    
+    /* Settings Modal */
+    .modal-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.7);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 200;
+    }
+    
+    .modal-overlay.active {
+      display: flex;
+    }
+    
+    .modal {
+      background: #1a1a24;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 16px;
+      padding: 24px;
+      width: 90%;
+      max-width: 340px;
+    }
+    
+    .modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+    }
+    
+    .modal-title {
+      font-size: 18px;
+      font-weight: 600;
+      color: #ffffff;
+    }
+    
+    .modal-close {
+      width: 32px;
+      height: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(255, 255, 255, 0.05);
+      border: none;
+      border-radius: 8px;
+      color: rgba(255, 255, 255, 0.6);
+      font-size: 20px;
+      cursor: pointer;
+    }
+    
+    .modal-close:hover {
+      background: rgba(255, 255, 255, 0.1);
+    }
+    
+    .form-group {
+      margin-bottom: 16px;
+    }
+    
+    .form-label {
+      display: block;
+      font-size: 12px;
+      font-weight: 500;
+      color: rgba(255, 255, 255, 0.6);
+      margin-bottom: 6px;
+    }
+    
+    .form-input {
+      width: 100%;
+      padding: 12px 14px;
+      font-size: 14px;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 10px;
+      color: #ffffff;
+      outline: none;
+    }
+    
+    .form-input:focus {
+      border-color: rgba(96, 165, 250, 0.5);
+    }
+    
+    .form-hint {
+      font-size: 11px;
+      color: rgba(255, 255, 255, 0.4);
+      margin-top: 6px;
+    }
+    
+    .form-hint a {
+      color: #60a5fa;
+      text-decoration: none;
+    }
+    
+    .btn-save {
+      width: 100%;
+      padding: 14px;
+      font-size: 14px;
+      font-weight: 600;
+      color: #ffffff;
+      background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%);
+      border: none;
+      border-radius: 10px;
+      cursor: pointer;
+    }
+    
+    .btn-save:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+  </style>
+</head>
+<body>
+  <!-- Loading Overlay -->
+  <div class="loading-overlay" id="loadingOverlay">
+    <div class="loading-spinner"></div>
+  </div>
+  
+  <!-- Header -->
+  <div class="header">
+    <div class="logo">
+      <span class="logo-text">ExactAI</span>
+    </div>
+    <div class="header-actions">
+      <button class="btn-icon" id="settingsBtn" title="Settings">⚙️</button>
+    </div>
+  </div>
+  
+  <!-- Main Content -->
+  <div class="main-content">
+    <!-- User Profile -->
+    <div class="user-section">
+      <div class="user-info">
+        <div class="user-avatar" id="userAvatar">U</div>
+        <div class="user-details">
+          <div class="user-email" id="userEmail">Loading...</div>
+          <div class="user-since" id="userSince">Member since ...</div>
+        </div>
+        <button class="btn-logout" id="logoutBtn">Sign Out</button>
+      </div>
+    </div>
+    
+    <!-- Subscription Status -->
+    <div class="subscription-card">
+      <div class="subscription-header">
+        <span class="subscription-label">Current Plan</span>
+        <span class="subscription-badge badge-trial" id="subscriptionBadge">TRIAL</span>
+      </div>
+      <div class="subscription-info">
+        <div class="subscription-tier" id="subscriptionTier">Free Trial</div>
+        <div class="subscription-status" id="subscriptionStatus">7 days remaining</div>
+      </div>
+      <div class="trial-progress" id="trialProgress">
+        <div class="trial-progress-bar">
+          <div class="trial-progress-fill" id="trialProgressFill" style="width: 100%;"></div>
+        </div>
+        <div class="trial-days-text" id="trialDaysText">7 of 7 days remaining</div>
+      </div>
+    </div>
+    
+    <!-- Upgrade Options -->
+    <div class="pricing-section" id="pricingSection">
+      <div class="pricing-header">Upgrade your plan</div>
+      <div class="pricing-cards">
+        <div class="pricing-card" data-plan="pro">
+          <div class="pricing-row">
+            <span class="pricing-name">Pro</span>
+            <div class="pricing-price">
+              <span class="price-amount">$5</span>
+              <span class="price-period">/month</span>
+            </div>
+          </div>
+          <div class="pricing-features">Full extraction, AI prompts, shadcn components</div>
+        </div>
+        
+        <div class="pricing-card popular" data-plan="pro-plus">
+          <span class="popular-tag">Popular</span>
+          <div class="pricing-row">
+            <span class="pricing-name">Pro+</span>
+            <div class="pricing-price">
+              <span class="price-amount">$10</span>
+              <span class="price-period">/month</span>
+            </div>
+          </div>
+          <div class="pricing-features">Everything in Pro + animation capture</div>
+        </div>
+        
+        <div class="pricing-card lifetime" data-plan="lifetime">
+          <span class="limited-tag">Limited</span>
+          <div class="pricing-row">
+            <span class="pricing-name">Lifetime</span>
+            <div class="pricing-price">
+              <span class="price-amount">$30</span>
+              <span class="price-period">one-time</span>
+            </div>
+          </div>
+          <div class="pricing-features">All features forever, one-time payment</div>
+          <div class="slots-remaining" id="slotsRemaining">
+            <span>🔥</span>
+            <span id="slotsCount">Loading...</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  
+  <!-- Action Button -->
+  <div class="action-section">
+    <button class="btn-use-app" id="useAppBtn">
+      <span>Start Extracting</span>
+      <span>→</span>
+    </button>
+  </div>
+  
+  <!-- Settings Modal -->
+  <div class="modal-overlay" id="settingsModal">
+    <div class="modal">
+      <div class="modal-header">
+        <span class="modal-title">Settings</span>
+        <button class="modal-close" id="closeSettingsBtn">&times;</button>
+      </div>
+      
+      <div class="form-group">
+        <label class="form-label">Gemini API Key</label>
+        <input type="password" class="form-input" id="apiKeyInput" placeholder="Enter your Gemini API key" />
+        <div class="form-hint">
+          Get your free key from <a href="https://aistudio.google.com/app/apikey" target="_blank">Google AI Studio</a>
+        </div>
+      </div>
+      
+      <button class="btn-save" id="saveSettingsBtn">Save Settings</button>
+    </div>
+  </div>
+  
+  <script src="config.js"></script>
+  <script src="auth-service.js"></script>
+  <script src="trial-service.js"></script>
+  <script src="subscription-service.js"></script>
+  <script src="dashboard.js"></script>
+</body>
+</html>
+

@@ -1,6 +1,28 @@
+// ============================================
+// ExactAI - Background Service Worker
+// Handles messaging, screenshot capture, and auth/subscription sync
+// ============================================
+
 // Track the results tab
 let resultsTabId = null;
 let extractionInProgress = false;
+
+// Subscription sync interval (5 minutes)
+const SYNC_INTERVAL = 5 * 60 * 1000;
+
+// ============================================
+// INITIALIZATION
+// ============================================
+
+// Initialize on install
+chrome.runtime.onInstalled.addListener(async (details) => {
+    console.log('[Background] Extension installed/updated:', details.reason);
+    
+    if (details.reason === 'install') {
+        // First install - could show onboarding
+        console.log('[Background] First install - initializing...');
+    }
+});
 
 // Clean up tracking when tab is closed
 chrome.tabs.onRemoved.addListener((tabId) => {
@@ -9,15 +31,35 @@ chrome.tabs.onRemoved.addListener((tabId) => {
     }
 });
 
+// ============================================
+// MESSAGE HANDLING
+// ============================================
+
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+    // Auth-related messages
+    if (request.type === 'GET_AUTH_STATUS') {
+        handleGetAuthStatus().then(sendResponse);
+        return true;
+    }
+    
+    if (request.type === 'SYNC_SUBSCRIPTION') {
+        handleSyncSubscription().then(sendResponse);
+        return true;
+    }
+    
+    if (request.type === 'CHECK_FEATURE_ACCESS') {
+        handleCheckFeatureAccess(request.feature).then(sendResponse);
+        return true;
+    }
+    
     // Clear old selection when starting a new selection
     if (request.type === 'START_SELECTION') {
         extractionInProgress = false;
         chrome.storage.local.remove(['lastSelection', 'extractionState'], () => {
-            console.log('Cleared old selection data');
+            console.log('[Background] Cleared old selection data');
             sendResponse({ status: 'cleared' });
         });
-        return true; // Keep channel open for async response
+        return true;
     }
     
     // Handle extraction started notification
@@ -79,7 +121,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             lastSelection: dataWithTimestamp,
             extractionState: { inProgress: false, complete: true }
         }, () => {
-            console.log('Design data saved to storage');
+            console.log('[Background] Design data saved to storage');
             
             // Open or focus results tab
             openOrFocusResultsTab();
@@ -89,41 +131,12 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         addToHistory(request.data);
     }
     
-    function openOrFocusResultsTab() {
-        // Check if results tab already exists and is still valid
-        if (resultsTabId) {
-            chrome.tabs.get(resultsTabId, (tab) => {
-                if (chrome.runtime.lastError || !tab) {
-                    // Tab doesn't exist anymore, create a new one
-                    resultsTabId = null;
-                    openResultsTab();
-                } else {
-                    // Tab exists - reload it and focus
-                    chrome.tabs.reload(resultsTabId, {}, () => {
-                        chrome.tabs.update(resultsTabId, { active: true });
-                    });
-                }
-            });
-        } else {
-            openResultsTab();
-        }
-    }
-    
-    function openResultsTab() {
-        chrome.tabs.create({
-            url: chrome.runtime.getURL('results.html'),
-            active: true
-        }, (tab) => {
-            resultsTabId = tab.id;
-        });
-    }
-    
     if (request.type === 'CAPTURE_SCREENSHOT') {
         const bounds = request.bounds;
         
         chrome.tabs.captureVisibleTab(null, { format: 'png' }, (dataUrl) => {
             if (chrome.runtime.lastError) {
-                console.error('Screenshot failed:', chrome.runtime.lastError);
+                console.error('[Background] Screenshot failed:', chrome.runtime.lastError);
                 sendResponse({ screenshot: null, error: chrome.runtime.lastError.message });
                 return;
             }
@@ -138,7 +151,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                     sendResponse({ screenshot: croppedDataUrl });
                 })
                 .catch(err => {
-                    console.error('Crop failed:', err);
+                    console.error('[Background] Crop failed:', err);
                     sendResponse({ screenshot: dataUrl });
                 });
         });
@@ -147,7 +160,123 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     }
 });
 
-// Add capture to history
+// ============================================
+// AUTH & SUBSCRIPTION HANDLERS
+// ============================================
+
+async function handleGetAuthStatus() {
+    try {
+        const result = await chrome.storage.local.get(['exactai_auth', 'exactai_trial', 'exactai_subscription']);
+        
+        return {
+            isAuthenticated: !!(result.exactai_auth && result.exactai_auth.accessToken),
+            user: result.exactai_auth?.user || null,
+            trial: result.exactai_trial || null,
+            subscription: result.exactai_subscription || null
+        };
+    } catch (error) {
+        console.error('[Background] Get auth status error:', error);
+        return { isAuthenticated: false, error: error.message };
+    }
+}
+
+async function handleSyncSubscription() {
+    try {
+        // This would typically call the subscription service
+        // For now, just return the cached status
+        const result = await chrome.storage.local.get(['exactai_subscription']);
+        return { success: true, subscription: result.exactai_subscription };
+    } catch (error) {
+        console.error('[Background] Sync subscription error:', error);
+        return { success: false, error: error.message };
+    }
+}
+
+async function handleCheckFeatureAccess(feature) {
+    try {
+        const result = await chrome.storage.local.get(['exactai_subscription', 'exactai_trial']);
+        
+        const subscription = result.exactai_subscription;
+        const trial = result.exactai_trial;
+        
+        // Default feature access
+        let hasAccess = false;
+        
+        // Check trial first
+        if (trial && trial.startDate) {
+            const startDate = new Date(trial.startDate);
+            const totalDays = trial.days || 7;
+            const endDate = new Date(startDate);
+            endDate.setDate(endDate.getDate() + totalDays);
+            
+            if (new Date() < endDate) {
+                // Trial active - all features available
+                hasAccess = true;
+            }
+        }
+        
+        // Check subscription
+        if (subscription && subscription.isActive) {
+            const tier = subscription.tier;
+            
+            // Feature gating based on tier
+            const featureAccess = {
+                basicExtraction: ['free', 'trial', 'pro', 'pro-plus', 'lifetime'],
+                aiEnhancements: ['trial', 'pro', 'pro-plus', 'lifetime'],
+                shadcnComponents: ['trial', 'pro', 'pro-plus', 'lifetime'],
+                fullPageExtraction: ['trial', 'pro', 'pro-plus', 'lifetime'],
+                animationCapture: ['trial', 'pro-plus', 'lifetime']
+            };
+            
+            if (featureAccess[feature] && featureAccess[feature].includes(tier)) {
+                hasAccess = true;
+            }
+        }
+        
+        return { hasAccess, feature };
+    } catch (error) {
+        console.error('[Background] Check feature access error:', error);
+        return { hasAccess: false, error: error.message };
+    }
+}
+
+// ============================================
+// TAB MANAGEMENT
+// ============================================
+
+function openOrFocusResultsTab() {
+    // Check if results tab already exists and is still valid
+    if (resultsTabId) {
+        chrome.tabs.get(resultsTabId, (tab) => {
+            if (chrome.runtime.lastError || !tab) {
+                // Tab doesn't exist anymore, create a new one
+                resultsTabId = null;
+                openResultsTab();
+            } else {
+                // Tab exists - reload it and focus
+                chrome.tabs.reload(resultsTabId, {}, () => {
+                    chrome.tabs.update(resultsTabId, { active: true });
+                });
+            }
+        });
+    } else {
+        openResultsTab();
+    }
+}
+
+function openResultsTab() {
+    chrome.tabs.create({
+        url: chrome.runtime.getURL('results.html'),
+        active: true
+    }, (tab) => {
+        resultsTabId = tab.id;
+    });
+}
+
+// ============================================
+// HISTORY MANAGEMENT
+// ============================================
+
 async function addToHistory(data) {
     const MAX_HISTORY = 10;
     
@@ -175,7 +304,10 @@ async function addToHistory(data) {
     await chrome.storage.local.set({ captureHistory: history });
 }
 
-// Crop screenshot to element bounds using OffscreenCanvas
+// ============================================
+// SCREENSHOT UTILITIES
+// ============================================
+
 async function cropScreenshot(dataUrl, bounds) {
     const { viewportX, viewportY, width, height, devicePixelRatio } = bounds;
     
@@ -218,3 +350,18 @@ async function cropScreenshot(dataUrl, bounds) {
         reader.readAsDataURL(croppedBlob);
     });
 }
+
+// ============================================
+// PERIODIC SUBSCRIPTION SYNC (Alarm-based)
+// ============================================
+
+// Set up alarm for periodic sync
+chrome.alarms.create('syncSubscription', { periodInMinutes: 5 });
+
+chrome.alarms.onAlarm.addListener(async (alarm) => {
+    if (alarm.name === 'syncSubscription') {
+        console.log('[Background] Running periodic subscription sync');
+        // In a full implementation, this would sync with Supabase
+        // For now, just log that it ran
+    }
+});
