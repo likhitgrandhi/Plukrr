@@ -41,6 +41,206 @@ function isValidColor(color) {
 }
 
 // ============================================
+// ANIMATION DATA FORMATTING
+// ============================================
+
+/**
+ * Format animation data for inclusion in prompts
+ */
+function formatAnimationData(animationData) {
+    if (!animationData || !animationData.hasAnimations) {
+        return null;
+    }
+    
+    const lines = [];
+    
+    lines.push('════════════════════════════════════════════════════════════════════');
+    lines.push('🎬 ANIMATION DATA DETECTED');
+    lines.push('════════════════════════════════════════════════════════════════════');
+    lines.push('');
+    
+    // Detected libraries
+    if (animationData.detectedLibraries && animationData.detectedLibraries.length > 0) {
+        lines.push('📚 DETECTED ANIMATION LIBRARIES:');
+        for (const lib of animationData.detectedLibraries) {
+            lines.push(`  • ${lib.name}${lib.version ? ` (v${lib.version})` : ''}`);
+            if (lib.indicators && lib.indicators.length > 0) {
+                lines.push(`    Indicators: ${lib.indicators.join(', ')}`);
+            }
+        }
+        lines.push('');
+    }
+    
+    // Animation types
+    if (animationData.animationTypes && animationData.animationTypes.length > 0) {
+        lines.push('🎯 ANIMATION TYPES:');
+        lines.push(`  ${animationData.animationTypes.join(', ')}`);
+        lines.push('');
+    }
+    
+    // CSS Animations
+    if (animationData.cssAnimations && animationData.cssAnimations.length > 0) {
+        lines.push('🎨 CSS ANIMATIONS:');
+        for (const anim of animationData.cssAnimations.slice(0, 5)) {
+            if (anim.type === 'css-animation') {
+                lines.push(`  • Element: ${anim.element}`);
+                lines.push(`    animation: ${anim.animationName} ${anim.duration} ${anim.timingFunction}`);
+                if (anim.iterationCount !== '1') {
+                    lines.push(`    iteration-count: ${anim.iterationCount}`);
+                }
+            } else if (anim.type === 'css-transition') {
+                lines.push(`  • Element: ${anim.element}`);
+                lines.push(`    transition: ${anim.property} ${anim.duration} ${anim.timingFunction}`);
+            }
+        }
+        if (animationData.cssAnimations.length > 5) {
+            lines.push(`  ... and ${animationData.cssAnimations.length - 5} more CSS animations`);
+        }
+        lines.push('');
+    }
+    
+    // Scroll animations
+    if (animationData.scrollAnimations && animationData.scrollAnimations.length > 0) {
+        lines.push('📜 SCROLL-BASED ANIMATIONS:');
+        for (const scroll of animationData.scrollAnimations.slice(0, 3)) {
+            lines.push(`  • Type: ${scroll.type}`);
+            lines.push(`    Element: ${scroll.element}`);
+            if (scroll.animation) lines.push(`    Animation: ${scroll.animation}`);
+        }
+        lines.push('');
+    }
+    
+    // Canvas animations
+    if (animationData.canvasAnimations && animationData.canvasAnimations.length > 0) {
+        lines.push('🖼️ CANVAS ANIMATIONS:');
+        for (const canvas of animationData.canvasAnimations) {
+            lines.push(`  • ID: ${canvas.id || 'unnamed'}`);
+            lines.push(`    Dimensions: ${canvas.dimensions?.width}×${canvas.dimensions?.height}`);
+            lines.push(`    Context: ${canvas.contextType?.type || 'unknown'}`);
+            if (canvas.animationHints && canvas.animationHints.length > 0) {
+                lines.push(`    Hints: ${canvas.animationHints.join(', ')}`);
+            }
+        }
+        lines.push('');
+    }
+    
+    // Three.js data
+    if (animationData.jsAnimations?.threejs) {
+        const three = animationData.jsAnimations.threejs;
+        lines.push('🎮 THREE.JS SCENE DATA:');
+        lines.push(`  Version: ${three.version || 'unknown'}`);
+        if (three.renderers && three.renderers.length > 0) {
+            lines.push(`  Renderers: ${three.renderers.length}`);
+            for (const r of three.renderers) {
+                lines.push(`    • ${r.dimensions?.width}×${r.dimensions?.height} (${r.contextType})`);
+            }
+        }
+        if (three.scenes && three.scenes.length > 0) {
+            lines.push(`  Scenes captured: ${three.scenes.length}`);
+        }
+        lines.push('');
+    }
+    
+    // GSAP data
+    if (animationData.jsAnimations?.gsap) {
+        const gsap = animationData.jsAnimations.gsap;
+        lines.push('⚡ GSAP ANIMATION DATA:');
+        lines.push(`  Version: ${gsap.version?.version || 'unknown'} (${gsap.version?.type || 'unknown'})`);
+        if (gsap.plugins && gsap.plugins.length > 0) {
+            lines.push(`  Plugins: ${gsap.plugins.map(p => p.name).join(', ')}`);
+        }
+        if (gsap.timelines && gsap.timelines.length > 0) {
+            lines.push(`  Timelines: ${gsap.timelines.length}`);
+            for (const tl of gsap.timelines.slice(0, 2)) {
+                lines.push(`    • Duration: ${tl.duration}s, Children: ${tl.children?.length || 0}`);
+            }
+        }
+        if (gsap.scrollTriggers && gsap.scrollTriggers.length > 0) {
+            lines.push(`  ScrollTriggers: ${gsap.scrollTriggers.length}`);
+        }
+        lines.push('');
+    }
+    
+    return lines.join('\n');
+}
+
+/**
+ * Format generated animation code for prompts
+ */
+function formatGeneratedAnimationCode(animationData) {
+    if (!animationData || !animationData.generatedCode) {
+        return null;
+    }
+    
+    const lines = [];
+    const code = animationData.generatedCode;
+    
+    lines.push('════════════════════════════════════════════════════════════════════');
+    lines.push('📝 GENERATED ANIMATION CODE');
+    lines.push('════════════════════════════════════════════════════════════════════');
+    lines.push('');
+    
+    if (code.threejs) {
+        lines.push('### THREE.JS SETUP CODE:');
+        lines.push('```javascript');
+        lines.push(code.threejs);
+        lines.push('```');
+        lines.push('');
+    }
+    
+    if (code.gsap) {
+        lines.push('### GSAP ANIMATION CODE:');
+        lines.push('```javascript');
+        lines.push(code.gsap);
+        lines.push('```');
+        lines.push('');
+    }
+    
+    if (code.canvas) {
+        lines.push('### CANVAS ANIMATION CODE:');
+        lines.push('```javascript');
+        lines.push(code.canvas);
+        lines.push('```');
+        lines.push('');
+    }
+    
+    // Library suggestions
+    if (animationData.librarySuggestions && animationData.librarySuggestions.length > 0) {
+        lines.push('### LIBRARY SUGGESTIONS:');
+        for (const suggestion of animationData.librarySuggestions) {
+            lines.push(`\n#### ${suggestion.library}:`);
+            lines.push('```javascript');
+            lines.push(suggestion.code);
+            lines.push('```');
+        }
+        lines.push('');
+    }
+    
+    return lines.join('\n');
+}
+
+/**
+ * Get animation complexity description
+ */
+function getAnimationComplexityDescription(animationData) {
+    if (!animationData || !animationData.hasAnimations) {
+        return 'No animations detected';
+    }
+    
+    const complexity = animationData.metadata?.complexity || 'unknown';
+    const typeCount = animationData.animationTypes?.length || 0;
+    const libCount = animationData.detectedLibraries?.length || 0;
+    
+    let desc = `Complexity: ${complexity.toUpperCase()}`;
+    desc += ` | ${typeCount} animation type(s)`;
+    if (libCount > 0) {
+        desc += ` | ${libCount} library/libraries detected`;
+    }
+    
+    return desc;
+}
+
+// ============================================
 // PIXEL-PERFECT DATA EXTRACTION
 // ============================================
 
@@ -742,7 +942,18 @@ REQUIREMENTS FOR PIXEL PERFECTION:
 6. ✅ Match typography: size, weight, line-height, letter-spacing
 7. ✅ Preserve layout: flex/grid settings, gap, alignment
 8. ✅ Text content should be configurable via props
-════════════════════════════════════════════════════════════════════`;
+════════════════════════════════════════════════════════════════════
+${data.animationData && data.animationData.hasAnimations ? `
+${formatAnimationData(data.animationData)}
+${formatGeneratedAnimationCode(data.animationData)}
+════════════════════════════════════════════════════════════════════
+⚠️ ANIMATION REPLICATION NOTES:
+• CSS animations can be replicated exactly using the keyframes shown
+• Three.js scenes require manual asset loading (textures, models)
+• GSAP timelines are provided as starter code - adjust targets as needed
+• Canvas animations may need adaptation based on your implementation
+• For complex 3D animations, the generated code provides a foundation
+════════════════════════════════════════════════════════════════════` : ''}`;
     },
 
     // ==========================================
@@ -887,6 +1098,118 @@ Generate CSS variables mapping the above extracted values:
 This mode uses AI to generate a production-ready React component with shadcn/ui.
 
 Processing with Gemini AI...`;
+    },
+
+    // ==========================================
+    // 5. REPLICATE ANIMATION - Animation-focused
+    // ==========================================
+    'replicate-animation': (data) => {
+        if (!data || !data.tree) {
+            return 'Error: No design data available. Please select an element.';
+        }
+        
+        const animationData = data.animationData || {};
+        const hasAnimations = animationData.hasAnimations;
+        const rootDims = data.tree.dimensions || {};
+        
+        if (!hasAnimations) {
+            return `⚠️ NO ANIMATIONS DETECTED
+
+The selected element does not appear to have JavaScript-powered animations.
+
+Checked for:
+• CSS animations and transitions
+• Three.js / WebGL scenes
+• GSAP timelines and tweens
+• Canvas animations
+• Scroll-based animations (AOS, ScrollTrigger, etc.)
+• Web Animations API
+
+Tips:
+• Make sure to select an element that contains animated content
+• For canvas/WebGL animations, select the canvas element directly
+• Some animations only trigger on user interaction - try hovering or scrolling first
+• Animations may be using a library we don't yet support
+
+If you believe there are animations present, try:
+1. Refreshing the page and triggering the animation
+2. Selecting a parent container of the animated element
+3. Using browser dev tools to verify animation presence`;
+        }
+        
+        const animationInfo = formatAnimationData(animationData);
+        const generatedCode = formatGeneratedAnimationCode(animationData);
+        const complexity = getAnimationComplexityDescription(animationData);
+        
+        return `TASK: Replicate the JavaScript-powered animations from this element.
+
+📎 NOTE: Use the attached screenshot as visual reference.
+
+════════════════════════════════════════════════════════════════════
+ANIMATION OVERVIEW
+════════════════════════════════════════════════════════════════════
+📐 Element Size: ${rootDims.width || '?'}px × ${rootDims.height || '?'}px
+🎬 ${complexity}
+
+${animationInfo || 'No detailed animation info available.'}
+
+${generatedCode || ''}
+
+════════════════════════════════════════════════════════════════════
+IMPLEMENTATION GUIDE
+════════════════════════════════════════════════════════════════════
+
+${animationData.animationTypes?.includes('threejs') ? `
+### THREE.JS IMPLEMENTATION:
+1. Install Three.js: \`npm install three\`
+2. Import and use the generated scene setup code
+3. Customize geometry, materials, and lighting as needed
+4. Add your own animation logic in the animate() loop
+5. Note: Original textures/models must be sourced separately
+` : ''}
+
+${animationData.animationTypes?.includes('gsap') ? `
+### GSAP IMPLEMENTATION:
+1. Install GSAP: \`npm install gsap\`
+2. Import GSAP and any required plugins
+3. Use the generated timeline code as a starting point
+4. Adjust selectors to match your element structure
+5. Fine-tune timing and easing to match the original
+` : ''}
+
+${animationData.animationTypes?.includes('css') ? `
+### CSS ANIMATION IMPLEMENTATION:
+1. Copy the @keyframes definitions to your CSS
+2. Apply animation properties to target elements
+3. Adjust timing-function if needed to match feel
+4. Consider using CSS custom properties for reusability
+` : ''}
+
+${animationData.animationTypes?.includes('canvas') ? `
+### CANVAS ANIMATION IMPLEMENTATION:
+1. Create a canvas element with appropriate dimensions
+2. Get the rendering context (2D or WebGL)
+3. Use the generated setup code as a foundation
+4. Implement your drawing/animation logic
+5. Use requestAnimationFrame for smooth animation
+` : ''}
+
+${animationData.animationTypes?.includes('scroll') ? `
+### SCROLL ANIMATION IMPLEMENTATION:
+1. Install the detected library (GSAP ScrollTrigger, AOS, etc.)
+2. Initialize the library on page load
+3. Apply data attributes or configuration as shown
+4. Test scroll positions and adjust triggers as needed
+` : ''}
+
+════════════════════════════════════════════════════════════════════
+⚠️ IMPORTANT NOTES:
+• Generated code provides a starting structure, not exact replication
+• External assets (3D models, textures, fonts) must be sourced separately  
+• Complex WebGL shaders cannot be automatically captured
+• Animation timing may need manual adjustment
+• Test across browsers for consistent behavior
+════════════════════════════════════════════════════════════════════`;
     }
 };
 
@@ -963,8 +1286,13 @@ window.EnhancedPromptGenerator = {
     safeJoin,
     safeGet,
     
+    // Animation utilities
+    formatAnimationData,
+    formatGeneratedAnimationCode,
+    getAnimationComplexityDescription,
+    
     // Templates
     CORE_PROMPTS
 };
 
-console.log('[EnhancedPromptGenerator] Module loaded - v4.1 Pixel Perfect with null safety');
+console.log('[EnhancedPromptGenerator] Module loaded - v4.2 Pixel Perfect with Animation Support');

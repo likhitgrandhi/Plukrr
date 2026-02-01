@@ -607,12 +607,29 @@
             console.log(`[Design Copier] Built tree with ${elementCount} elements (maxDepth=${maxDepth})`);
             
             if (isComplexElement) {
-                updateLoaderProgress('Extracting styles...', 'Step 4 of 4');
+                updateLoaderProgress('Extracting styles...', 'Step 4 of 5');
                 await new Promise(resolve => setTimeout(resolve, 10)); // Allow UI to update
             }
             
             const isPageLevel = isPageLevelElement(el);
             const globalCSS = extractPageGlobalCSS();
+            
+            // ============================================
+            // ANIMATION DETECTION
+            // ============================================
+            let animationData = null;
+            try {
+                if (isComplexElement) {
+                    updateLoaderProgress('Detecting animations...', 'Step 5 of 5');
+                    await new Promise(resolve => setTimeout(resolve, 10));
+                }
+                animationData = await captureAnimationData(el);
+                if (animationData?.hasAnimations) {
+                    console.log(`[Design Copier] Detected animations:`, animationData.animationTypes);
+                }
+            } catch (animErr) {
+                console.warn('[Design Copier] Animation detection failed:', animErr);
+            }
             
             // Viewport and page context
             const viewportContext = {
@@ -644,6 +661,8 @@
                     selectedTag: el.tagName?.toLowerCase(),
                     componentType: detectComponentType(el)
                 },
+                // Animation data
+                animationData: animationData,
                 _extractionComplete: true // Signal that extraction finished successfully
             };
             
@@ -766,6 +785,154 @@
             
             img.src = dataUrl;
         });
+    }
+
+    // ============================================
+    // ANIMATION CAPTURE INTEGRATION
+    // ============================================
+    
+    /**
+     * Capture all animation data for an element
+     * Integrates with AnimationDetector, ThreeJSCapture, GSAPCapture, and CanvasAnimationCapture
+     */
+    async function captureAnimationData(el) {
+        const animationData = {
+            hasAnimations: false,
+            animationTypes: [],
+            detectedLibraries: [],
+            cssAnimations: [],
+            webAnimations: [],
+            jsAnimations: {},
+            canvasAnimations: [],
+            scrollAnimations: [],
+            generatedCode: {},
+            metadata: {
+                captureTime: Date.now()
+            }
+        };
+        
+        try {
+            // Use AnimationDetector if available
+            if (window.AnimationDetector) {
+                const detection = window.AnimationDetector.detectAllAnimations(el);
+                
+                animationData.hasAnimations = detection.hasAnimations;
+                animationData.animationTypes = detection.animationTypes || [];
+                animationData.detectedLibraries = detection.detectedLibraries || [];
+                animationData.cssAnimations = detection.cssAnimations || [];
+                animationData.webAnimations = detection.webAnimations || [];
+                animationData.scrollAnimations = detection.scrollAnimations || [];
+                animationData.metadata.complexity = detection.complexity;
+            }
+            
+            // Capture Three.js specific data if available
+            if (window.ThreeJSCapture && window.ThreeJSCapture.isThreeJsAvailable()) {
+                try {
+                    const threeData = await window.ThreeJSCapture.captureThreeJs(el);
+                    if (threeData) {
+                        animationData.jsAnimations.threejs = {
+                            version: threeData.version,
+                            renderers: threeData.renderers?.map(r => ({
+                                dimensions: r.dimensions,
+                                contextType: r.contextType,
+                                isLikelyThreeJs: r.isLikelyThreeJs
+                            })),
+                            scenes: threeData.scenes?.map(s => ({
+                                name: s.name,
+                                data: s.data
+                            })),
+                            animations: threeData.animations,
+                            // Store first snapshot only to save space
+                            snapshot: threeData.snapshots?.[0]?.dataUrl || null,
+                            notes: threeData.notes
+                        };
+                        animationData.generatedCode.threejs = threeData.generatedCode;
+                        
+                        if (!animationData.animationTypes.includes('threejs')) {
+                            animationData.animationTypes.push('threejs');
+                        }
+                        animationData.hasAnimations = true;
+                    }
+                } catch (e) {
+                    console.warn('[Design Copier] Three.js capture failed:', e);
+                }
+            }
+            
+            // Capture GSAP specific data if available
+            if (window.GSAPCapture && window.GSAPCapture.isGsapAvailable()) {
+                try {
+                    const gsapData = await window.GSAPCapture.captureGsap(el);
+                    if (gsapData) {
+                        animationData.jsAnimations.gsap = {
+                            version: gsapData.version,
+                            plugins: gsapData.plugins,
+                            timelines: gsapData.timelines,
+                            scrollTriggers: gsapData.scrollTriggers,
+                            notes: gsapData.notes
+                        };
+                        animationData.generatedCode.gsap = gsapData.generatedCode;
+                        
+                        if (!animationData.animationTypes.includes('gsap')) {
+                            animationData.animationTypes.push('gsap');
+                        }
+                        if (gsapData.timelines?.length > 0 || gsapData.scrollTriggers?.length > 0) {
+                            animationData.hasAnimations = true;
+                        }
+                    }
+                } catch (e) {
+                    console.warn('[Design Copier] GSAP capture failed:', e);
+                }
+            }
+            
+            // Capture canvas animations
+            if (window.CanvasAnimationCapture) {
+                const canvasElements = el.tagName === 'CANVAS' ? 
+                    [el] : el.querySelectorAll('canvas');
+                
+                if (canvasElements.length > 0) {
+                    try {
+                        const canvasData = await window.CanvasAnimationCapture.captureCanvasAnimation(el, {
+                            snapshotCount: 3,
+                            snapshotInterval: 150
+                        });
+                        
+                        if (canvasData && canvasData.canvases?.length > 0) {
+                            animationData.canvasAnimations = canvasData.canvases.map(c => ({
+                                id: c.id,
+                                dimensions: c.dimensions,
+                                contextType: c.contextType,
+                                isAnimated: c.analysis?.isAnimated,
+                                animationHints: c.animationHints,
+                                // Store first snapshot only
+                                snapshot: c.snapshots?.[0]?.dataUrl || null
+                            }));
+                            animationData.generatedCode.canvas = canvasData.generatedCode;
+                            animationData.librarySuggestions = canvasData.librarySuggestions;
+                            
+                            if (canvasData.animationAnalysis?.animatedCanvases > 0) {
+                                animationData.hasAnimations = true;
+                                if (!animationData.animationTypes.includes('canvas')) {
+                                    animationData.animationTypes.push('canvas');
+                                }
+                            }
+                        }
+                    } catch (e) {
+                        console.warn('[Design Copier] Canvas capture failed:', e);
+                    }
+                }
+            }
+            
+            // Update metadata
+            animationData.metadata.captureComplete = true;
+            animationData.metadata.totalTypes = animationData.animationTypes.length;
+            animationData.metadata.hasGeneratedCode = Object.keys(animationData.generatedCode).length > 0;
+            
+        } catch (e) {
+            console.error('[Design Copier] Animation capture error:', e);
+            animationData.metadata.error = e.message;
+        }
+        
+        return animationData;
     }
 
     // Values that indicate a property is at its default/meaningless state

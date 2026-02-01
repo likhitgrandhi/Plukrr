@@ -40,6 +40,13 @@ const INTENTS = {
         description: 'React components',
         icon: '🧱',
         requiresAI: true
+    },
+    'replicate-animation': {
+        id: 'replicate-animation',
+        label: 'Animations',
+        description: 'JS animation code',
+        icon: '🎬',
+        requiresAnimations: true
     }
 };
 
@@ -96,6 +103,164 @@ function collectSpacing(node, spacing = new Set()) {
     });
     (node.children || []).forEach(child => collectSpacing(child, spacing));
     return spacing;
+}
+
+// ============================================
+// ANIMATION INFO RENDERING
+// ============================================
+
+function renderAnimationInfo(data) {
+    const animationInfoEl = document.getElementById('animationInfo');
+    if (!animationInfoEl) return;
+    
+    const animationData = data.animationData;
+    
+    // Hide if no animation data
+    if (!animationData || !animationData.hasAnimations) {
+        animationInfoEl.style.display = 'none';
+        return;
+    }
+    
+    animationInfoEl.style.display = 'block';
+    
+    const complexity = animationData.metadata?.complexity || 'unknown';
+    const complexityClass = complexity === 'complex' ? 'complex' : 
+                           complexity === 'moderate' ? 'moderate' : 'simple';
+    
+    // Build libraries HTML
+    let librariesHtml = '';
+    if (animationData.detectedLibraries && animationData.detectedLibraries.length > 0) {
+        librariesHtml = `
+            <div class="animation-libraries">
+                ${animationData.detectedLibraries.map(lib => {
+                    const libClass = lib.id === 'threejs' ? 'threejs' : 
+                                    lib.id === 'gsap' ? 'gsap' : '';
+                    return `<span class="library-tag ${libClass}">${lib.name}${lib.version ? ` v${lib.version}` : ''}</span>`;
+                }).join('')}
+            </div>
+        `;
+    }
+    
+    // Build animation types HTML
+    let typesHtml = '';
+    if (animationData.animationTypes && animationData.animationTypes.length > 0) {
+        typesHtml = `
+            <div class="animation-types">
+                ${animationData.animationTypes.map(type => 
+                    `<span class="animation-type-tag">${type}</span>`
+                ).join('')}
+            </div>
+        `;
+    }
+    
+    // Build stats summary
+    const statsItems = [];
+    if (animationData.cssAnimations?.length > 0) {
+        statsItems.push(`${animationData.cssAnimations.length} CSS`);
+    }
+    if (animationData.canvasAnimations?.length > 0) {
+        statsItems.push(`${animationData.canvasAnimations.length} Canvas`);
+    }
+    if (animationData.jsAnimations?.threejs) {
+        statsItems.push('Three.js');
+    }
+    if (animationData.jsAnimations?.gsap) {
+        statsItems.push('GSAP');
+    }
+    if (animationData.scrollAnimations?.length > 0) {
+        statsItems.push(`${animationData.scrollAnimations.length} Scroll`);
+    }
+    
+    // Build code buttons
+    let codeButtonsHtml = '';
+    const hasCode = animationData.generatedCode && Object.keys(animationData.generatedCode).length > 0;
+    if (hasCode) {
+        const codeTabs = Object.keys(animationData.generatedCode);
+        codeButtonsHtml = `
+            <div style="margin-top: 12px;">
+                <button class="animation-code-btn" id="toggleAnimationCodeBtn">
+                    <span>📝</span> View Generated Code
+                </button>
+                <div id="animationCodeContainer" style="display: none;">
+                    <div class="animation-code-tabs">
+                        ${codeTabs.map((tab, i) => 
+                            `<button class="animation-code-tab ${i === 0 ? 'active' : ''}" data-code-tab="${tab}">
+                                ${tab.charAt(0).toUpperCase() + tab.slice(1)}
+                            </button>`
+                        ).join('')}
+                    </div>
+                    <div class="animation-code-section">
+                        <pre id="animationCodeContent">${escapeHtml(animationData.generatedCode[codeTabs[0]] || 'No code available')}</pre>
+                    </div>
+                    <button class="animation-code-btn" style="margin-top: 8px;" id="copyAnimationCodeBtn">
+                        <span>📋</span> Copy Code
+                    </button>
+                </div>
+            </div>
+        `;
+    }
+    
+    animationInfoEl.innerHTML = `
+        <div class="animation-info-section">
+            <div class="animation-header">
+                <span class="animation-icon">🎬</span>
+                <span class="animation-title">Animations Detected</span>
+                <span class="animation-badge ${complexityClass}">${complexity}</span>
+            </div>
+            ${librariesHtml}
+            ${typesHtml}
+            ${statsItems.length > 0 ? `<div style="font-size: 12px; color: #6b6b6b; margin-bottom: 8px;">Found: ${statsItems.join(' • ')}</div>` : ''}
+            ${codeButtonsHtml}
+        </div>
+    `;
+    
+    // Attach event listeners
+    if (hasCode) {
+        const toggleBtn = document.getElementById('toggleAnimationCodeBtn');
+        const codeContainer = document.getElementById('animationCodeContainer');
+        const codeContent = document.getElementById('animationCodeContent');
+        const copyBtn = document.getElementById('copyAnimationCodeBtn');
+        
+        if (toggleBtn && codeContainer) {
+            toggleBtn.addEventListener('click', () => {
+                const isVisible = codeContainer.style.display !== 'none';
+                codeContainer.style.display = isVisible ? 'none' : 'block';
+                toggleBtn.innerHTML = isVisible ? 
+                    '<span>📝</span> View Generated Code' : 
+                    '<span>📝</span> Hide Code';
+            });
+        }
+        
+        // Tab switching
+        document.querySelectorAll('.animation-code-tab').forEach(tab => {
+            tab.addEventListener('click', () => {
+                const tabName = tab.dataset.codeTab;
+                document.querySelectorAll('.animation-code-tab').forEach(t => t.classList.remove('active'));
+                tab.classList.add('active');
+                if (codeContent && animationData.generatedCode[tabName]) {
+                    codeContent.textContent = animationData.generatedCode[tabName];
+                }
+            });
+        });
+        
+        // Copy button
+        if (copyBtn && codeContent) {
+            copyBtn.addEventListener('click', async () => {
+                await navigator.clipboard.writeText(codeContent.textContent);
+                showToast('Animation code copied!');
+            });
+        }
+    }
+}
+
+function escapeHtml(text) {
+    if (!text) return '';
+    return text
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
 }
 
 function collectBorderRadius(node, radii = new Set()) {
@@ -1939,6 +2104,20 @@ function renderPage(data) {
                 showToast(`Copied: ${swatch.dataset.color}`);
             });
         });
+    }
+    
+    // Render animation info if present
+    renderAnimationInfo(data);
+    
+    // Show/hide animation intent button based on detected animations
+    const animationIntentBtn = document.querySelector('[data-intent="replicate-animation"]');
+    const intentSelector = document.getElementById('intentSelector');
+    if (animationIntentBtn && data.animationData?.hasAnimations) {
+        animationIntentBtn.style.display = 'block';
+        intentSelector?.classList.add('has-animations');
+    } else if (animationIntentBtn) {
+        animationIntentBtn.style.display = 'none';
+        intentSelector?.classList.remove('has-animations');
     }
     
     // Load stored intent from popup and then generate output

@@ -273,6 +273,173 @@
       font-weight: 600;
     }
     
+    /* Animation Info */
+    .animation-info-section {
+      margin-top: 16px;
+      padding: 16px;
+      background: linear-gradient(135deg, #fff8f0 0%, #f0f8ff 100%);
+      border-radius: 12px;
+      border: 1px solid #e8e0d8;
+    }
+    
+    .animation-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+    
+    .animation-icon {
+      font-size: 20px;
+    }
+    
+    .animation-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: #5a5a5a;
+    }
+    
+    .animation-badge {
+      padding: 3px 10px;
+      border-radius: 12px;
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+    
+    .animation-badge.complex {
+      background: linear-gradient(135deg, #ff6b6b 0%, #ffa94d 100%);
+      color: white;
+    }
+    
+    .animation-badge.moderate {
+      background: linear-gradient(135deg, #ffa94d 0%, #ffd43b 100%);
+      color: #5a5a5a;
+    }
+    
+    .animation-badge.simple {
+      background: linear-gradient(135deg, #51cf66 0%, #94d82d 100%);
+      color: white;
+    }
+    
+    .animation-libraries {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-bottom: 12px;
+    }
+    
+    .library-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 4px 10px;
+      background: white;
+      border: 1px solid #e0e0e0;
+      border-radius: 16px;
+      font-size: 11px;
+      font-weight: 500;
+      color: #5a5a5a;
+    }
+    
+    .library-tag.threejs {
+      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+      border-color: #2d3a5a;
+      color: #7fdbff;
+    }
+    
+    .library-tag.gsap {
+      background: linear-gradient(135deg, #88ce02 0%, #5fa502 100%);
+      border-color: #4a8a02;
+      color: white;
+    }
+    
+    .library-tag.css {
+      background: linear-gradient(135deg, #264de4 0%, #2965f1 100%);
+      border-color: #1e4ab8;
+      color: white;
+    }
+    
+    .animation-types {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-bottom: 12px;
+    }
+    
+    .animation-type-tag {
+      padding: 3px 8px;
+      background: #f0f0eb;
+      border-radius: 6px;
+      font-size: 10px;
+      color: #5a5a5a;
+    }
+    
+    .animation-code-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 14px;
+      background: #6b8f71;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    
+    .animation-code-btn:hover {
+      background: #5a7d5f;
+    }
+    
+    .animation-code-section {
+      margin-top: 12px;
+      padding: 12px;
+      background: #1e1e1e;
+      border-radius: 8px;
+      max-height: 200px;
+      overflow-y: auto;
+    }
+    
+    .animation-code-section pre {
+      margin: 0;
+      font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas, monospace;
+      font-size: 11px;
+      line-height: 1.5;
+      color: #d4d4d4;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    
+    .animation-code-tabs {
+      display: flex;
+      gap: 4px;
+      margin-bottom: 8px;
+    }
+    
+    .animation-code-tab {
+      padding: 6px 12px;
+      background: transparent;
+      border: none;
+      border-radius: 6px;
+      font-size: 11px;
+      font-weight: 500;
+      color: #9a9a9a;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    
+    .animation-code-tab:hover {
+      background: rgba(255, 255, 255, 0.1);
+    }
+    
+    .animation-code-tab.active {
+      background: rgba(107, 143, 113, 0.2);
+      color: #8fb996;
+    }
+    
     /* Empty state */
     .empty-state {
       text-align: center;
@@ -1022,6 +1189,47 @@
       box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
     }
     
+    /* Animation Intent Styling */
+    .intent-option.animation-intent {
+      background: linear-gradient(135deg, #fff8f0 0%, #f0f8ff 100%);
+      border: 2px solid #ffd8a8;
+    }
+    
+    .intent-option.animation-intent .intent-label {
+      color: #c2410c;
+    }
+    
+    .intent-option.animation-intent .intent-desc {
+      color: #ea580c;
+    }
+    
+    .intent-option.animation-intent:hover {
+      background: linear-gradient(135deg, #ffedd5 0%, #e0f2fe 100%);
+      border-color: #fb923c;
+    }
+    
+    .intent-option.animation-intent.active {
+      background: linear-gradient(135deg, #fed7aa 0%, #bae6fd 100%);
+      border-color: #f97316;
+      box-shadow: 0 0 0 3px rgba(249, 115, 22, 0.2);
+    }
+    
+    /* 5-column grid when animations are detected */
+    .intent-selector.has-animations {
+      grid-template-columns: 1fr 1fr 1fr;
+    }
+    
+    .intent-selector.has-animations .intent-option:nth-child(4),
+    .intent-selector.has-animations .intent-option:nth-child(5) {
+      grid-column: span 1;
+    }
+    
+    @media (max-width: 600px) {
+      .intent-selector.has-animations {
+        grid-template-columns: 1fr 1fr;
+      }
+    }
+    
     /* Shadcn Output Section */
     .shadcn-output-section {
       display: none;
@@ -1471,6 +1679,7 @@
           <div class="card-header">Quick Reference</div>
           <div class="quick-stats" id="quickStats"></div>
           <div id="colorSwatches"></div>
+          <div id="animationInfo" style="display: none;"></div>
         </div>
       </div>
       
@@ -1497,6 +1706,10 @@
             <button class="intent-option shadcn-intent" data-intent="shadcn-component">
               <div class="intent-label">🧱 shadcn/ui</div>
               <div class="intent-desc">React components</div>
+            </button>
+            <button class="intent-option animation-intent" data-intent="replicate-animation" style="display: none;">
+              <div class="intent-label">🎬 Animations</div>
+              <div class="intent-desc">JS animation code</div>
             </button>
           </div>
           

@@ -100,7 +100,30 @@
         // Interactions
         interactions: [
             'cursor', 'pointer-events', 'user-select', 'transition', 'animation'
+        ],
+        // Animation properties
+        animations: [
+            'animation', 'animation-name', 'animation-duration', 'animation-timing-function',
+            'animation-delay', 'animation-iteration-count', 'animation-direction',
+            'animation-fill-mode', 'animation-play-state',
+            'transition', 'transition-property', 'transition-duration',
+            'transition-timing-function', 'transition-delay',
+            'transform', 'transform-origin', 'transform-style',
+            'perspective', 'perspective-origin', 'will-change'
         ]
+    };
+
+    // Animation library indicators
+    const ANIMATION_INDICATORS = {
+        css: ['animation', 'transition', '@keyframes'],
+        transform: ['rotate', 'scale', 'translate', 'skew', 'matrix', '3d'],
+        libraries: {
+            gsap: ['gsap', 'TweenMax', 'TweenLite', 'TimelineMax', 'TimelineLite'],
+            threejs: ['THREE', 'WebGLRenderer', 'Scene', 'PerspectiveCamera'],
+            framer: ['framer', 'motion', 'AnimatePresence'],
+            animejs: ['anime'],
+            lottie: ['lottie', 'bodymovin']
+        }
     };
 
     // ============================================
@@ -273,11 +296,46 @@
             signals.push('gap');
         }
 
+        // Animation/transition (2 points - indicates interactivity)
+        if (hasAnimation(styles)) {
+            score += 2;
+            signals.push('animation');
+        }
+        if (hasTransition(styles)) {
+            score += 1;
+            signals.push('transition');
+        }
+
+        // Transform (1 point - often indicates animation state)
+        if (styles.transform && styles.transform !== 'none' && 
+            styles.transform !== 'matrix(1, 0, 0, 1, 0, 0)') {
+            score += 1;
+            signals.push('transform');
+        }
+
+        // Canvas element (3 points - high significance for animation)
+        if (node.tag === 'canvas') {
+            score += 3;
+            signals.push('canvas');
+        }
+
         return {
             score,
             signals,
             isSignificant: score >= 2
         };
+    }
+
+    function hasAnimation(styles) {
+        const animation = styles.animation || styles['animation-name'];
+        return animation && animation !== 'none' && 
+               animation !== 'none 0s ease 0s 1 normal none running';
+    }
+
+    function hasTransition(styles) {
+        const transition = styles.transition || styles['transition-property'];
+        return transition && transition !== 'none' && 
+               transition !== 'all 0s ease 0s';
     }
 
     function hasNonDefaultBackground(styles) {
@@ -625,6 +683,7 @@
         const patterns = extractPatterns(data.tree);
         const rootOrganized = organizeStyles(data.tree, context);
         const significantElements = findSignificantElements(data.tree);
+        const animationAnalysis = analyzeAnimations(data);
 
         // Build analysis result
         return {
@@ -637,12 +696,134 @@
                 role: data.tree.role
             },
             significantElements,
+            animations: animationAnalysis,
             // Pass through original data
             originalTree: data.tree,
             globalCSS: data.globalCSS,
             viewportContext: data.viewportContext,
-            elementCount: data.elementCount
+            elementCount: data.elementCount,
+            animationData: data.animationData
         };
+    }
+
+    /**
+     * Analyze animation data and provide recommendations
+     */
+    function analyzeAnimations(data) {
+        const animationData = data.animationData;
+        const tree = data.tree;
+        
+        const analysis = {
+            hasAnimations: false,
+            complexity: 'none',
+            types: [],
+            libraries: [],
+            cssAnimations: [],
+            recommendations: []
+        };
+        
+        // Check for animations from animationData
+        if (animationData && animationData.hasAnimations) {
+            analysis.hasAnimations = true;
+            analysis.complexity = animationData.metadata?.complexity || 'unknown';
+            analysis.types = animationData.animationTypes || [];
+            analysis.libraries = (animationData.detectedLibraries || []).map(lib => lib.name);
+            
+            // Add recommendations based on detected animations
+            if (animationData.animationTypes?.includes('threejs')) {
+                analysis.recommendations.push({
+                    type: 'threejs',
+                    priority: 'high',
+                    message: 'Three.js scene detected. Generated code provides basic setup. You will need to source textures/models separately.',
+                    action: 'Use the generated Three.js code as a starting point'
+                });
+            }
+            
+            if (animationData.animationTypes?.includes('gsap')) {
+                analysis.recommendations.push({
+                    type: 'gsap',
+                    priority: 'high',
+                    message: 'GSAP animations detected. Timeline structure has been captured.',
+                    action: 'Install GSAP and use the generated timeline code'
+                });
+            }
+            
+            if (animationData.animationTypes?.includes('css')) {
+                analysis.recommendations.push({
+                    type: 'css',
+                    priority: 'medium',
+                    message: 'CSS animations detected. These can be replicated exactly.',
+                    action: 'Copy the animation properties and @keyframes rules'
+                });
+            }
+            
+            if (animationData.animationTypes?.includes('canvas') || 
+                animationData.animationTypes?.includes('webgl')) {
+                analysis.recommendations.push({
+                    type: 'canvas',
+                    priority: 'medium',
+                    message: 'Canvas/WebGL animation detected. Full replication requires understanding the drawing logic.',
+                    action: 'Use generated code as a foundation; customize as needed'
+                });
+            }
+            
+            if (animationData.animationTypes?.includes('scroll')) {
+                analysis.recommendations.push({
+                    type: 'scroll',
+                    priority: 'medium',
+                    message: 'Scroll-based animations detected.',
+                    action: 'Configure the same scroll trigger settings with your preferred library'
+                });
+            }
+        }
+        
+        // Also scan tree for CSS animation properties
+        const cssAnimFromTree = scanTreeForCSSAnimations(tree);
+        if (cssAnimFromTree.length > 0) {
+            analysis.hasAnimations = true;
+            analysis.cssAnimations = cssAnimFromTree;
+            if (!analysis.types.includes('css')) {
+                analysis.types.push('css');
+            }
+        }
+        
+        return analysis;
+    }
+
+    /**
+     * Scan tree for CSS animation/transition properties
+     */
+    function scanTreeForCSSAnimations(node, found = []) {
+        if (!node) return found;
+        
+        const styles = node.styles || {};
+        
+        // Check for animation
+        if (hasAnimation(styles)) {
+            found.push({
+                element: node.tag + (node.classNames?.[0] ? '.' + node.classNames[0] : ''),
+                animation: styles.animation || styles['animation-name'],
+                duration: styles['animation-duration'],
+                timingFunction: styles['animation-timing-function']
+            });
+        }
+        
+        // Check for transition
+        if (hasTransition(styles)) {
+            found.push({
+                element: node.tag + (node.classNames?.[0] ? '.' + node.classNames[0] : ''),
+                transition: styles.transition,
+                property: styles['transition-property'],
+                duration: styles['transition-duration']
+            });
+        }
+        
+        // Recurse
+        for (const child of node.children || []) {
+            scanTreeForCSSAnimations(child, found);
+        }
+        
+        return found;
     }
 
     // ============================================
@@ -666,6 +847,12 @@
         extractPatterns,
         categorizeByFrequency,
 
+        // Animation analysis
+        analyzeAnimations,
+        scanTreeForCSSAnimations,
+        hasAnimation,
+        hasTransition,
+
         // Utilities
         walkTree,
         isLikelyDefault,
@@ -673,9 +860,12 @@
         hasNonDefaultBackground,
         hasVisibleBorder,
         hasNonZeroRadius,
-        hasCustomTypography
+        hasCustomTypography,
+        
+        // Constants
+        ANIMATION_INDICATORS
     };
 
-    console.log('[SmartAnalyzer] Module loaded - v1.0');
+    console.log('[SmartAnalyzer] Module loaded - v1.1 with Animation Support');
 })();
 
