@@ -212,6 +212,21 @@ function formatPixelPerfectHierarchy(node, depth = 0, maxDepth = 8) {
     
     line += '\n';
     
+    // Show class names (helpful for understanding utility classes like Tailwind)
+    const classNames = node.classNames || [];
+    if (classNames.length > 0) {
+        // Filter to show styling-related classes (not random IDs or state classes)
+        const styleClasses = classNames.filter(c => 
+            !c.match(/^[a-z]{1,3}-[0-9a-f]{4,}$/i) && // Skip hashed classes
+            !c.includes('__') && // Skip BEM modifiers
+            c.length < 40 // Skip very long generated classes
+        ).slice(0, 8); // Limit to 8 classes
+        
+        if (styleClasses.length > 0) {
+            line += `${indent}│   📌 class: "${styleClasses.join(' ')}"\n`;
+        }
+    }
+    
     // Spacing details
     const paddingStr = formatSpacingFromStyles(styles) || formatSpacingValues(computed, 'padding');
     const marginStr = formatSpacingValues(computed, 'margin');
@@ -250,10 +265,11 @@ function formatPixelPerfectHierarchy(node, depth = 0, maxDepth = 8) {
         line += `${indent}│   🎨 ${colors.join(' │ ')}\n`;
     }
     
-    // Border radius & shadow
+    // Border radius & shadow - be more thorough with border-radius
     const effects = [];
-    if (styles['border-radius'] && styles['border-radius'] !== '0px' && styles['border-radius'] !== '0') {
-        effects.push(`radius: ${styles['border-radius']}`);
+    const borderRadius = styles['border-radius'] || computed.borderRadius;
+    if (borderRadius && borderRadius !== '0px' && borderRadius !== '0') {
+        effects.push(`radius: ${borderRadius}`);
     }
     if (styles['box-shadow'] && styles['box-shadow'] !== 'none') {
         effects.push(`shadow: ✓`);
@@ -555,6 +571,11 @@ const CORE_PROMPTS = {
         const viewportContext = data.viewportContext || {};
         const rootStyles = data.tree.styles || {};
         
+        // Get border-radius from either kebab or camelCase, also check computed
+        const rootComputed = data.tree.computed || {};
+        const rootBorderRadius = rootStyles['border-radius'] || rootComputed.borderRadius || null;
+        const rootClasses = data.tree.classNames || [];
+        
         return `TASK: Apply this design's EXACT visual styles to my existing component.
 
 📎 NOTE: Use the attached screenshot as visual reference. Below are the EXACT CSS values extracted from the DOM.
@@ -565,9 +586,10 @@ CAPTURED ELEMENT OVERVIEW
 📐 Total Size: ${rootDims.width || '?'}px × ${rootDims.height || '?'}px
 🎨 Background: ${rootStyles['background-color'] || 'transparent'}
 📦 Display: ${rootStyles.display || 'block'}
-${rootStyles['border-radius'] && rootStyles['border-radius'] !== '0px' ? `🔲 Border Radius: ${rootStyles['border-radius']}` : ''}
+${rootBorderRadius && rootBorderRadius !== '0px' && rootBorderRadius !== '0' ? `🔲 Border Radius: ${rootBorderRadius}` : ''}
 ${rootStyles['box-shadow'] && rootStyles['box-shadow'] !== 'none' ? `✨ Shadow: ${rootStyles['box-shadow']}` : ''}
 ${rootStyles.padding && rootStyles.padding !== '0px' ? `📏 Padding: ${rootStyles.padding}` : ''}
+${rootClasses.length > 0 ? `📌 Classes: ${rootClasses.slice(0, 10).join(' ')}` : ''}
 ${viewportContext.rootFontSize ? `📝 Root font-size: ${viewportContext.rootFontSize}px` : ''}
 
 ════════════════════════════════════════════════════════════════════
@@ -644,7 +666,12 @@ INSTRUCTIONS:
         const hierarchy = formatPixelPerfectHierarchy(data.tree, 0, 8);
         const rootDims = data.tree.dimensions || {};
         const rootStyles = data.tree.styles || {};
+        const rootComputed = data.tree.computed || {};
         const viewportContext = data.viewportContext || {};
+        const rootClasses = data.tree.classNames || [];
+        
+        // Get border-radius from either kebab or camelCase
+        const rootBorderRadius = rootStyles['border-radius'] || rootComputed.borderRadius || '0';
         
         return `TASK: Create a PIXEL-PERFECT replica of this design.
 
@@ -657,9 +684,10 @@ ROOT CONTAINER - EXACT SPECIFICATIONS
 📦 DISPLAY: ${rootStyles.display || 'block'}
 🎨 BACKGROUND: ${rootStyles['background-color'] || 'transparent'}
 📏 PADDING: ${rootStyles.padding || '0'}
-🔲 BORDER-RADIUS: ${rootStyles['border-radius'] || '0'}
+🔲 BORDER-RADIUS: ${rootBorderRadius}
 ${rootStyles['box-shadow'] && rootStyles['box-shadow'] !== 'none' ? `✨ BOX-SHADOW: ${rootStyles['box-shadow']}` : ''}
 ${rootStyles['border-width'] && rootStyles['border-width'] !== '0px' ? `🔳 BORDER: ${rootStyles['border-width']} ${rootStyles['border-style'] || 'solid'} ${rootStyles['border-color'] || '#000'}` : ''}
+${rootClasses.length > 0 ? `📌 CLASSES: ${rootClasses.slice(0, 10).join(' ')}` : ''}
 ${viewportContext.rootFontSize ? `📝 ROOT FONT-SIZE: ${viewportContext.rootFontSize}px` : ''}
 
 ════════════════════════════════════════════════════════════════════

@@ -1819,11 +1819,21 @@ function showToast(message) {
 }
 
 function renderPage(data) {
-    if (!data) {
+    // Hide loading overlay if visible
+    const loadingOverlay = document.getElementById('extractionLoadingOverlay');
+    if (loadingOverlay) {
+        loadingOverlay.classList.remove('active');
+    }
+    
+    if (!data || !data.tree) {
         document.querySelector('.container').innerHTML = `
             <div class="empty-state">
                 <h2>No capture found</h2>
                 <p>Use the extension to select an element first.</p>
+                <p style="margin-top: 16px; font-size: 13px; color: #9a9a9a;">
+                    If you just selected an element, it may still be processing.<br>
+                    <a href="#" onclick="location.reload()" style="color: #6b8f71;">Click here to refresh</a>
+                </p>
             </div>
         `;
         return;
@@ -4155,11 +4165,110 @@ ${css}
         openFromError.addEventListener('click', openAISettingsResults);
     }
     
-    // Load data with retry mechanism to handle potential race condition
-    function loadDataWithRetry(retryCount = 0, maxRetries = 3) {
-        chrome.storage.local.get(['lastSelection'], (result) => {
+    // Track the timestamp of currently displayed data to detect updates
+    let currentSelectionTimestamp = null;
+    let extractionLoadingInterval = null;
+    
+    // Store original title
+    const originalTitle = document.title;
+    
+    // Show/hide extraction loading overlay
+    function showExtractionLoading(show, estimatedElements = 0) {
+        const overlay = document.getElementById('extractionLoadingOverlay');
+        const elementCount = document.getElementById('extractionElementCount');
+        const elementNumber = document.getElementById('extractionElementNumber');
+        const progressBar = document.getElementById('extractionProgressBar');
+        
+        if (!overlay) return;
+        
+        if (show) {
+            overlay.classList.add('active');
+            document.title = '⏳ Extracting Design...';
+            
+            if (estimatedElements > 0) {
+                elementCount.style.display = 'block';
+                elementNumber.textContent = estimatedElements;
+            }
+            
+            // Animate progress bar
+            let progress = 0;
+            clearInterval(extractionLoadingInterval);
+            extractionLoadingInterval = setInterval(() => {
+                // Slow down as we approach 90%
+                if (progress < 30) {
+                    progress += 3;
+                } else if (progress < 60) {
+                    progress += 2;
+                } else if (progress < 90) {
+                    progress += 0.5;
+                }
+                progressBar.style.width = `${Math.min(progress, 90)}%`;
+            }, 100);
+        } else {
+            // Complete progress bar then hide
+            progressBar.style.width = '100%';
+            clearInterval(extractionLoadingInterval);
+            document.title = originalTitle;
+            
+            setTimeout(() => {
+                overlay.classList.remove('active');
+                progressBar.style.width = '0%';
+            }, 300);
+        }
+    }
+    
+    // Update extraction loading step
+    function updateExtractionStep(step) {
+        const stepEl = document.getElementById('extractionStep');
+        if (stepEl) stepEl.textContent = step;
+    }
+    
+    // Load data with retry mechanism - improved for complex elements
+    function loadDataWithRetry(retryCount = 0, maxRetries = 15, retryDelay = 400) {
+        chrome.storage.local.get(['lastSelection', 'extractionState'], (result) => {
+            const extractionState = result.extractionState;
+            
+            // Check if extraction failed
+            if (extractionState?.failed) {
+                console.error('[Results] Extraction failed:', extractionState.error);
+                showExtractionLoading(false);
+                showExtractionError(extractionState.error);
+                return;
+            }
+            
+            // Check if extraction is in progress
+            if (extractionState?.inProgress) {
+                const elapsedTime = Date.now() - (extractionState.startTime || Date.now());
+                console.log(`[Results] Extraction in progress (${Math.round(elapsedTime/1000)}s elapsed)...`);
+                
+                showExtractionLoading(true, extractionState.estimatedElements || 0);
+                
+                // Update step message based on elapsed time
+                if (elapsedTime > 10000) {
+                    updateExtractionStep('Processing complex element... (this may take a moment)');
+                } else if (elapsedTime > 5000) {
+                    updateExtractionStep('Analyzing nested styles...');
+                } else {
+                    updateExtractionStep('Analyzing styles and structure...');
+                }
+                
+                // Wait and retry
+                setTimeout(() => {
+                    loadDataWithRetry(0, maxRetries, retryDelay);
+                }, retryDelay);
+                return;
+            }
+            
+            // Check if we have valid data
             if (result.lastSelection && result.lastSelection.tree) {
+                // Hide loading overlay
+                showExtractionLoading(false);
+                
+                // Store timestamp to detect future updates
+                currentSelectionTimestamp = result.lastSelection._selectionTimestamp || null;
+                
                 // Data loaded successfully
+                console.log('[Results] Data loaded successfully');
                 renderPage(result.lastSelection);
                 
                 // Check if preview is already active on the current tab
@@ -4167,18 +4276,96 @@ ${css}
                     checkPreviewStatus();
                 }, 500);
             } else if (retryCount < maxRetries) {
-                // Data not ready yet, retry after a short delay
+                // Data not ready yet, retry after delay
                 console.log(`[Results] Data not ready, retrying... (${retryCount + 1}/${maxRetries})`);
+                
+                // Show loading state after first few retries
+                if (retryCount > 2) {
+                    showExtractionLoading(true);
+                    updateExtractionStep('Waiting for design data...');
+                }
+                
                 setTimeout(() => {
-                    loadDataWithRetry(retryCount + 1, maxRetries);
-                }, 200);
+                    loadDataWithRetry(retryCount + 1, maxRetries, retryDelay);
+                }, retryDelay);
             } else {
-                // Max retries reached, render with whatever we have
+                // Max retries reached
+                showExtractionLoading(false);
                 console.warn('[Results] Max retries reached, rendering with available data');
                 renderPage(result.lastSelection);
             }
         });
     }
     
+    // Show extraction error
+    function showExtractionError(errorMessage) {
+        const container = document.querySelector('.container');
+        if (container) {
+            container.innerHTML = `
+                <div class="empty-state" style="padding: 60px 20px;">
+                    <div style="font-size: 48px; margin-bottom: 16px;">⚠️</div>
+                    <h2 style="color: #c62828;">Extraction Failed</h2>
+                    <p style="color: #6b6b6b; margin-bottom: 16px;">${errorMessage || 'The element may be too complex to extract.'}</p>
+                    <div style="background: #fff8e1; padding: 16px; border-radius: 12px; text-align: left; max-width: 400px; margin: 0 auto;">
+                        <div style="font-weight: 600; color: #f57c00; margin-bottom: 8px;">💡 Tips:</div>
+                        <ul style="color: #6b6b6b; font-size: 13px; margin: 0; padding-left: 20px; line-height: 1.6;">
+                            <li>Try selecting a smaller section of the page</li>
+                            <li>Select specific components instead of large containers</li>
+                            <li>Complex pages like Shopify may have deeply nested elements</li>
+                        </ul>
+                    </div>
+                    <p style="margin-top: 20px;">
+                        <a href="#" onclick="location.reload()" style="color: #6b8f71; text-decoration: none; font-weight: 500;">↻ Try Again</a>
+                    </p>
+                </div>
+            `;
+        }
+    }
+    
+    // Listen for storage changes to update when extraction completes
+    chrome.storage.onChanged.addListener((changes, areaName) => {
+        if (areaName !== 'local') return;
+        
+        // Handle extraction state changes
+        if (changes.extractionState) {
+            const newState = changes.extractionState.newValue;
+            
+            if (newState?.failed) {
+                console.error('[Results] Extraction failed:', newState.error);
+                showExtractionLoading(false);
+                showExtractionError(newState.error);
+            } else if (newState?.inProgress) {
+                showExtractionLoading(true, newState.estimatedElements || 0);
+                updateExtractionStep('Extracting design data...');
+            } else if (newState?.complete) {
+                updateExtractionStep('Finalizing...');
+            }
+        }
+        
+        // Handle new selection data
+        if (changes.lastSelection) {
+            const newData = changes.lastSelection.newValue;
+            
+            // Check if this is actually new data (different timestamp)
+            if (newData && newData.tree) {
+                const newTimestamp = newData._selectionTimestamp;
+                
+                // Only update if this is genuinely new data
+                if (newTimestamp && newTimestamp !== currentSelectionTimestamp) {
+                    console.log('[Results] New selection detected, refreshing...');
+                    showExtractionLoading(false);
+                    currentSelectionTimestamp = newTimestamp;
+                    renderPage(newData);
+                    
+                    // Check preview status after re-render
+                    setTimeout(() => {
+                        checkPreviewStatus();
+                    }, 500);
+                }
+            }
+        }
+    });
+    
+    // Initial load
     loadDataWithRetry();
 });

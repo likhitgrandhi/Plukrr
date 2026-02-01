@@ -1308,9 +1308,149 @@
       background: #fff3e0;
       color: #ef6c00;
     }
+    
+    /* Extraction Loading Overlay */
+    .extraction-loading-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(245, 245, 240, 0.97);
+      z-index: 9999;
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 24px;
+    }
+    
+    .extraction-loading-overlay.active {
+      display: flex;
+    }
+    
+    .extraction-loader-content {
+      text-align: center;
+      max-width: 400px;
+      padding: 40px;
+      background: white;
+      border-radius: 24px;
+      box-shadow: 0 8px 40px rgba(0, 0, 0, 0.08);
+    }
+    
+    .extraction-icon {
+      width: 64px;
+      height: 64px;
+      margin: 0 auto 24px;
+      background: linear-gradient(135deg, #6b8f71 0%, #5a7d5f 100%);
+      border-radius: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 28px;
+      animation: pulse-gentle 2s infinite ease-in-out;
+    }
+    
+    @keyframes pulse-gentle {
+      0%, 100% { transform: scale(1); opacity: 1; }
+      50% { transform: scale(1.05); opacity: 0.9; }
+    }
+    
+    .extraction-title {
+      font-size: 20px;
+      font-weight: 600;
+      color: #2d2d2d;
+      margin-bottom: 8px;
+    }
+    
+    .extraction-subtitle {
+      font-size: 14px;
+      color: #6b6b6b;
+      margin-bottom: 24px;
+    }
+    
+    .extraction-progress-container {
+      background: #f0f0eb;
+      border-radius: 8px;
+      height: 8px;
+      overflow: hidden;
+      margin-bottom: 16px;
+    }
+    
+    .extraction-progress-bar {
+      height: 100%;
+      background: linear-gradient(90deg, #6b8f71 0%, #8fb996 100%);
+      border-radius: 8px;
+      width: 0%;
+      transition: width 0.3s ease;
+      animation: progress-pulse 1.5s infinite ease-in-out;
+    }
+    
+    @keyframes progress-pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.7; }
+    }
+    
+    .extraction-step {
+      font-size: 13px;
+      color: #5a5a5a;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+    
+    .extraction-step-spinner {
+      width: 14px;
+      height: 14px;
+      border: 2px solid #e0e0e0;
+      border-top-color: #6b8f71;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    
+    .extraction-element-count {
+      margin-top: 16px;
+      padding: 10px 16px;
+      background: #f8f8f5;
+      border-radius: 8px;
+      font-size: 12px;
+      color: #6b6b6b;
+    }
+    
+    .extraction-element-count strong {
+      color: #4a6b4d;
+    }
+    
+    .extraction-tip {
+      margin-top: 20px;
+      font-size: 12px;
+      color: #9a9a9a;
+      font-style: italic;
+    }
   </style>
 </head>
 <body>
+  <!-- Extraction Loading Overlay -->
+  <div class="extraction-loading-overlay" id="extractionLoadingOverlay">
+    <div class="extraction-loader-content">
+      <div class="extraction-icon">🎨</div>
+      <div class="extraction-title" id="extractionTitle">Extracting Design</div>
+      <div class="extraction-subtitle" id="extractionSubtitle">Analyzing element styles and structure...</div>
+      <div class="extraction-progress-container">
+        <div class="extraction-progress-bar" id="extractionProgressBar"></div>
+      </div>
+      <div class="extraction-step">
+        <div class="extraction-step-spinner"></div>
+        <span id="extractionStep">Initializing...</span>
+      </div>
+      <div class="extraction-element-count" id="extractionElementCount" style="display: none;">
+        Processing <strong id="extractionElementNumber">0</strong> elements
+      </div>
+      <div class="extraction-tip">Large components may take a few seconds</div>
+    </div>
+  </div>
+
   <div class="container">
     <div class="header">
       <h1>Captured Design</h1>

@@ -16,6 +16,10 @@ document.getElementById('selectBtn').addEventListener('click', async () => {
     if (!tab) return;
 
     try {
+        // Clear old selection data FIRST before starting new selection
+        // This ensures the results page won't show stale data
+        chrome.runtime.sendMessage({ type: 'START_SELECTION' });
+        
         await chrome.scripting.executeScript({
             target: { tabId: tab.id },
             files: ['content.js']

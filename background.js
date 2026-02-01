@@ -1,18 +1,121 @@
+// Track the results tab
+let resultsTabId = null;
+let extractionInProgress = false;
+
+// Clean up tracking when tab is closed
+chrome.tabs.onRemoved.addListener((tabId) => {
+    if (tabId === resultsTabId) {
+        resultsTabId = null;
+    }
+});
+
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+    // Clear old selection when starting a new selection
+    if (request.type === 'START_SELECTION') {
+        extractionInProgress = false;
+        chrome.storage.local.remove(['lastSelection', 'extractionState'], () => {
+            console.log('Cleared old selection data');
+            sendResponse({ status: 'cleared' });
+        });
+        return true; // Keep channel open for async response
+    }
+    
+    // Handle extraction started notification
+    if (request.type === 'EXTRACTION_STARTED') {
+        extractionInProgress = true;
+        const estimatedElements = request.estimatedElements || 0;
+        const isComplex = estimatedElements > 50;
+        
+        console.log(`[Background] Extraction started: ~${estimatedElements} elements`);
+        
+        // Store extraction state so results page knows to show loading
+        chrome.storage.local.set({
+            extractionState: {
+                inProgress: true,
+                estimatedElements: estimatedElements,
+                startTime: Date.now(),
+                isComplex: isComplex
+            }
+        });
+        
+        // If complex, pre-open the results tab with loading state
+        if (isComplex) {
+            openOrFocusResultsTab();
+        }
+        
+        sendResponse({ status: 'acknowledged' });
+        return true;
+    }
+    
+    // Handle extraction failure
+    if (request.type === 'EXTRACTION_FAILED') {
+        extractionInProgress = false;
+        console.error('[Background] Extraction failed:', request.error);
+        
+        // Update extraction state to show error
+        chrome.storage.local.set({
+            extractionState: {
+                inProgress: false,
+                failed: true,
+                error: request.error
+            }
+        });
+        
+        sendResponse({ status: 'error_recorded' });
+        return true;
+    }
+    
     if (request.type === 'ELEMENT_SELECTED') {
-        // Store the data in storage
-        chrome.storage.local.set({ lastSelection: request.data }, () => {
+        extractionInProgress = false;
+        
+        // Store the data in storage with a unique timestamp to ensure freshness
+        const dataWithTimestamp = {
+            ...request.data,
+            _selectionTimestamp: Date.now()
+        };
+        
+        // Clear extraction state and save data
+        chrome.storage.local.set({ 
+            lastSelection: dataWithTimestamp,
+            extractionState: { inProgress: false, complete: true }
+        }, () => {
             console.log('Design data saved to storage');
             
-            // Open results page in new tab
-            chrome.tabs.create({
-                url: chrome.runtime.getURL('results.html'),
-                active: true
-            });
+            // Open or focus results tab
+            openOrFocusResultsTab();
         });
         
         // Also add to history
         addToHistory(request.data);
+    }
+    
+    function openOrFocusResultsTab() {
+        // Check if results tab already exists and is still valid
+        if (resultsTabId) {
+            chrome.tabs.get(resultsTabId, (tab) => {
+                if (chrome.runtime.lastError || !tab) {
+                    // Tab doesn't exist anymore, create a new one
+                    resultsTabId = null;
+                    openResultsTab();
+                } else {
+                    // Tab exists - reload it and focus
+                    chrome.tabs.reload(resultsTabId, {}, () => {
+                        chrome.tabs.update(resultsTabId, { active: true });
+                    });
+                }
+            });
+        } else {
+            openResultsTab();
+        }
+    }
+    
+    function openResultsTab() {
+        chrome.tabs.create({
+            url: chrome.runtime.getURL('results.html'),
+            active: true
+        }, (tab) => {
+            resultsTabId = tab.id;
+        });
     }
     
     if (request.type === 'CAPTURE_SCREENSHOT') {

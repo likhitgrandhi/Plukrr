@@ -61,6 +61,47 @@ function collectShadows(node, shadows = new Set()) {
     return shadows;
 }
 
+function collectTextShadows(node, textShadows = new Set()) {
+    if (!node) return textShadows;
+    const s = node.styles?.['text-shadow'];
+    if (s && s !== 'none') textShadows.add(s);
+    (node.children || []).forEach(child => collectTextShadows(child, textShadows));
+    return textShadows;
+}
+
+function collectAnimations(node, animations = new Set()) {
+    if (!node) return animations;
+    const styles = node.styles || {};
+    
+    // Collect animation shorthand
+    if (styles['animation'] && styles['animation'] !== 'none') {
+        animations.add(styles['animation']);
+    }
+    // Collect animation-name separately
+    if (styles['animation-name'] && styles['animation-name'] !== 'none') {
+        animations.add(`name: ${styles['animation-name']}`);
+    }
+    
+    (node.children || []).forEach(child => collectAnimations(child, animations));
+    return animations;
+}
+
+function collectTransitions(node, transitions = new Set()) {
+    if (!node) return transitions;
+    const s = node.styles?.['transition'];
+    if (s && s !== 'none' && s !== 'all 0s ease 0s') transitions.add(s);
+    (node.children || []).forEach(child => collectTransitions(child, transitions));
+    return transitions;
+}
+
+function collectTransforms(node, transforms = new Set()) {
+    if (!node) return transforms;
+    const s = node.styles?.['transform'];
+    if (s && s !== 'none') transforms.add(s);
+    (node.children || []).forEach(child => collectTransforms(child, transforms));
+    return transforms;
+}
+
 // Extract all design tokens from tree
 function extractDesignTokens(data) {
     const tree = data.tree;
@@ -77,7 +118,11 @@ function extractDesignTokens(data) {
             },
             spacing: dt.spacing || [],
             radii: dt.borderRadii || [],
-            shadows: dt.shadows || []
+            shadows: dt.shadows || [],
+            textShadows: dt.textShadows || [],
+            animations: dt.animations || [],
+            transitions: dt.transitions || [],
+            transforms: dt.transforms || []
         };
     }
     
@@ -87,7 +132,11 @@ function extractDesignTokens(data) {
         typo: collectTypography(tree),
         spacing: Array.from(collectSpacing(tree)).sort((a, b) => parseInt(a) - parseInt(b)),
         radii: Array.from(collectBorderRadius(tree)),
-        shadows: Array.from(collectShadows(tree))
+        shadows: Array.from(collectShadows(tree)),
+        textShadows: Array.from(collectTextShadows(tree)),
+        animations: Array.from(collectAnimations(tree)),
+        transitions: Array.from(collectTransitions(tree)),
+        transforms: Array.from(collectTransforms(tree))
     };
 }
 
@@ -213,6 +262,42 @@ function identifyVisualPatterns(data) {
         (node.children || []).forEach(checkLayoutPatterns);
     }
     checkLayoutPatterns(tree);
+    
+    // Text shadow patterns
+    const textShadows = tokens.textShadows || [];
+    if (textShadows.length > 0) {
+        patterns.push('text-shadows');
+    }
+    
+    // Animation patterns
+    const animations = tokens.animations || [];
+    if (animations.length > 0) {
+        patterns.push('animations');
+        // Check for infinite animations
+        const animStr = animations.join(' ').toLowerCase();
+        if (animStr.includes('infinite')) patterns.push('infinite-animations');
+    }
+    
+    // Transition patterns
+    const transitions = tokens.transitions || [];
+    if (transitions.length > 0) {
+        patterns.push('transitions');
+        // Detect complex transitions (multiple properties)
+        const hasMultipleProps = transitions.some(t => t.split(',').length > 1);
+        if (hasMultipleProps) patterns.push('multi-property-transitions');
+    }
+    
+    // Transform patterns
+    const transforms = tokens.transforms || [];
+    if (transforms.length > 0) {
+        patterns.push('transforms');
+        const transformStr = transforms.join(' ').toLowerCase();
+        if (transformStr.includes('rotate')) patterns.push('rotate-transforms');
+        if (transformStr.includes('scale')) patterns.push('scale-transforms');
+        if (transformStr.includes('translate')) patterns.push('translate-transforms');
+        if (transformStr.includes('skew')) patterns.push('skew-transforms');
+        if (transformStr.includes('perspective') || transformStr.includes('3d')) patterns.push('3d-transforms');
+    }
     
     // Remove duplicates
     return [...new Set(patterns)];
@@ -458,8 +543,26 @@ function generateRecommendations(complexity, patterns, component, designSystem) 
     if (patterns.includes('layered-shadows')) {
         recs.push('Multiple shadows detected - provide all shadow values explicitly');
     }
+    if (patterns.includes('text-shadows')) {
+        recs.push('Text shadows detected - include exact text-shadow values for typography effects');
+    }
     if (patterns.includes('consistent-spacing')) {
         recs.push('Consistent spacing scale detected - reference spacing tokens');
+    }
+    if (patterns.includes('animations')) {
+        recs.push('Animations detected - include @keyframes definitions and animation properties');
+    }
+    if (patterns.includes('infinite-animations')) {
+        recs.push('Infinite animations found - ensure animation-iteration-count: infinite is set');
+    }
+    if (patterns.includes('transitions')) {
+        recs.push('Transitions detected - specify transition-property, duration, and timing-function');
+    }
+    if (patterns.includes('3d-transforms')) {
+        recs.push('3D transforms detected - include perspective and transform-style values');
+    }
+    if (patterns.includes('transforms')) {
+        recs.push('Transforms detected - preserve exact transform values for visual accuracy');
     }
     
     // Design system recommendations
@@ -507,6 +610,10 @@ window.DesignAnalyzer = {
     collectSpacing,
     collectBorderRadius,
     collectShadows,
+    collectTextShadows,
+    collectAnimations,
+    collectTransitions,
+    collectTransforms,
     
     // Analysis
     analyzeDesign,

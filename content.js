@@ -10,6 +10,11 @@
     let previewControlPanel = null;
     let isPreviewActive = false;
     let originalStylesBackup = null;
+    
+    // Element picker state
+    let elementPickerPanel = null;
+    let currentHoveredElement = null;
+    let isPickerActive = false;
 
     function createOverlay() {
         if (document.getElementById('ai-design-copier-overlay')) {
@@ -154,116 +159,788 @@
     function handleMouseMove(e) {
         const el = e.target;
         if (el === overlay || el.id === 'ai-design-copier-overlay' || el.id === 'ai-design-copier-toast') return;
+        if (elementPickerPanel && elementPickerPanel.contains(el)) return;
+        if (el.closest('#element-picker-panel')) return;
+        
+        currentHoveredElement = el;
         updateOverlay(el);
     }
+    
+    // ============================================
+    // INTERACTIVE ELEMENT PICKER
+    // ============================================
+    
+    function getElementPreview(el) {
+        if (!el || el === document.body || el === document.documentElement) {
+            return { tag: 'body', classes: '', id: '', preview: 'Page body' };
+        }
+        
+        const tag = el.tagName?.toLowerCase() || 'unknown';
+        const id = el.id ? `#${el.id}` : '';
+        const classes = Array.from(el.classList || [])
+            .filter(c => !c.includes('ai-design-copier'))
+            .slice(0, 3)
+            .map(c => `.${c}`)
+            .join('');
+        const moreClasses = el.classList?.length > 3 ? `+${el.classList.length - 3}` : '';
+        
+        // Get text preview
+        let textPreview = '';
+        const directText = Array.from(el.childNodes)
+            .filter(n => n.nodeType === 3)
+            .map(n => n.textContent.trim())
+            .join(' ')
+            .substring(0, 30);
+        if (directText) {
+            textPreview = directText;
+        } else if (el.innerText) {
+            textPreview = el.innerText.trim().substring(0, 30);
+        }
+        
+        // Get computed styles summary
+        const styles = window.getComputedStyle(el);
+        const rect = el.getBoundingClientRect();
+        
+        const styleHints = [];
+        if (styles.backgroundColor !== 'rgba(0, 0, 0, 0)') styleHints.push('bg');
+        if (parseFloat(styles.borderWidth) > 0) styleHints.push('border');
+        if (styles.boxShadow !== 'none') styleHints.push('shadow');
+        if (styles.borderRadius !== '0px') styleHints.push('rounded');
+        if (styles.display === 'flex') styleHints.push('flex');
+        if (styles.display === 'grid') styleHints.push('grid');
+        
+        return {
+            tag,
+            id,
+            classes: classes + moreClasses,
+            preview: textPreview || `${Math.round(rect.width)}×${Math.round(rect.height)}px`,
+            styleHints: styleHints.join(', '),
+            childCount: el.children?.length || 0,
+            element: el,
+            dimensions: `${Math.round(rect.width)} × ${Math.round(rect.height)}`
+        };
+    }
+    
+    function getAncestorChain(el, maxDepth = 5) {
+        const chain = [];
+        let current = el;
+        let depth = 0;
+        
+        while (current && current !== document.body && current !== document.documentElement && depth < maxDepth) {
+            chain.push(getElementPreview(current));
+            current = current.parentElement;
+            depth++;
+        }
+        
+        // Add body as final option
+        if (current === document.body || current === document.documentElement) {
+            chain.push({
+                tag: 'body',
+                id: '',
+                classes: '',
+                preview: 'Entire page body',
+                styleHints: 'page-level',
+                childCount: document.body.children.length,
+                element: document.body,
+                dimensions: `${window.innerWidth} × ${window.innerHeight}`
+            });
+        }
+        
+        return chain;
+    }
+    
+    function createElementPickerPanel(clickedElement, mouseX, mouseY) {
+        // Remove existing panel
+        removeElementPickerPanel();
+        
+        const ancestors = getAncestorChain(clickedElement);
+        
+        elementPickerPanel = document.createElement('div');
+        elementPickerPanel.id = 'element-picker-panel';
+        
+        // Position panel near click but ensure it's visible
+        const panelWidth = 340;
+        const panelHeight = Math.min(ancestors.length * 72 + 120, 450);
+        let left = mouseX + 20;
+        let top = mouseY - 20;
+        
+        // Adjust if would go off screen
+        if (left + panelWidth > window.innerWidth - 20) {
+            left = mouseX - panelWidth - 20;
+        }
+        if (top + panelHeight > window.innerHeight - 20) {
+            top = window.innerHeight - panelHeight - 20;
+        }
+        if (top < 20) top = 20;
+        if (left < 20) left = 20;
+        
+        elementPickerPanel.style.cssText = `
+            position: fixed !important;
+            left: ${left}px !important;
+            top: ${top}px !important;
+            width: ${panelWidth}px !important;
+            max-height: ${panelHeight}px !important;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%) !important;
+            border: 1px solid rgba(107, 143, 113, 0.4) !important;
+            border-radius: 16px !important;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255,255,255,0.05) !important;
+            z-index: 2147483647 !important;
+            font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Roboto, sans-serif !important;
+            overflow: hidden !important;
+            animation: pickerSlideIn 0.2s ease-out !important;
+        `;
+        
+        elementPickerPanel.innerHTML = `
+            <style>
+                @keyframes pickerSlideIn {
+                    from { opacity: 0; transform: translateY(-10px) scale(0.95); }
+                    to { opacity: 1; transform: translateY(0) scale(1); }
+                }
+                #element-picker-panel * {
+                    box-sizing: border-box !important;
+                }
+                .picker-header {
+                    padding: 14px 16px !important;
+                    border-bottom: 1px solid rgba(255,255,255,0.1) !important;
+                    display: flex !important;
+                    justify-content: space-between !important;
+                    align-items: center !important;
+                }
+                .picker-title {
+                    color: #fff !important;
+                    font-size: 13px !important;
+                    font-weight: 600 !important;
+                    letter-spacing: 0.3px !important;
+                }
+                .picker-subtitle {
+                    color: rgba(255,255,255,0.5) !important;
+                    font-size: 11px !important;
+                    margin-top: 2px !important;
+                }
+                .picker-close {
+                    width: 28px !important;
+                    height: 28px !important;
+                    border-radius: 8px !important;
+                    border: none !important;
+                    background: rgba(255,255,255,0.1) !important;
+                    color: rgba(255,255,255,0.7) !important;
+                    cursor: pointer !important;
+                    display: flex !important;
+                    align-items: center !important;
+                    justify-content: center !important;
+                    font-size: 16px !important;
+                    transition: all 0.15s ease !important;
+                }
+                .picker-close:hover {
+                    background: rgba(255,100,100,0.2) !important;
+                    color: #ff6b6b !important;
+                }
+                .picker-list {
+                    max-height: 320px !important;
+                    overflow-y: auto !important;
+                    padding: 8px !important;
+                }
+                .picker-list::-webkit-scrollbar {
+                    width: 6px !important;
+                }
+                .picker-list::-webkit-scrollbar-track {
+                    background: transparent !important;
+                }
+                .picker-list::-webkit-scrollbar-thumb {
+                    background: rgba(255,255,255,0.2) !important;
+                    border-radius: 3px !important;
+                }
+                .picker-item {
+                    padding: 10px 12px !important;
+                    border-radius: 10px !important;
+                    cursor: pointer !important;
+                    transition: all 0.15s ease !important;
+                    border: 1px solid transparent !important;
+                    margin-bottom: 4px !important;
+                    background: rgba(255,255,255,0.03) !important;
+                }
+                .picker-item:hover {
+                    background: rgba(107, 143, 113, 0.15) !important;
+                    border-color: rgba(107, 143, 113, 0.3) !important;
+                }
+                .picker-item.selected {
+                    background: rgba(107, 143, 113, 0.25) !important;
+                    border-color: rgba(107, 143, 113, 0.5) !important;
+                }
+                .picker-item-header {
+                    display: flex !important;
+                    align-items: center !important;
+                    gap: 8px !important;
+                    margin-bottom: 4px !important;
+                }
+                .picker-tag {
+                    background: linear-gradient(135deg, #6b8f71 0%, #5a7d5f 100%) !important;
+                    color: white !important;
+                    padding: 2px 8px !important;
+                    border-radius: 4px !important;
+                    font-size: 11px !important;
+                    font-weight: 600 !important;
+                    font-family: 'SF Mono', 'Fira Code', monospace !important;
+                }
+                .picker-selector {
+                    color: rgba(255,255,255,0.7) !important;
+                    font-size: 11px !important;
+                    font-family: 'SF Mono', 'Fira Code', monospace !important;
+                    overflow: hidden !important;
+                    text-overflow: ellipsis !important;
+                    white-space: nowrap !important;
+                    flex: 1 !important;
+                }
+                .picker-depth {
+                    color: rgba(255,255,255,0.3) !important;
+                    font-size: 10px !important;
+                    padding: 2px 6px !important;
+                    background: rgba(255,255,255,0.05) !important;
+                    border-radius: 4px !important;
+                }
+                .picker-meta {
+                    display: flex !important;
+                    gap: 12px !important;
+                    font-size: 10px !important;
+                    color: rgba(255,255,255,0.4) !important;
+                }
+                .picker-meta span {
+                    display: flex !important;
+                    align-items: center !important;
+                    gap: 4px !important;
+                }
+                .picker-preview {
+                    color: rgba(255,255,255,0.5) !important;
+                    font-size: 11px !important;
+                    margin-top: 4px !important;
+                    overflow: hidden !important;
+                    text-overflow: ellipsis !important;
+                    white-space: nowrap !important;
+                }
+                .picker-hint {
+                    padding: 10px 16px !important;
+                    background: rgba(107, 143, 113, 0.1) !important;
+                    border-top: 1px solid rgba(255,255,255,0.05) !important;
+                    font-size: 11px !important;
+                    color: rgba(255,255,255,0.5) !important;
+                    text-align: center !important;
+                }
+                .arrow-up {
+                    margin-left: 8px !important;
+                    opacity: 0.4 !important;
+                }
+            </style>
+            
+            <div class="picker-header">
+                <div>
+                    <div class="picker-title">🎯 Select Element Scope</div>
+                    <div class="picker-subtitle">Click on the element you want to capture</div>
+                </div>
+                <button class="picker-close" id="picker-close-btn">✕</button>
+            </div>
+            
+            <div class="picker-list" id="picker-list">
+                ${ancestors.map((item, index) => `
+                    <div class="picker-item ${index === 0 ? 'selected' : ''}" data-index="${index}">
+                        <div class="picker-item-header">
+                            <span class="picker-tag">&lt;${item.tag}&gt;</span>
+                            <span class="picker-selector">${item.id}${item.classes}</span>
+                            <span class="picker-depth">${index === 0 ? 'clicked' : `↑${index}`}</span>
+                        </div>
+                        <div class="picker-meta">
+                            <span>📐 ${item.dimensions}</span>
+                            ${item.childCount > 0 ? `<span>📦 ${item.childCount} children</span>` : ''}
+                            ${item.styleHints ? `<span>🎨 ${item.styleHints}</span>` : ''}
+                        </div>
+                        ${item.preview ? `<div class="picker-preview">"${item.preview}"</div>` : ''}
+                    </div>
+                `).join('')}
+            </div>
+            
+            <div class="picker-hint">
+                ↑ Go up to capture parent containers • Click to select
+            </div>
+        `;
+        
+        document.body.appendChild(elementPickerPanel);
+        isPickerActive = true;
+        
+        // Store ancestors for later use
+        elementPickerPanel._ancestors = ancestors;
+        
+        // Add event listeners
+        const closeBtn = elementPickerPanel.querySelector('#picker-close-btn');
+        closeBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            removeElementPickerPanel();
+            if (overlay) overlay.style.display = 'none';
+            // Resume selection mode
+            document.addEventListener('mousemove', handleMouseMove);
+            document.addEventListener('click', handleClick, true);
+            document.addEventListener('keydown', handleKeyDown);
+        });
+        
+        // Handle item selection
+        const items = elementPickerPanel.querySelectorAll('.picker-item');
+        items.forEach((item, index) => {
+            item.addEventListener('mouseenter', () => {
+                // Highlight this ancestor in the overlay
+                const ancestor = ancestors[index];
+                if (ancestor && ancestor.element) {
+                    updateOverlay(ancestor.element);
+                    // Update selected state
+                    items.forEach(i => i.classList.remove('selected'));
+                    item.classList.add('selected');
+                }
+            });
+            
+            item.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const ancestor = ancestors[index];
+                if (ancestor && ancestor.element) {
+                    removeElementPickerPanel();
+                    captureSelectedElement(ancestor.element);
+                }
+            });
+        });
+    }
+    
+    function removeElementPickerPanel() {
+        if (elementPickerPanel) {
+            elementPickerPanel.remove();
+            elementPickerPanel = null;
+        }
+        const existing = document.getElementById('element-picker-panel');
+        if (existing) existing.remove();
+        isPickerActive = false;
+    }
+    
+    async function captureSelectedElement(el) {
+        // Clean up event listeners
+        document.removeEventListener('keydown', handleKeyDown);
+        
+        if (overlay) {
+            overlay.style.display = 'none';
+        }
+        
+        // Count children to estimate complexity
+        const estimatedElements = countAllChildren(el);
+        const isComplexElement = estimatedElements > 50;
+        const isVeryComplex = estimatedElements > 200;
+        
+        console.log(`[Design Copier] Starting extraction: ~${estimatedElements} elements, complex=${isComplexElement}, veryComplex=${isVeryComplex}`);
+        
+        // Show extraction loader for complex elements
+        if (isComplexElement) {
+            createLoader();
+            updateLoaderProgress('Extracting design...', `Found ~${estimatedElements} elements to process`);
+        }
+        
+        await new Promise(resolve => setTimeout(resolve, 50));
+        
+        // Signal to background that extraction is starting
+        chrome.runtime.sendMessage({
+            type: 'EXTRACTION_STARTED',
+            estimatedElements: estimatedElements
+        });
+        
+        try {
+            let screenshot = null;
+            try {
+                if (isComplexElement) {
+                    updateLoaderProgress('Capturing screenshot...', 'Step 1 of 4');
+                }
+                screenshot = await captureElementScreenshot(el);
+                
+                // Compress screenshot for very complex elements to save storage space
+                if (isVeryComplex && screenshot && screenshot.length > 500000) {
+                    console.log(`[Design Copier] Screenshot is ${Math.round(screenshot.length / 1024)}KB, compressing...`);
+                    screenshot = await compressScreenshot(screenshot, 0.7, 1000);
+                    console.log(`[Design Copier] Compressed to ${Math.round(screenshot.length / 1024)}KB`);
+                } else if (screenshot && screenshot.length > 1000000) {
+                    // Also compress regular large screenshots (>1MB)
+                    console.log(`[Design Copier] Screenshot is ${Math.round(screenshot.length / 1024)}KB, light compression...`);
+                    screenshot = await compressScreenshot(screenshot, 0.8, 1400);
+                    console.log(`[Design Copier] Compressed to ${Math.round(screenshot.length / 1024)}KB`);
+                }
+            } catch (err) {
+                console.error('[Design Copier] Screenshot capture failed:', err);
+            }
+            
+            // Get parent element for context
+            if (isComplexElement) {
+                updateLoaderProgress('Analyzing parent context...', 'Step 2 of 4');
+                await new Promise(resolve => setTimeout(resolve, 10)); // Allow UI to update
+            }
+            
+            const parentEl = el.parentElement;
+            let parentContext = null;
+            
+            if (parentEl && parentEl !== document.body) {
+                const parentRect = parentEl.getBoundingClientRect();
+                const parentStyles = window.getComputedStyle(parentEl);
+                parentContext = {
+                    width: Math.round(parentRect.width),
+                    height: Math.round(parentRect.height),
+                    top: parentRect.top,
+                    left: parentRect.left,
+                    display: parentStyles.display,
+                    position: parentStyles.position,
+                    padding: parentStyles.padding
+                };
+            }
+            
+            if (isComplexElement) {
+                updateLoaderProgress('Building element tree...', `Step 3 of 4 — Processing ${estimatedElements} elements`);
+                await new Promise(resolve => setTimeout(resolve, 10)); // Allow UI to update
+            }
+            
+            // For very complex elements, reduce max depth to prevent huge data
+            const maxDepth = isVeryComplex ? 6 : 10;
+            const elementTree = buildElementTree(el, 0, maxDepth, parentContext);
+            
+            if (!elementTree) {
+                throw new Error('Failed to build element tree - element may be too complex or hidden');
+            }
+            
+            const elementCount = countElements(elementTree);
+            console.log(`[Design Copier] Built tree with ${elementCount} elements (maxDepth=${maxDepth})`);
+            
+            if (isComplexElement) {
+                updateLoaderProgress('Extracting styles...', 'Step 4 of 4');
+                await new Promise(resolve => setTimeout(resolve, 10)); // Allow UI to update
+            }
+            
+            const isPageLevel = isPageLevelElement(el);
+            const globalCSS = extractPageGlobalCSS();
+            
+            // Viewport and page context
+            const viewportContext = {
+                width: window.innerWidth,
+                height: window.innerHeight,
+                scrollX: window.scrollX,
+                scrollY: window.scrollY,
+                devicePixelRatio: window.devicePixelRatio || 1,
+                rootFontSize: parseFloat(getComputedStyle(document.documentElement).fontSize) || 16
+            };
+            
+            if (isComplexElement) {
+                updateLoaderProgress('Saving data...', 'Almost done!');
+            }
+            
+            const captureData = {
+                tree: elementTree,
+                elementCount: elementCount,
+                screenshot: screenshot,
+                pageUrl: window.location.href,
+                pageTitle: document.title,
+                timestamp: new Date().toISOString(),
+                isPageLevel: isPageLevel,
+                globalCSS: globalCSS,
+                viewportContext: viewportContext,
+                parentContext: parentContext,
+                selectionInfo: {
+                    wasAdjusted: false, // User explicitly chose this
+                    selectedTag: el.tagName?.toLowerCase(),
+                    componentType: detectComponentType(el)
+                },
+                _extractionComplete: true // Signal that extraction finished successfully
+            };
+            
+            // Estimate data size
+            let dataSize = JSON.stringify(captureData).length;
+            console.log(`[Design Copier] Capture data size: ${Math.round(dataSize / 1024)}KB`);
+            
+            // If data is too large, try to reduce screenshot size first
+            if (dataSize > 3 * 1024 * 1024 && captureData.screenshot) {
+                console.log('[Design Copier] Data large, compressing screenshot further...');
+                captureData.screenshot = await compressScreenshot(captureData.screenshot, 0.5, 800);
+                dataSize = JSON.stringify(captureData).length;
+                console.log(`[Design Copier] After compression: ${Math.round(dataSize / 1024)}KB`);
+            }
+            
+            // If still too large (>5MB), try even more compression
+            if (dataSize > 5 * 1024 * 1024 && captureData.screenshot) {
+                console.log('[Design Copier] Still large, compressing to thumbnail...');
+                captureData.screenshot = await compressScreenshot(captureData.screenshot, 0.4, 500);
+                captureData._screenshotCompressed = true;
+                dataSize = JSON.stringify(captureData).length;
+                console.log(`[Design Copier] After thumbnail: ${Math.round(dataSize / 1024)}KB`);
+            }
+            
+            // Only remove screenshot as last resort (>8MB)
+            if (dataSize > 8 * 1024 * 1024) {
+                console.warn('[Design Copier] Data extremely large, removing screenshot as last resort');
+                if (captureData.screenshot) {
+                    captureData.screenshot = null;
+                    captureData._screenshotRemoved = true;
+                }
+            }
+            
+            // Send message to background
+            chrome.runtime.sendMessage({
+                type: 'ELEMENT_SELECTED',
+                data: captureData
+            }, (response) => {
+                if (chrome.runtime.lastError) {
+                    console.error('[Design Copier] Failed to send message:', chrome.runtime.lastError);
+                    showToast('Error: Failed to save data. Try selecting a smaller element.');
+                }
+            });
+            
+            // Hide loader
+            hideLoader();
+            
+            const tagName = el.tagName?.toLowerCase();
+            const message = isPageLevel 
+                ? `Captured page styles — Opening results...`
+                : `Captured <${tagName}> with ${elementCount} element${elementCount > 1 ? 's' : ''} — Opening results...`;
+            showToast(message);
+            
+        } catch (error) {
+            console.error('[Design Copier] Extraction failed:', error);
+            hideLoader();
+            
+            // Notify background of failure
+            chrome.runtime.sendMessage({
+                type: 'EXTRACTION_FAILED',
+                error: error.message
+            });
+            
+            showToast(`Error: ${error.message || 'Extraction failed'}. Try a smaller selection.`);
+        }
+        
+        if (overlay) {
+            overlay.style.display = 'block';
+            overlay.style.backgroundColor = 'rgba(107, 143, 113, 0.3)';
+            overlay.style.borderColor = '#6b8f71';
+            setTimeout(() => {
+                if (overlay) overlay.remove();
+                overlay = null;
+            }, 300);
+        }
+    }
+    
+    // Compress screenshot by reducing quality and dimensions
+    async function compressScreenshot(dataUrl, quality = 0.7, maxDim = 1200) {
+        if (!dataUrl) return null;
+        
+        return new Promise((resolve) => {
+            const img = new Image();
+            
+            img.onload = () => {
+                try {
+                    const canvas = document.createElement('canvas');
+                    let width = img.width;
+                    let height = img.height;
+                    
+                    // Reduce dimensions if needed
+                    if (width > maxDim || height > maxDim) {
+                        if (width > height) {
+                            height = Math.round((height * maxDim) / width);
+                            width = maxDim;
+                        } else {
+                            width = Math.round((width * maxDim) / height);
+                            height = maxDim;
+                        }
+                    }
+                    
+                    canvas.width = width;
+                    canvas.height = height;
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(img, 0, 0, width, height);
+                    
+                    const compressed = canvas.toDataURL('image/jpeg', quality);
+                    console.log(`[Design Copier] Compressed ${img.width}x${img.height} → ${width}x${height} @ ${quality} quality`);
+                    resolve(compressed);
+                } catch (e) {
+                    console.error('[Design Copier] Compression error:', e);
+                    resolve(dataUrl);
+                }
+            };
+            
+            img.onerror = (e) => {
+                console.error('[Design Copier] Image load error during compression:', e);
+                resolve(dataUrl); // Return original on error
+            };
+            
+            img.src = dataUrl;
+        });
+    }
 
-    // Comprehensive list of CSS properties for pixel-perfect extraction
-    const STYLE_PROPERTIES = [
-        // Colors & Background
-        'color', 'background-color', 'background-image', 'background-size', 'background-position',
-        'background-repeat', 'background-attachment', 'background-clip', 'background-origin',
-        
-        // Typography - CRITICAL for pixel perfection
-        'font-family', 'font-size', 'font-weight', 'font-style', 'line-height', 
-        'letter-spacing', 'word-spacing', 'text-align', 'text-decoration', 'text-transform',
-        'text-indent', 'text-shadow', 'white-space', 'word-break', 'overflow-wrap',
-        'vertical-align', '-webkit-font-smoothing', 'font-feature-settings',
-        
-        // Spacing - CRITICAL for pixel perfection
-        'padding', 'padding-top', 'padding-right', 'padding-bottom', 'padding-left',
-        'margin', 'margin-top', 'margin-right', 'margin-bottom', 'margin-left',
-        
-        // Box Model - CRITICAL for pixel perfection
-        'width', 'height', 'min-width', 'min-height', 'max-width', 'max-height',
-        'box-sizing',
-        
-        // Borders - CRITICAL
-        'border', 'border-radius', 'border-width', 'border-style', 'border-color',
-        'border-top', 'border-right', 'border-bottom', 'border-left',
-        'border-top-left-radius', 'border-top-right-radius', 
-        'border-bottom-left-radius', 'border-bottom-right-radius',
-        
-        // Effects - CRITICAL
-        'box-shadow', 'outline', 'outline-offset',
-        'opacity', 'filter', 'backdrop-filter', 'mix-blend-mode',
-        
-        // Layout
-        'display', 'position', 'top', 'right', 'bottom', 'left', 'z-index',
-        'flex-direction', 'justify-content', 'align-items', 'align-content',
-        'align-self', 'flex-wrap', 'flex-grow', 'flex-shrink', 'flex-basis',
-        'gap', 'row-gap', 'column-gap',
-        'grid-template-columns', 'grid-template-rows', 'grid-gap', 'grid-auto-flow',
-        'grid-column', 'grid-row',
-        
-        // Positioning & Overflow
-        'overflow', 'overflow-x', 'overflow-y', 'visibility',
-        'clip-path', 'object-fit', 'object-position',
-        
-        // Interactions
-        'cursor', 'pointer-events', 'user-select',
-        'transform', 'transform-origin',
-        'transition', 'animation'
-    ];
+    // Values that indicate a property is at its default/meaningless state
+    const DEFAULT_VALUES = new Set([
+        'initial', 'inherit', 'unset', 'revert', 'revert-layer',
+        'none', 'normal', 'auto', 'visible', 'static', 'baseline',
+        '0', '0px', '0%', '0s', '0ms', '0deg',
+        '0px 0px', '0px 0px 0px 0px', '0 0', '0 0 0 0',
+        'rgba(0, 0, 0, 0)', 'transparent',
+        'repeat', 'scroll', 'border-box', 'padding-box',
+        'ease', 'ease 0s', 'all 0s ease 0s',
+        'running', 'forwards',
+        'ltr', 'separate', 'collapse',
+        'inline', 'content-box',
+        '1', // default flex values, opacity
+        'medium', 'currentcolor',
+        'start', 'stretch',
+        'row', 'nowrap', // flex defaults
+        'none 0s ease 0s 1 normal none running', // animation default
+    ]);
+
+    // Properties we should ALWAYS capture even if they look "default"
+    const ALWAYS_CAPTURE = new Set([
+        'box-shadow', 'text-shadow', 'filter', 'backdrop-filter',
+        'transform', 'animation', 'transition',
+        'background-image', 'background-gradient',
+        'clip-path', 'mask', 'mask-image',
+        '-webkit-mask', '-webkit-mask-image',
+        'border-image', 'outline'
+    ]);
+
+    // Properties where certain "default-looking" values are actually meaningful
+    const MEANINGFUL_DEFAULTS = {
+        'display': ['block', 'inline', 'inline-block', 'flex', 'inline-flex', 'grid', 'inline-grid', 'table', 'table-cell', 'table-row', 'contents'],
+        'position': ['relative', 'absolute', 'fixed', 'sticky'],
+        'opacity': [], // any non-1 value
+        'z-index': [], // any non-auto value
+        'flex-grow': ['0'], // 0 is meaningful in flex context
+        'flex-shrink': ['1'], // 1 is meaningful in flex context
+        'text-decoration': ['underline', 'line-through', 'overline'],
+        'text-transform': ['uppercase', 'lowercase', 'capitalize'],
+        'font-weight': ['bold', '500', '600', '700', '800', '900'],
+        'cursor': ['pointer', 'grab', 'grabbing', 'not-allowed', 'wait', 'text', 'move', 'crosshair', 'zoom-in', 'zoom-out'],
+        'overflow': ['hidden', 'scroll', 'auto', 'clip'],
+        'overflow-x': ['hidden', 'scroll', 'auto', 'clip'],
+        'overflow-y': ['hidden', 'scroll', 'auto', 'clip'],
+        'visibility': ['hidden', 'collapse'],
+        'white-space': ['nowrap', 'pre', 'pre-wrap', 'pre-line', 'break-spaces'],
+        'word-break': ['break-all', 'break-word', 'keep-all'],
+        'pointer-events': ['none', 'all'],
+        'user-select': ['none', 'all', 'text'],
+    };
 
     function getRelevantStyles(el) {
         const styles = window.getComputedStyle(el);
         const result = {};
         
-        // Values to skip (truly default/meaningless values)
-        const skipValues = new Set([
-            'initial', 'inherit', 'unset', 'revert',
-            'start', 'visible', 'static', 'baseline'
-        ]);
+        // IMPORTANT: Explicitly capture critical visual properties that might not be enumerated
+        // Some browsers don't enumerate shorthand properties, only longhands
+        const criticalProperties = [
+            'border-radius',
+            'border-top-left-radius',
+            'border-top-right-radius', 
+            'border-bottom-left-radius',
+            'border-bottom-right-radius',
+            'border-width',
+            'border-style',
+            'border-color',
+            'background',
+            'background-color',
+            'background-image',
+            'padding',
+            'margin',
+            'gap',
+            'display',
+            'flex-direction',
+            'justify-content',
+            'align-items',
+            'font-size',
+            'font-weight',
+            'font-family',
+            'line-height',
+            'letter-spacing',
+            'text-align',
+            'color',
+            'box-shadow',
+            'opacity',
+            'overflow',
+            'position',
+            'width',
+            'height',
+            'min-width',
+            'min-height',
+            'max-width',
+            'max-height'
+        ];
         
-        // Properties where 'none' is meaningful
-        const noneIsMeaningful = new Set([
-            'text-decoration', 'text-transform', 'list-style'
-        ]);
-        
-        // Properties where '0px' or '0' is meaningful (should still capture)
-        const zeroIsMeaningful = new Set([
-            'border-radius', 'margin', 'padding', 'gap', 'letter-spacing',
-            'border-top-left-radius', 'border-top-right-radius',
-            'border-bottom-left-radius', 'border-bottom-right-radius'
-        ]);
-        
-        // Properties where 'auto' is meaningful
-        const autoIsMeaningful = new Set([
-            'margin', 'margin-left', 'margin-right', 'width', 'height'
-        ]);
-        
-        STYLE_PROPERTIES.forEach(prop => {
+        // First, explicitly grab critical properties
+        for (const prop of criticalProperties) {
             const value = styles.getPropertyValue(prop);
-            if (!value) return;
+            if (value && value !== '' && !DEFAULT_VALUES.has(value)) {
+                // Special handling for colors
+                if (prop.includes('color') || prop === 'background-color') {
+                    if (value !== 'rgba(0, 0, 0, 0)' && value !== 'transparent' && value !== 'currentcolor') {
+                        result[prop] = value;
+                    }
+                } else {
+                    result[prop] = value;
+                }
+            }
+        }
+        
+        // Iterate through ALL computed style properties for anything we missed
+        for (let i = 0; i < styles.length; i++) {
+            const prop = styles[i];
             
-            // Skip truly default values
-            if (skipValues.has(value)) return;
+            // Skip if we already captured this property
+            if (result[prop] !== undefined) continue;
             
-            // Handle 'none' - skip for most properties
-            if (value === 'none' && !noneIsMeaningful.has(prop)) return;
+            const value = styles.getPropertyValue(prop);
             
-            // Handle 'normal' - skip for most but keep for some
-            if (value === 'normal' && !['letter-spacing', 'word-spacing', 'line-height', 'white-space'].includes(prop)) return;
+            if (!value || value === '') continue;
             
-            // Handle 'auto' - skip for most but keep for meaningful ones
-            if (value === 'auto' && !autoIsMeaningful.has(prop)) return;
-            
-            // Handle zero values
-            if ((value === '0px' || value === '0' || value === '0px 0px 0px 0px') && !zeroIsMeaningful.has(prop)) return;
-            
-            // Handle transparent/invisible colors
-            if (value === 'rgba(0, 0, 0, 0)' || value === 'transparent') {
-                // Only skip for background-color (transparent bg is often default)
-                if (prop === 'background-color') return;
+            // Skip vendor-prefixed properties except important ones
+            if (prop.startsWith('-webkit-') || prop.startsWith('-moz-') || prop.startsWith('-ms-') || prop.startsWith('-o-')) {
+                // Keep important vendor-prefixed properties
+                const importantVendorProps = [
+                    '-webkit-font-smoothing', '-webkit-text-stroke', '-webkit-background-clip',
+                    '-webkit-mask', '-webkit-mask-image', '-webkit-overflow-scrolling',
+                    '-webkit-tap-highlight-color', '-webkit-line-clamp', '-webkit-box-orient'
+                ];
+                if (!importantVendorProps.includes(prop)) continue;
             }
             
-            // Skip pure black text if it's the default
-            if (prop === 'color' && value === 'rgb(0, 0, 0)') {
-                // Still include it - black text is valid
+            // Always capture certain important properties regardless of value
+            if (ALWAYS_CAPTURE.has(prop)) {
+                if (value !== 'none' && value !== 'none 0s ease 0s 1 normal none running') {
+                    result[prop] = value;
+                }
+                continue;
             }
             
+            // Check if this property has meaningful "default" values defined
+            if (MEANINGFUL_DEFAULTS[prop]) {
+                if (MEANINGFUL_DEFAULTS[prop].length === 0 || MEANINGFUL_DEFAULTS[prop].includes(value)) {
+                    result[prop] = value;
+                    continue;
+                }
+            }
+            
+            // Skip generic default values
+            if (DEFAULT_VALUES.has(value)) continue;
+            
+            // Skip empty-looking values
+            if (value.trim() === '' || value === '0px 0px 0px 0px rgba(0, 0, 0, 0)') continue;
+            
+            // Keep colors that are not transparent/black defaults
+            if (prop.includes('color')) {
+                if (value !== 'rgba(0, 0, 0, 0)' && value !== 'transparent' && value !== 'currentcolor') {
+                    result[prop] = value;
+                }
+                continue;
+            }
+            
+            // Keep background-color if it's not transparent
+            if (prop === 'background-color') {
+                if (value !== 'rgba(0, 0, 0, 0)' && value !== 'transparent') {
+                    result[prop] = value;
+                }
+                continue;
+            }
+            
+            // Keep the value - it's meaningful
             result[prop] = value;
-        });
+        }
         
         return result;
     }
@@ -315,7 +992,8 @@
 
     function getElementDescription(el) {
         const tagName = el.tagName.toLowerCase();
-        const classes = Array.from(el.classList).filter(c => !c.includes('ai-design-copier')).join(' ');
+        const classArray = Array.from(el.classList).filter(c => !c.includes('ai-design-copier'));
+        const classes = classArray.join(' ');
         const id = el.id ? `#${el.id}` : '';
         const role = getElementRole(el);
         const text = el.innerText?.trim().substring(0, 50);
@@ -328,6 +1006,9 @@
             tag: tagName,
             role: role,
             selector: `${tagName}${id}${classes ? '.' + classes.split(' ').join('.') : ''}`,
+            // Include raw class names for Tailwind/utility class detection
+            classNames: classArray,
+            className: el.className?.toString?.() || '',
         };
         
         if (text && text.length > 0 && !el.children.length) {
@@ -429,6 +1110,15 @@
             count += countElements(child);
         }
         return count;
+    }
+    
+    // Quick count of all children (for estimation before full extraction)
+    function countAllChildren(el, maxCount = 500) {
+        if (!el) return 0;
+        let count = 0;
+        const children = el.getElementsByTagName('*');
+        // Limit count to avoid blocking on huge trees
+        return Math.min(children.length, maxCount);
     }
 
     // ============================================
@@ -569,90 +1259,99 @@
         return null; // Skip non-meaningful elements
     }
 
-    // Extract key style properties for a component
+    // Extract ALL relevant style properties for a component
     function extractComponentStyles(el) {
         const styles = window.getComputedStyle(el);
         const result = {};
 
-        // Colors
-        const bgColor = styles.backgroundColor;
-        const textColor = styles.color;
-        const borderColor = styles.borderColor;
-
-        if (bgColor && bgColor !== 'rgba(0, 0, 0, 0)') {
-            result.backgroundColor = bgColor;
-        }
-        if (textColor) {
-            result.color = textColor;
-        }
-        if (borderColor && borderColor !== 'rgb(0, 0, 0)' && styles.borderWidth !== '0px') {
-            result.borderColor = borderColor;
-        }
-
-        // Typography
-        result.fontFamily = styles.fontFamily.split(',')[0].trim().replace(/"/g, '');
-        result.fontSize = styles.fontSize;
-        result.fontWeight = styles.fontWeight;
-        result.lineHeight = styles.lineHeight;
-        if (styles.letterSpacing !== 'normal') {
-            result.letterSpacing = styles.letterSpacing;
-        }
-        if (styles.textTransform !== 'none') {
-            result.textTransform = styles.textTransform;
-        }
-
-        // Spacing
-        const padding = styles.padding;
-        const margin = styles.margin;
-        if (padding && padding !== '0px') {
-            result.padding = padding;
-        }
-        if (margin && margin !== '0px') {
-            result.margin = margin;
-        }
-
-        // Borders
-        if (styles.borderRadius && styles.borderRadius !== '0px') {
-            result.borderRadius = styles.borderRadius;
-        }
-        if (styles.borderWidth && styles.borderWidth !== '0px') {
-            result.borderWidth = styles.borderWidth;
-            result.borderStyle = styles.borderStyle;
-        }
-
-        // Shadows
-        if (styles.boxShadow && styles.boxShadow !== 'none') {
-            result.boxShadow = styles.boxShadow;
-        }
-
-        // Dimensions
+        // Get dimensions first
         const rect = el.getBoundingClientRect();
         result.width = Math.round(rect.width);
         result.height = Math.round(rect.height);
 
-        // Layout
-        if (styles.display === 'flex' || styles.display === 'inline-flex') {
-            result.display = styles.display;
-            result.flexDirection = styles.flexDirection;
-            result.justifyContent = styles.justifyContent;
-            result.alignItems = styles.alignItems;
-            if (styles.gap !== 'normal' && styles.gap !== '0px') {
-                result.gap = styles.gap;
+        // Iterate through ALL computed styles
+        for (let i = 0; i < styles.length; i++) {
+            const prop = styles[i];
+            const value = styles.getPropertyValue(prop);
+            
+            if (!value || value === '') continue;
+            
+            // Convert kebab-case to camelCase for result object
+            const camelProp = prop.replace(/-([a-z])/g, (g) => g[1].toUpperCase());
+            
+            // Skip vendor-prefixed properties except important ones
+            if (prop.startsWith('-webkit-') || prop.startsWith('-moz-') || prop.startsWith('-ms-') || prop.startsWith('-o-')) {
+                const importantVendorProps = [
+                    '-webkit-font-smoothing', '-webkit-text-stroke', '-webkit-background-clip',
+                    '-webkit-mask', '-webkit-mask-image', '-webkit-overflow-scrolling',
+                    '-webkit-tap-highlight-color', '-webkit-line-clamp', '-webkit-box-orient'
+                ];
+                if (!importantVendorProps.includes(prop)) continue;
             }
-        } else if (styles.display === 'grid' || styles.display === 'inline-grid') {
-            result.display = styles.display;
-            result.gridTemplateColumns = styles.gridTemplateColumns;
-            result.gridGap = styles.gridGap;
-        }
-
-        // Transitions
-        if (styles.transition && styles.transition !== 'all 0s ease 0s' && styles.transition !== 'none') {
-            result.transition = styles.transition;
-        }
-
-        // Cursor
-        if (styles.cursor && styles.cursor !== 'auto') {
-            result.cursor = styles.cursor;
+            
+            // Always capture these important visual properties
+            const alwaysCapture = [
+                'boxShadow', 'textShadow', 'filter', 'backdropFilter',
+                'transform', 'animation', 'transition', 'backgroundImage',
+                'clipPath', 'mask', 'maskImage', 'borderImage', 'outline'
+            ];
+            
+            if (alwaysCapture.includes(camelProp)) {
+                if (value !== 'none' && value !== 'none 0s ease 0s 1 normal none running') {
+                    result[camelProp] = value;
+                }
+                continue;
+            }
+            
+            // Skip generic default values
+            const defaultValues = new Set([
+                'initial', 'inherit', 'unset', 'revert', 'none', 'normal', 'auto',
+                'visible', 'static', 'baseline', '0', '0px', '0%', '0s', '0ms',
+                'rgba(0, 0, 0, 0)', 'transparent', 'repeat', 'scroll', 'border-box',
+                'ease', 'all 0s ease 0s', 'running', 'ltr', 'separate', 'start', 'stretch',
+                'row', 'nowrap', 'medium', 'currentcolor', 'content-box'
+            ]);
+            
+            if (defaultValues.has(value)) continue;
+            
+            // Skip zero values for most properties
+            if (value === '0px 0px' || value === '0px 0px 0px 0px' || value === '0 0' || value === '0 0 0 0') continue;
+            
+            // Handle colors - skip transparent
+            if (prop.includes('color')) {
+                if (value !== 'rgba(0, 0, 0, 0)' && value !== 'transparent' && value !== 'currentcolor') {
+                    result[camelProp] = value;
+                }
+                continue;
+            }
+            
+            // Handle background-color specially
+            if (prop === 'background-color') {
+                if (value !== 'rgba(0, 0, 0, 0)' && value !== 'transparent') {
+                    result[camelProp] = value;
+                }
+                continue;
+            }
+            
+            // Keep meaningful display values
+            if (prop === 'display') {
+                const meaningfulDisplays = ['block', 'inline', 'inline-block', 'flex', 'inline-flex', 'grid', 'inline-grid', 'table', 'table-cell', 'table-row', 'contents', 'none'];
+                if (meaningfulDisplays.includes(value)) {
+                    result[camelProp] = value;
+                }
+                continue;
+            }
+            
+            // Keep meaningful position values
+            if (prop === 'position') {
+                if (value !== 'static') {
+                    result[camelProp] = value;
+                }
+                continue;
+            }
+            
+            // Keep the value - it's meaningful
+            result[camelProp] = value;
         }
 
         return result;
@@ -700,7 +1399,11 @@
         const spacingValues = new Set();
         const borderRadii = new Set();
         const shadows = new Set();
+        const textShadows = new Set();
         const lineHeights = new Set();
+        const animations = new Set();
+        const transitions = new Set();
+        const transforms = new Set();
 
         // Get all elements
         const allElements = document.querySelectorAll('*');
@@ -762,9 +1465,30 @@
                 borderRadii.add(styles.borderRadius);
             }
 
-            // Shadows
+            // Shadows (box and text)
             if (styles.boxShadow && styles.boxShadow !== 'none') {
                 shadows.add(styles.boxShadow);
+            }
+            if (styles.textShadow && styles.textShadow !== 'none') {
+                textShadows.add(styles.textShadow);
+            }
+
+            // Animations
+            if (styles.animation && styles.animation !== 'none' && styles.animation !== 'none 0s ease 0s 1 normal none running') {
+                animations.add(styles.animation);
+            }
+            if (styles.animationName && styles.animationName !== 'none') {
+                animations.add(`name: ${styles.animationName}`);
+            }
+
+            // Transitions
+            if (styles.transition && styles.transition !== 'none' && styles.transition !== 'all 0s ease 0s') {
+                transitions.add(styles.transition);
+            }
+
+            // Transforms
+            if (styles.transform && styles.transform !== 'none') {
+                transforms.add(styles.transform);
             }
 
             // Add to component collection if it's a meaningful component
@@ -810,14 +1534,20 @@
                 lineHeights: Array.from(lineHeights),
                 spacing: Array.from(spacingValues).sort((a, b) => parseFloat(a) - parseFloat(b)),
                 borderRadii: Array.from(borderRadii),
-                shadows: Array.from(shadows)
+                shadows: Array.from(shadows),
+                textShadows: Array.from(textShadows),
+                animations: Array.from(animations),
+                transitions: Array.from(transitions),
+                transforms: Array.from(transforms)
             },
             cssVariables,
             stats: {
                 totalElementsScanned: processedCount,
                 uniqueComponentsFound: componentCount,
                 colorsFound: colors.size,
-                fontsFound: fontFamilies.size
+                fontsFound: fontFamilies.size,
+                shadowsFound: shadows.size + textShadows.size,
+                animationsFound: animations.size
             }
         };
     }
@@ -961,15 +1691,17 @@
                el === document.body || el === document.documentElement;
     }
 
-    async function captureElementScreenshot(el) {
+    async function captureElementScreenshot(el, timeoutMs = 8000) {
         const rect = el.getBoundingClientRect();
         
-        // Add timeout to prevent hanging
+        console.log(`[Design Copier] Capturing screenshot for element ${rect.width}x${rect.height}px`);
+        
+        // Add timeout to prevent hanging - longer timeout for reliability
         return new Promise((resolve) => {
             const timeout = setTimeout(() => {
-                console.warn('Screenshot capture timed out');
+                console.warn(`[Design Copier] Screenshot capture timed out after ${timeoutMs}ms`);
                 resolve(null);
-            }, 3000); // 3 second timeout
+            }, timeoutMs);
             
             try {
                 chrome.runtime.sendMessage({
@@ -988,118 +1720,281 @@
                 }, (response) => {
                     clearTimeout(timeout);
                     if (chrome.runtime.lastError) {
-                        console.error('Screenshot error:', chrome.runtime.lastError);
+                        console.error('[Design Copier] Screenshot error:', chrome.runtime.lastError);
                         resolve(null);
                         return;
                     }
                     if (response && response.screenshot) {
+                        console.log(`[Design Copier] Screenshot captured: ${Math.round(response.screenshot.length / 1024)}KB`);
                         resolve(response.screenshot);
                     } else {
+                        console.warn('[Design Copier] No screenshot in response');
                         resolve(null);
                     }
                 });
             } catch (e) {
                 clearTimeout(timeout);
-                console.error('Screenshot capture failed:', e);
+                console.error('[Design Copier] Screenshot capture failed:', e);
                 resolve(null);
             }
         });
+    }
+
+    // ============================================
+    // SMART COMPONENT BOUNDARY DETECTION
+    // ============================================
+    
+    /**
+     * Finds the best component root to select instead of the deeply nested target.
+     * This "bubbles up" from the clicked element to find a meaningful component boundary.
+     */
+    function findComponentBoundary(el) {
+        // Don't go past body
+        if (!el || el === document.body || el === document.documentElement) {
+            return el;
+        }
+        
+        // Tags that are definitely component boundaries - stop here
+        const componentRootTags = new Set([
+            'button', 'a', 'input', 'select', 'textarea', 'label',
+            'article', 'section', 'aside', 'nav', 'header', 'footer', 'main',
+            'form', 'fieldset', 'dialog', 'details', 'summary',
+            'li', 'tr', 'th', 'td', 'figure', 'figcaption',
+            'video', 'audio', 'canvas', 'iframe',
+            'h1', 'h2', 'h3', 'h4', 'h5', 'h6'
+        ]);
+        
+        // Class patterns that suggest this is a component root
+        const componentClassPatterns = [
+            /^btn[-_]?/i, /[-_]?btn$/i, /button/i,
+            /^card[-_]?/i, /[-_]?card$/i,
+            /^modal[-_]?/i, /[-_]?modal$/i, /dialog/i,
+            /^dropdown[-_]?/i, /[-_]?dropdown$/i, /popover/i,
+            /^menu[-_]?/i, /[-_]?menu$/i, /nav/i,
+            /^tab[-_]?/i, /[-_]?tab$/i,
+            /^chip[-_]?/i, /[-_]?chip$/i, /badge/i, /tag/i, /pill/i,
+            /^avatar[-_]?/i, /[-_]?avatar$/i,
+            /^alert[-_]?/i, /[-_]?alert$/i, /toast/i, /notification/i,
+            /^tooltip[-_]?/i, /[-_]?tooltip$/i,
+            /^input[-_]?/i, /[-_]?input$/i, /form[-_]?group/i,
+            /^item[-_]?/i, /[-_]?item$/i, /list[-_]?item/i,
+            /^panel[-_]?/i, /[-_]?panel$/i,
+            /^header[-_]?/i, /[-_]?header$/i, /^footer[-_]?/i, /[-_]?footer$/i,
+            /^section[-_]?/i, /[-_]?section$/i,
+            /^container[-_]?/i, /[-_]?container$/i, /wrapper/i,
+            /^hero[-_]?/i, /[-_]?hero$/i,
+            /^cta[-_]?/i, /[-_]?cta$/i,
+            /^feature[-_]?/i, /[-_]?feature$/i,
+            /component/i, /widget/i, /block/i
+        ];
+        
+        // ARIA roles that indicate a component boundary
+        const componentRoles = new Set([
+            'button', 'link', 'menuitem', 'option', 'tab', 'treeitem',
+            'listitem', 'row', 'cell', 'gridcell', 'columnheader', 'rowheader',
+            'dialog', 'alertdialog', 'menu', 'menubar', 'tablist', 'toolbar',
+            'listbox', 'tree', 'treegrid', 'grid', 'table',
+            'alert', 'status', 'tooltip', 'banner', 'navigation', 
+            'main', 'complementary', 'contentinfo', 'form', 'search', 'region',
+            'article', 'figure', 'img', 'document', 'application'
+        ]);
+        
+        // Check if element has meaningful visual styles (not inherited/transparent)
+        function hasMeaningfulStyles(element) {
+            const styles = window.getComputedStyle(element);
+            
+            // Check for explicit background
+            const bg = styles.backgroundColor;
+            const hasBg = bg && bg !== 'rgba(0, 0, 0, 0)' && bg !== 'transparent';
+            
+            // Check for border
+            const borderWidth = parseFloat(styles.borderWidth) || 0;
+            const hasBorder = borderWidth > 0;
+            
+            // Check for box shadow
+            const shadow = styles.boxShadow;
+            const hasShadow = shadow && shadow !== 'none';
+            
+            // Check for explicit padding that suggests intentional styling
+            const paddingSum = 
+                parseFloat(styles.paddingTop) + parseFloat(styles.paddingRight) +
+                parseFloat(styles.paddingBottom) + parseFloat(styles.paddingLeft);
+            const hasPadding = paddingSum >= 8; // At least 8px total padding
+            
+            // Check for border-radius
+            const radius = styles.borderRadius;
+            const hasRadius = radius && radius !== '0px';
+            
+            return hasBg || hasBorder || hasShadow || (hasPadding && hasRadius);
+        }
+        
+        // Check if element looks like a component root based on class names
+        function hasComponentClassName(element) {
+            const classes = element.className?.toString?.() || '';
+            if (!classes) return false;
+            
+            return componentClassPatterns.some(pattern => pattern.test(classes));
+        }
+        
+        // Check if element is an "inline" element that should bubble up
+        function isInlineElement(element) {
+            const tag = element.tagName.toLowerCase();
+            const inlineTags = new Set([
+                'span', 'strong', 'em', 'b', 'i', 'u', 'small', 'sub', 'sup',
+                'code', 'kbd', 'samp', 'var', 'abbr', 'cite', 'q', 'mark',
+                'svg', 'path', 'g', 'circle', 'rect', 'line', 'polygon', 'polyline',
+                'text', 'tspan', 'use', 'symbol', 'defs', 'clippath'
+            ]);
+            return inlineTags.has(tag);
+        }
+        
+        // Start from clicked element and walk up
+        let current = el;
+        let candidate = el;
+        let depth = 0;
+        const maxDepth = 10; // Don't go too far up
+        
+        while (current && current !== document.body && depth < maxDepth) {
+            const tagName = current.tagName?.toLowerCase();
+            const role = current.getAttribute?.('role');
+            
+            // If this is a semantic component root, stop here
+            if (componentRootTags.has(tagName)) {
+                return current;
+            }
+            
+            // If it has a component role, stop here
+            if (role && componentRoles.has(role)) {
+                return current;
+            }
+            
+            // If it has a component-like class name, this is likely a good boundary
+            if (hasComponentClassName(current)) {
+                candidate = current;
+                // Keep going up one more level to see if parent is also a component
+                // (e.g., button inside a button-group)
+            }
+            
+            // If this element has meaningful visual styles, it's a good candidate
+            if (hasMeaningfulStyles(current)) {
+                candidate = current;
+            }
+            
+            // If we started on an inline/svg element, definitely bubble up
+            if (depth === 0 && isInlineElement(current)) {
+                // The clicked element is inline, we need to go up
+                current = current.parentElement;
+                depth++;
+                continue;
+            }
+            
+            current = current.parentElement;
+            depth++;
+        }
+        
+        return candidate;
+    }
+    
+    /**
+     * Determines if we should use the component boundary or the exact target.
+     * Gives user hints about what was selected.
+     */
+    function getSmartSelectedElement(originalTarget) {
+        const componentBoundary = findComponentBoundary(originalTarget);
+        
+        // If component boundary is same as target, just return it
+        if (componentBoundary === originalTarget) {
+            return { element: originalTarget, wasAdjusted: false };
+        }
+        
+        // Return the component boundary
+        return { 
+            element: componentBoundary, 
+            wasAdjusted: true,
+            originalTag: originalTarget.tagName?.toLowerCase(),
+            selectedTag: componentBoundary.tagName?.toLowerCase()
+        };
     }
 
     async function handleClick(e) {
         e.preventDefault();
         e.stopPropagation();
         
-        const el = e.target;
+        const clickedElement = e.target;
         
-        if (overlay) {
-            overlay.style.display = 'none';
+        // If clicking inside the picker panel, ignore
+        if (elementPickerPanel && elementPickerPanel.contains(clickedElement)) {
+            return;
+        }
+        if (clickedElement.closest('#element-picker-panel')) {
+            return;
         }
         
-        await new Promise(resolve => setTimeout(resolve, 50));
-        
-        let screenshot = null;
-        try {
-            screenshot = await captureElementScreenshot(el);
-        } catch (err) {
-            console.error('Screenshot capture failed:', err);
-        }
-        
-        // Get parent element for context
-        const parentEl = el.parentElement;
-        let parentContext = null;
-        
-        if (parentEl && parentEl !== document.body) {
-            const parentRect = parentEl.getBoundingClientRect();
-            const parentStyles = window.getComputedStyle(parentEl);
-            parentContext = {
-                width: Math.round(parentRect.width),
-                height: Math.round(parentRect.height),
-                top: parentRect.top,
-                left: parentRect.left,
-                display: parentStyles.display,
-                position: parentStyles.position,
-                padding: parentStyles.padding
-            };
-        }
-        
-        const elementTree = buildElementTree(el, 0, 10, parentContext);
-        const elementCount = countElements(elementTree);
-        
-        const isPageLevel = isPageLevelElement(el);
-        const globalCSS = extractPageGlobalCSS();
-        
-        // Viewport and page context for pixel-perfect extraction
-        const viewportContext = {
-            width: window.innerWidth,
-            height: window.innerHeight,
-            scrollX: window.scrollX,
-            scrollY: window.scrollY,
-            devicePixelRatio: window.devicePixelRatio || 1,
-            // Root font size for rem calculations
-            rootFontSize: parseFloat(getComputedStyle(document.documentElement).fontSize) || 16
-        };
-        
-        const captureData = {
-            tree: elementTree,
-            elementCount: elementCount,
-            screenshot: screenshot,
-            pageUrl: window.location.href,
-            pageTitle: document.title,
-            timestamp: new Date().toISOString(),
-            isPageLevel: isPageLevel,
-            globalCSS: globalCSS,
-            // New: viewport and parent context for pixel perfection
-            viewportContext: viewportContext,
-            parentContext: parentContext
-        };
-        
-        chrome.runtime.sendMessage({
-            type: 'ELEMENT_SELECTED',
-            data: captureData
-        });
-
+        // Stop selection mode temporarily
         stopSelection();
         
-        const message = isPageLevel 
-            ? `Captured page styles — Opening results...`
-            : `Captured ${elementCount} element${elementCount > 1 ? 's' : ''} — Opening results...`;
-        showToast(message);
-        
-        if (overlay) {
-            overlay.style.display = 'block';
-            overlay.style.backgroundColor = 'rgba(107, 143, 113, 0.3)';
-            overlay.style.borderColor = '#6b8f71';
-            setTimeout(() => {
-                if (overlay) overlay.remove();
-                overlay = null;
-            }, 300);
-        }
+        // Show the element picker panel
+        createElementPickerPanel(clickedElement, e.clientX, e.clientY);
     }
 
     function stopSelection() {
         document.removeEventListener('mousemove', handleMouseMove);
         document.removeEventListener('click', handleClick, true);
+        document.removeEventListener('keydown', handleKeyDown);
+        currentHoveredElement = null;
+    }
+    
+    function cancelSelection() {
+        stopSelection();
+        removeElementPickerPanel();
+        if (overlay) {
+            overlay.style.display = 'none';
+        }
+        document.removeEventListener('keydown', handleKeyDown);
+    }
+    
+    function handleKeyDown(e) {
+        // Escape to cancel
+        if (e.key === 'Escape') {
+            e.preventDefault();
+            cancelSelection();
+            showToast('Selection cancelled');
+            return;
+        }
+        
+        // If picker is active, handle arrow navigation
+        if (isPickerActive && elementPickerPanel) {
+            const items = elementPickerPanel.querySelectorAll('.picker-item');
+            const currentIndex = Array.from(items).findIndex(i => i.classList.contains('selected'));
+            const ancestors = elementPickerPanel._ancestors;
+            
+            if (e.key === 'ArrowUp' && currentIndex < items.length - 1) {
+                e.preventDefault();
+                items[currentIndex]?.classList.remove('selected');
+                items[currentIndex + 1]?.classList.add('selected');
+                const ancestor = ancestors[currentIndex + 1];
+                if (ancestor?.element) updateOverlay(ancestor.element);
+                items[currentIndex + 1]?.scrollIntoView({ block: 'nearest' });
+            }
+            
+            if (e.key === 'ArrowDown' && currentIndex > 0) {
+                e.preventDefault();
+                items[currentIndex]?.classList.remove('selected');
+                items[currentIndex - 1]?.classList.add('selected');
+                const ancestor = ancestors[currentIndex - 1];
+                if (ancestor?.element) updateOverlay(ancestor.element);
+                items[currentIndex - 1]?.scrollIntoView({ block: 'nearest' });
+            }
+            
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                const ancestor = ancestors[currentIndex];
+                if (ancestor?.element) {
+                    removeElementPickerPanel();
+                    captureSelectedElement(ancestor.element);
+                }
+            }
+        }
     }
 
     // Deep global theme extraction with loader
@@ -1456,6 +2351,7 @@
             createOverlay();
             document.addEventListener('mousemove', handleMouseMove);
             document.addEventListener('click', handleClick, true);
+            document.addEventListener('keydown', handleKeyDown);
             sendResponse({ status: 'started' });
         }
         
