@@ -381,10 +381,46 @@ function formatSpacingFromStyles(styles) {
 }
 
 // ============================================
+// ELEMENT COUNTING FOR PHASED APPROACH
+// ============================================
+
+function countTotalElements(node, count = { total: 0, depth: 0 }) {
+    if (!node) return count;
+    count.total++;
+    count.depth = Math.max(count.depth, node.depth || 0);
+    for (const child of (node.children || [])) {
+        countTotalElements(child, count);
+    }
+    return count;
+}
+
+function generatePhasedGuidance(elementCount, maxDepth) {
+    if (elementCount <= 30) return null; // No guidance needed for small selections
+    
+    const phases = Math.ceil(elementCount / 25);
+    return `
+⚠️ LARGE SELECTION DETECTED: ${elementCount} elements across ${maxDepth} levels
+
+📋 RECOMMENDED PHASED APPROACH:
+For best results with complex designs, consider extracting in ${phases} phases:
+• Phase 1: Extract the main container/header section only
+• Phase 2: Extract the content/body area separately  
+• Phase 3: Extract footer/sidebar/additional sections
+
+This ensures the AI receives complete, non-truncated data for each section.
+To do this: Use the element picker to select smaller, logical sections one at a time.
+
+────────────────────────────────────────────────────────────────────
+PROCEEDING WITH FULL EXTRACTION (all ${elementCount} elements included below):
+────────────────────────────────────────────────────────────────────
+`;
+}
+
+// ============================================
 // PIXEL-PERFECT HIERARCHY FORMATTER
 // ============================================
 
-function formatPixelPerfectHierarchy(node, depth = 0, maxDepth = 8) {
+function formatPixelPerfectHierarchy(node, depth = 0, maxDepth = 15) {
     if (!node || depth > maxDepth) return '';
     
     const indent = '│ '.repeat(depth);
@@ -420,7 +456,7 @@ function formatPixelPerfectHierarchy(node, depth = 0, maxDepth = 8) {
             !c.match(/^[a-z]{1,3}-[0-9a-f]{4,}$/i) && // Skip hashed classes
             !c.includes('__') && // Skip BEM modifiers
             c.length < 40 // Skip very long generated classes
-        ).slice(0, 8); // Limit to 8 classes
+        ).slice(0, 12); // Allow more classes for accuracy
         
         if (styleClasses.length > 0) {
             line += `${indent}│   📌 class: "${styleClasses.join(' ')}"\n`;
@@ -496,14 +532,10 @@ function formatPixelPerfectHierarchy(node, depth = 0, maxDepth = 8) {
         line += `${indent}│   💬 "${preview}${node.textContent.length > 40 ? '...' : ''}"\n`;
     }
     
-    // Process children
+    // Process ALL children - no truncation for accuracy
     const children = node.children || [];
-    const maxChildren = 12;
-    for (let i = 0; i < children.length && i < maxChildren; i++) {
+    for (let i = 0; i < children.length; i++) {
         line += formatPixelPerfectHierarchy(children[i], depth + 1, maxDepth);
-    }
-    if (children.length > maxChildren) {
-        line += `${indent}│   ... and ${children.length - maxChildren} more elements\n`;
     }
     
     return line;
@@ -535,8 +567,8 @@ function formatDetailedElementList(elements) {
         output += `\n### ${groupName.toUpperCase()} (${groupElements.length})\n`;
         output += '─'.repeat(50) + '\n';
         
-        const maxShow = 5;
-        for (let i = 0; i < groupElements.length && i < maxShow; i++) {
+        // Show ALL elements - no truncation for accurate replication
+        for (let i = 0; i < groupElements.length; i++) {
             const el = groupElements[i];
             if (!el) continue;
             
@@ -610,10 +642,6 @@ function formatDetailedElementList(elements) {
             }
             
             output += '\n';
-        }
-        
-        if (groupElements.length > maxShow) {
-            output += `... and ${groupElements.length - maxShow} more ${groupName} elements\n`;
         }
     }
     
@@ -766,7 +794,7 @@ const CORE_PROMPTS = {
         
         const elements = extractPixelPerfectData(data.tree) || [];
         const tokens = ensureTokens(extractDesignTokens(elements));
-        const hierarchy = formatPixelPerfectHierarchy(data.tree, 0, 6);
+        const hierarchy = formatPixelPerfectHierarchy(data.tree, 0, 15);
         const rootDims = data.tree.dimensions || {};
         const viewportContext = data.viewportContext || {};
         const rootStyles = data.tree.styles || {};
@@ -776,12 +804,55 @@ const CORE_PROMPTS = {
         const rootBorderRadius = rootStyles['border-radius'] || rootComputed.borderRadius || null;
         const rootClasses = data.tree.classNames || [];
         
-        return `TASK: Apply this design's EXACT visual styles to my existing component.
+        // Count elements for phased guidance
+        const elementStats = countTotalElements(data.tree);
+        const phasedGuidance = generatePhasedGuidance(elementStats.total, elementStats.depth);
+        
+        return `TASK: Apply this design's EXACT visual styles to my EXISTING component.
 
 📎 NOTE: Use the attached screenshot as visual reference. Below are the EXACT CSS values extracted from the DOM.
+${phasedGuidance || ''}
+════════════════════════════════════════════════════════════════════
+🧠 STEP 1: LOGICAL ELEMENT MAPPING (Do this first!)
+════════════════════════════════════════════════════════════════════
+
+Before applying ANY styles, mentally map each element in the reference design to its CONCEPTUAL equivalent in my component:
+• Reference "heading" → My component's heading (even if text content differs)
+• Reference "card container" → My component's container (regardless of what it contains)
+• Reference "action button" → My component's action button (even if the action is different)
+• Reference "metadata/subtitle" → My component's metadata/subtitle area
+• Reference "icon/image area" → My component's icon/image area
+
+⚠️ CRITICAL: The reference design may have COMPLETELY DIFFERENT CONTENT than my component.
+Example: Reference might be a "subscription card" but I have a "user profile card".
+You are ONLY borrowing the VISUAL APPEARANCE (colors, spacing, shadows, typography).
+Map elements by their ROLE (heading, body, button, icon area), NOT by their content.
+My component's PURPOSE and CONTENT must remain unchanged.
 
 ════════════════════════════════════════════════════════════════════
-CAPTURED ELEMENT OVERVIEW
+🎯 STEP 2: APPLY STYLES - CRITICAL INSTRUCTIONS
+════════════════════════════════════════════════════════════════════
+
+✅ DO:
+• Apply styles from reference elements to MY EQUIVALENT elements (based on role mapping above)
+• Use MY styling approach (Tailwind classes, CSS modules, styled-components, etc.)
+• Update ONLY the visual CSS values (colors, spacing, typography, borders, shadows)
+• Keep ALL my existing content, text, labels, and functionality unchanged
+
+❌ DO NOT:
+• Replace my content/text with the reference design's content
+• Change what my component IS or DOES (keep its semantic purpose)
+• Create new components, files, or wrapper elements
+• Invent new class names or CSS variables I don't have
+• Add unnecessary imports, dependencies, or code
+• Change my HTML structure, logic, or text content
+• Add/remove elements to match the reference (only style what I already have)
+• Override my existing styling methodology with a different one
+
+⚠️ If you can't find a matching component: ASK which file/component to apply to.
+
+════════════════════════════════════════════════════════════════════
+CAPTURED ELEMENT OVERVIEW (${elementStats.total} elements)
 ════════════════════════════════════════════════════════════════════
 📐 Total Size: ${rootDims.width || '?'}px × ${rootDims.height || '?'}px
 🎨 Background: ${rootStyles['background-color'] || 'transparent'}
@@ -791,15 +862,6 @@ ${rootStyles['box-shadow'] && rootStyles['box-shadow'] !== 'none' ? `✨ Shadow:
 ${rootStyles.padding && rootStyles.padding !== '0px' ? `📏 Padding: ${rootStyles.padding}` : ''}
 ${rootClasses.length > 0 ? `📌 Classes: ${rootClasses.slice(0, 10).join(' ')}` : ''}
 ${viewportContext.rootFontSize ? `📝 Root font-size: ${viewportContext.rootFontSize}px` : ''}
-
-════════════════════════════════════════════════════════════════════
-⚠️ PRESERVE MY EXISTING:
-• Text content, labels, placeholders
-• HTML structure and class names  
-• Component logic and event handlers
-
-✅ ONLY CHANGE: Visual CSS styles
-════════════════════════════════════════════════════════════════════
 
 ════════════════════════════════════════════════════════════════════
 PIXEL-PERFECT COMPONENT STRUCTURE
@@ -835,8 +897,8 @@ EXACT VALUES TO APPLY
 ${(tokens.shadows || []).length > 0 ? (tokens.shadows || []).map(s => `• box-shadow: ${s}`).join('\n') : '• No shadows'}
 
 📏 ELEMENT DIMENSIONS:
-• Widths: ${safeJoin((tokens.widths || []).slice(0, 10)) || 'auto'}
-• Heights: ${safeJoin((tokens.heights || []).slice(0, 10)) || 'auto'}
+• Widths: ${safeJoin((tokens.widths || []).slice(0, 15)) || 'auto'}
+• Heights: ${safeJoin((tokens.heights || []).slice(0, 15)) || 'auto'}
 
 ════════════════════════════════════════════════════════════════════
 DETAILED ELEMENT BREAKDOWN
@@ -844,12 +906,12 @@ DETAILED ELEMENT BREAKDOWN
 ${formatDetailedElementList(elements)}
 
 ════════════════════════════════════════════════════════════════════
-INSTRUCTIONS:
-1. Match each element in your component to the types above
-2. Apply the EXACT pixel values shown - do NOT approximate
-3. Spacing must match exactly (padding, margin, gap)
-4. Use the exact color values provided
-5. If you see percentage widths, the parent width is shown for calculation
+HOW TO APPLY:
+1. Identify MY component that matches this design's structure
+2. Map each extracted element to MY existing selectors/classes
+3. Update MY CSS values to match the EXACT pixel values shown
+4. Keep my methodology: if I use Tailwind, update Tailwind classes; if CSS, update CSS
+5. Preserve ALL my existing: text, labels, logic, event handlers, structure
 ════════════════════════════════════════════════════════════════════`;
     },
 

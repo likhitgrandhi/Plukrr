@@ -202,12 +202,29 @@ function setupEventListeners() {
     
     saveSettingsBtn.addEventListener('click', saveSettings);
     
-    // Pricing cards
+    // Pricing cards and buttons
     const pricingCards = document.querySelectorAll('.pricing-card');
+    const pricingButtons = document.querySelectorAll('.pricing-button');
+    
     pricingCards.forEach(card => {
-        card.addEventListener('click', () => {
+        card.addEventListener('click', (e) => {
+            // Don't trigger if clicking the button
+            if (e.target.classList.contains('pricing-button')) {
+                return;
+            }
             const plan = card.dataset.plan;
             handleUpgrade(plan);
+        });
+    });
+    
+    pricingButtons.forEach(button => {
+        button.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const card = button.closest('.pricing-card');
+            if (card) {
+                const plan = card.dataset.plan;
+                handleUpgrade(plan);
+            }
         });
     });
     

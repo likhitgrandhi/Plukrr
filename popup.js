@@ -21,17 +21,38 @@ const INTENTS = {
         id: 'copy-design',
         label: 'Apply Design',
         description: 'Apply to existing component',
-        prompt: `TASK: Apply this design to my existing component.
+        prompt: `TASK: Apply this design's visual styles to my EXISTING component.
 
-CRITICAL: Do NOT copy any text content from the screenshot. Preserve ALL existing text, labels, placeholders, and user content in my component. Only update visual styles.
+🧠 STEP 1: LOGICAL ELEMENT MAPPING (Think through this first!)
+Before applying ANY styles, map each element in the reference design to its CONCEPTUAL equivalent in my component:
+• Reference "heading" → My component's heading (even if text differs)
+• Reference "card container" → My component's container (regardless of what it contains)
+• Reference "action button" → My component's action button (even if the action is different)
+• Reference "metadata/subtitle" → My component's metadata/subtitle area
 
-INSTRUCTIONS:
-1. Find the matching component in my codebase (similar structure/purpose)
-2. If found: Update ONLY the CSS styles (colors, spacing, typography, shadows, borders, etc.) to match the design specs below
-3. Keep my existing: markup structure, class names, logic, text content, labels, and all user-facing content
-4. If NOT found: Ask me which component or file to apply this design to. Do not create a new component.
+⚠️ CRITICAL: The reference design may have DIFFERENT CONTENT (e.g., subscription card vs user profile). 
+You are ONLY borrowing the VISUAL APPEARANCE, not the semantic meaning or content.
+Map by ROLE (heading, body, button, icon area) not by CONTENT.
 
-Use screenshot as visual reference for STYLING ONLY. Apply these values:`
+🎯 STEP 2: APPLY STYLES
+
+✅ DO:
+• Apply styles from reference elements to MY EQUIVALENT elements (based on role mapping above)
+• Use MY styling approach (Tailwind, CSS modules, styled-components, etc.)
+• Update ONLY visual CSS values (colors, spacing, typography, borders, shadows)
+• Keep ALL my existing content, text, labels, and functionality unchanged
+
+❌ DO NOT:
+• Replace my content with the reference design's content
+• Change what my component IS or DOES
+• Create new components, files, or wrapper elements
+• Invent new class names or CSS variables I don't have
+• Change my HTML structure, logic, or text content
+• Add/remove elements to match the reference (only style what I have)
+
+⚠️ If no matching component found: ASK which file/component to apply to.
+
+Use screenshot as VISUAL STYLE reference only. Apply these EXACT values:`
     },
     'component-with-design': {
         id: 'component-with-design',

@@ -322,7 +322,7 @@ function formatGroupedStyles(groups) {
 }
 
 // Build semantic structure description (no source classes)
-function buildSemanticStructure(node, depth = 0, maxDepth = 4) {
+function buildSemanticStructure(node, depth = 0, maxDepth = 12) {
     if (!node || depth > maxDepth) return '';
     
     const indent = '  '.repeat(depth);
@@ -330,18 +330,16 @@ function buildSemanticStructure(node, depth = 0, maxDepth = 4) {
     
     let line = `${indent}<${role}>`;
     
-    if (node.textContent && node.textContent.length < 40) {
-        line += ` "${node.textContent.slice(0, 35)}..."`;
+    if (node.textContent && node.textContent.length < 50) {
+        line += ` "${node.textContent.slice(0, 45)}..."`;
     }
     
     const children = node.children || [];
     if (children.length > 0) {
         line += '\n';
-        for (const child of children.slice(0, 5)) {
+        // Process ALL children - no truncation for accuracy
+        for (const child of children) {
             line += buildSemanticStructure(child, depth + 1, maxDepth);
-        }
-        if (children.length > 5) {
-            line += `${indent}  ... ${children.length - 5} more\n`;
         }
         line += `${indent}</${role}>\n`;
     } else {
@@ -365,7 +363,7 @@ const INTENT_PROMPTS = {
         const groups = groupSimilarElements(elements);
         const tokens = extractUniqueTokens(elements);
         
-        return `You are writing a CONCISE prompt for an AI coding assistant. The user wants to apply visual styles from a screenshot to their existing component.
+        return `You are writing a CONCISE prompt for an AI coding assistant. The user wants to apply visual styles from a screenshot to their EXISTING component in their codebase.
 
 EXTRACTED DESIGN DATA:
 - Total elements: ${elements.length}
@@ -375,21 +373,40 @@ STYLE PATTERNS (grouped by similarity):
 ${formatGroupedStyles(groups)}
 
 DESIGN TOKENS:
-- Colors: ${tokens.colors.slice(0, 6).join(', ') || 'none'}
+- Colors: ${tokens.colors.join(', ') || 'none'}
 - Fonts: ${tokens.fonts.join(', ') || 'system'}
 - Font sizes: ${tokens.fontSizes.join(', ') || 'default'}
-- Spacing: ${tokens.spacing.slice(0, 6).join(', ') || 'default'}
+- Spacing: ${tokens.spacing.join(', ') || 'default'}
 - Border radius: ${tokens.radii.join(', ') || 'none'}
-- Shadows: ${tokens.shadows.length > 0 ? tokens.shadows.length + ' shadow(s)' : 'none'}
+- Shadows: ${tokens.shadows.length > 0 ? tokens.shadows.join(', ') : 'none'}
 
 Write a prompt that:
-1. Starts with "TASK: Apply this design to my existing component"
-2. Has "DO NOT CHANGE" section (preserve text, structure, logic)
-3. Has "VISUAL STYLES TO APPLY" section that:
+1. Starts with "TASK: Apply this design to my EXISTING component"
+2. Has "LOGICAL ELEMENT MAPPING" section (CRITICAL - include this):
+   - Explain that the AI must first map reference elements to user's elements BY ROLE, not content
+   - Example: Reference heading → User's heading (even if text differs)
+   - Example: Reference container → User's container (regardless of what it contains)
+   - Emphasize: The reference design may have DIFFERENT CONTENT (e.g., subscription card vs user profile)
+   - Emphasize: Only borrow VISUAL APPEARANCE, never change what the user's component IS or DOES
+3. Has "CRITICAL - DO NOT:" section:
+   - Do NOT replace user's content with reference design's content
+   - Do NOT change what the component IS or DOES
+   - Do NOT create new components or files
+   - Do NOT invent new class names or CSS variables
+   - Do NOT change HTML structure, text content, or logic
+   - Do NOT add/remove elements to match reference
+   - Do NOT override the user's styling methodology
+4. Has "DO:" section:
+   - Map reference elements to user's elements by ROLE (heading, button, etc.)
+   - Apply styles to user's EXISTING selectors and classes
+   - Keep ALL user's content, text, labels unchanged
+   - Use user's styling approach (Tailwind, CSS modules, etc.)
+   - If no match found: ASK which component to update
+5. Has "VISUAL STYLES TO APPLY" section that:
    - Groups similar elements (e.g., "All text elements: color #333, font-size 14px")
    - Lists container styles first, then child elements
-   - Is CONCISE - don't repeat identical styles
-4. Ends with the exact CSS values organized by category
+   - Includes ALL extracted values (no truncation)
+6. Ends with the exact CSS values organized by category
 
 Be brief but complete. Group similar patterns. Output ONLY the prompt text.`;
     },
