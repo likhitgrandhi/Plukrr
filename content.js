@@ -1917,6 +1917,148 @@
         });
     }
 
+    // Capture full page screenshot using scroll-and-stitch approach
+    async function captureFullPageScreenshot(timeoutMs = 30000) {
+        console.log('[Design Copier] Starting full page screenshot capture');
+
+        // Store original scroll position to restore later
+        const originalScrollX = window.scrollX;
+        const originalScrollY = window.scrollY;
+
+        // Get page dimensions
+        const viewportWidth = window.innerWidth;
+        const viewportHeight = window.innerHeight;
+        const fullWidth = Math.max(
+            document.body.scrollWidth,
+            document.documentElement.scrollWidth,
+            viewportWidth
+        );
+        const fullHeight = Math.max(
+            document.body.scrollHeight,
+            document.documentElement.scrollHeight,
+            viewportHeight
+        );
+
+        console.log(`[Design Copier] Page dimensions: ${fullWidth}x${fullHeight}, viewport: ${viewportWidth}x${viewportHeight}`);
+
+        // If page fits in viewport, just capture visible
+        if (fullHeight <= viewportHeight + 10) {
+            console.log('[Design Copier] Page fits in viewport, using simple capture');
+            return captureViewportSegment();
+        }
+
+        // Limit max height to prevent memory issues and long capture times
+        const maxCaptureHeight = 15000; // Max ~15000px height
+        const captureHeight = Math.min(fullHeight, maxCaptureHeight);
+
+        // Calculate segments needed
+        const segments = [];
+        let currentY = 0;
+
+        try {
+            while (currentY < captureHeight) {
+                // Scroll to position
+                window.scrollTo(0, currentY);
+
+                // Wait for scroll and any lazy-loaded content
+                await new Promise(resolve => setTimeout(resolve, 150));
+
+                // Capture this segment
+                const dataUrl = await captureViewportSegment();
+
+                if (dataUrl) {
+                    segments.push({
+                        dataUrl: dataUrl,
+                        scrollY: currentY
+                    });
+                    console.log(`[Design Copier] Captured segment ${segments.length} at scrollY=${currentY}`);
+                }
+
+                // Move to next segment (with small overlap to ensure no gaps)
+                currentY += viewportHeight - 50;
+
+                // Safety limit
+                if (segments.length >= 20) {
+                    console.warn('[Design Copier] Reached max segments limit');
+                    break;
+                }
+            }
+
+            // Restore original scroll position
+            window.scrollTo(originalScrollX, originalScrollY);
+
+            if (segments.length === 0) {
+                console.error('[Design Copier] No segments captured');
+                return null;
+            }
+
+            if (segments.length === 1) {
+                console.log('[Design Copier] Single segment, returning directly');
+                return segments[0].dataUrl;
+            }
+
+            // Stitch segments together in background
+            console.log(`[Design Copier] Stitching ${segments.length} segments...`);
+
+            return new Promise((resolve) => {
+                const timeout = setTimeout(() => {
+                    console.warn('[Design Copier] Stitch timeout, returning first segment');
+                    resolve(segments[0].dataUrl);
+                }, timeoutMs);
+
+                chrome.runtime.sendMessage({
+                    type: 'STITCH_SCREENSHOTS',
+                    segments: segments,
+                    totalWidth: viewportWidth,
+                    totalHeight: Math.min(captureHeight, currentY),
+                    viewportHeight: viewportHeight
+                }, (response) => {
+                    clearTimeout(timeout);
+                    if (chrome.runtime.lastError) {
+                        console.error('[Design Copier] Stitch error:', chrome.runtime.lastError);
+                        resolve(segments[0].dataUrl);
+                        return;
+                    }
+                    if (response && response.screenshot) {
+                        console.log(`[Design Copier] Full page stitched: ${Math.round(response.screenshot.length / 1024)}KB`);
+                        resolve(response.screenshot);
+                    } else {
+                        console.warn('[Design Copier] No stitched screenshot, using first segment');
+                        resolve(segments[0].dataUrl);
+                    }
+                });
+            });
+
+        } catch (e) {
+            console.error('[Design Copier] Full page capture failed:', e);
+            // Restore scroll position
+            window.scrollTo(originalScrollX, originalScrollY);
+            return null;
+        }
+    }
+
+    // Capture a single viewport segment
+    function captureViewportSegment() {
+        return new Promise((resolve) => {
+            const timeout = setTimeout(() => {
+                console.warn('[Design Copier] Segment capture timeout');
+                resolve(null);
+            }, 5000);
+
+            chrome.runtime.sendMessage({
+                type: 'CAPTURE_VIEWPORT_SEGMENT'
+            }, (response) => {
+                clearTimeout(timeout);
+                if (chrome.runtime.lastError) {
+                    console.error('[Design Copier] Segment capture error:', chrome.runtime.lastError);
+                    resolve(null);
+                    return;
+                }
+                resolve(response?.screenshot || null);
+            });
+        });
+    }
+
     // ============================================
     // SMART COMPONENT BOUNDARY DETECTION
     // ============================================
@@ -2186,6 +2328,22 @@
             updateLoaderProgress('Building design system...', 'Almost done...');
             await new Promise(resolve => setTimeout(resolve, 100));
 
+            // Capture full page screenshot
+            // Hide loader temporarily so it doesn't appear in screenshot
+            hideLoader();
+            await new Promise(resolve => setTimeout(resolve, 150)); // Wait for loader to be removed from DOM
+
+            let screenshot = null;
+            try {
+                screenshot = await captureFullPageScreenshot();
+            } catch (err) {
+                console.error('[Design Copier] Full page screenshot failed:', err);
+            }
+
+            // Show loader again while we finish processing
+            createLoader();
+            updateLoaderProgress('Finishing up...', 'Almost done...');
+
             // Build a minimal tree for backwards compatibility
             const bodyTree = {
                 tag: 'body',
@@ -2202,7 +2360,7 @@
             const captureData = {
                 tree: bodyTree,
                 elementCount: scanResult.stats.totalElementsScanned,
-                screenshot: null,
+                screenshot: screenshot,
                 pageUrl: window.location.href,
                 pageTitle: document.title,
                 timestamp: new Date().toISOString(),
@@ -3044,8 +3202,8 @@
                 .le-align-btn:hover { background: rgba(255,255,255,0.1); color: rgba(255,255,255,0.7); }
                 .le-align-btn.active { background: rgba(255,255,255,0.15); color: #fff; }
                 .le-align-btn svg { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 2; }
-                .le-input { width: 55px; padding: 6px 8px; border: none; background: rgba(255,255,255,0.06); color: rgba(255,255,255,0.6); font-size: 13px; text-align: center; outline: none; border-radius: 6px; }
-                .le-input:focus { background: rgba(255,255,255,0.1); color: #fff; }
+                .le-input { width: 55px; padding: 6px 8px; border: none; background: rgba(255,255,255,0.06); color: rgba(255,255,255,0.6); font-size: 13px; text-align: center; outline: none; border-radius: 6px; -webkit-appearance: none; -moz-appearance: textfield; }
+                .le-input:focus { background: rgba(255,255,255,0.15); color: #fff; box-shadow: 0 0 0 1px rgba(255,255,255,0.1); }
                 .le-input-wide { width: 65px; }
                 .le-row-stacked { flex-direction: column !important; align-items: stretch !important; gap: 10px !important; }
                 .le-row-header { display: flex; justify-content: space-between; align-items: center; }
@@ -3076,6 +3234,8 @@
                 .le-expand-btn { color: rgba(255,255,255,0.3); font-size: 14px; background: none; border: none; cursor: pointer; padding: 4px 8px; line-height: 1; border-radius: 4px; transition: all 0.12s ease; }
                 .le-expand-btn:hover { color: rgba(255,255,255,0.6); background: rgba(255,255,255,0.06); }
                 .le-section-title { font-size: 10px; font-weight: 600; color: rgba(255,255,255,0.3); text-transform: uppercase; letter-spacing: 0.5px; padding: 10px 16px 6px; }
+                .le-hint { font-size: 11px; color: rgba(255,255,255,0.35); text-align: center; padding: 10px 16px 12px; margin-top: 4px; }
+                .le-hint-key { display: inline-block; background: rgba(255,255,255,0.1); border-radius: 4px; padding: 2px 6px; font-size: 10px; font-weight: 600; color: rgba(255,255,255,0.5); margin: 0 2px; }
             </style>
 
             <div class="le-header">
@@ -3218,6 +3378,8 @@
                 <span class="le-label">Gap</span>
                 <input type="number" class="le-input le-input-wide" id="le-gap" value="${gapValue}" min="0" max="200">
             </div>
+
+            <div class="le-hint">Press <span class="le-hint-key">ESC</span> to select a new element</div>
         `;
     }
 
@@ -3284,7 +3446,7 @@
 
     function showPaddingEditor(el, historyEntry, mode, computedStyles) {
         const row = document.querySelector('.le-row-stacked') ||
-                    Array.from(document.querySelectorAll('.le-row')).find(r => r.querySelector('.le-padding-controls'));
+            Array.from(document.querySelectorAll('.le-row')).find(r => r.querySelector('.le-padding-controls'));
 
         if (!row) return;
 
@@ -3447,6 +3609,8 @@
                 <span class="le-label">Shadow</span>
                 <button class="le-expand-btn" id="le-shadow-expand">${computedStyles.boxShadow !== 'none' ? '•' : '+'}</button>
             </div>
+
+            <div class="le-hint">Press <span class="le-hint-key">ESC</span> to select a new element</div>
         `;
     }
 
@@ -3516,6 +3680,8 @@
                 <span class="le-label">Letter Spacing</span>
                 <input type="number" class="le-input le-input-wide" id="le-letter-spacing" value="${isNaN(letterSpacing) ? 0 : letterSpacing.toFixed(1)}" min="-5" max="20" step="0.5">
             </div>
+
+            <div class="le-hint">Press <span class="le-hint-key">ESC</span> to select a new element</div>
         `;
     }
 
@@ -3745,16 +3911,16 @@
             const hue2rgb = (p, q, t) => {
                 if (t < 0) t += 1;
                 if (t > 1) t -= 1;
-                if (t < 1/6) return p + (q - p) * 6 * t;
-                if (t < 1/2) return q;
-                if (t < 2/3) return p + (q - p) * (2/3 - t) * 6;
+                if (t < 1 / 6) return p + (q - p) * 6 * t;
+                if (t < 1 / 2) return q;
+                if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
                 return p;
             };
             const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
             const p = 2 * l - q;
-            r = hue2rgb(p, q, h + 1/3);
+            r = hue2rgb(p, q, h + 1 / 3);
             g = hue2rgb(p, q, h);
-            b = hue2rgb(p, q, h - 1/3);
+            b = hue2rgb(p, q, h - 1 / 3);
         }
         return [Math.round(r * 255), Math.round(g * 255), Math.round(b * 255)];
     }
@@ -3878,7 +4044,7 @@
             if (computed && computed !== 'rgba(0, 0, 0, 0)') {
                 return computed;
             }
-        } catch (e) {}
+        } catch (e) { }
 
         return value;
     }

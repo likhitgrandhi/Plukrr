@@ -112,47 +112,47 @@ function collectSpacing(node, spacing = new Set()) {
 function renderAnimationInfo(data) {
     const animationInfoEl = document.getElementById('animationInfo');
     if (!animationInfoEl) return;
-    
+
     const animationData = data.animationData;
-    
+
     // Hide if no animation data
     if (!animationData || !animationData.hasAnimations) {
         animationInfoEl.style.display = 'none';
         return;
     }
-    
+
     animationInfoEl.style.display = 'block';
-    
+
     const complexity = animationData.metadata?.complexity || 'unknown';
-    const complexityClass = complexity === 'complex' ? 'complex' : 
-                           complexity === 'moderate' ? 'moderate' : 'simple';
-    
+    const complexityClass = complexity === 'complex' ? 'complex' :
+        complexity === 'moderate' ? 'moderate' : 'simple';
+
     // Build libraries HTML
     let librariesHtml = '';
     if (animationData.detectedLibraries && animationData.detectedLibraries.length > 0) {
         librariesHtml = `
             <div class="animation-libraries">
                 ${animationData.detectedLibraries.map(lib => {
-                    const libClass = lib.id === 'threejs' ? 'threejs' : 
-                                    lib.id === 'gsap' ? 'gsap' : '';
-                    return `<span class="library-tag ${libClass}">${lib.name}${lib.version ? ` v${lib.version}` : ''}</span>`;
-                }).join('')}
+            const libClass = lib.id === 'threejs' ? 'threejs' :
+                lib.id === 'gsap' ? 'gsap' : '';
+            return `<span class="library-tag ${libClass}">${lib.name}${lib.version ? ` v${lib.version}` : ''}</span>`;
+        }).join('')}
             </div>
         `;
     }
-    
+
     // Build animation types HTML
     let typesHtml = '';
     if (animationData.animationTypes && animationData.animationTypes.length > 0) {
         typesHtml = `
             <div class="animation-types">
-                ${animationData.animationTypes.map(type => 
-                    `<span class="animation-type-tag">${type}</span>`
-                ).join('')}
+                ${animationData.animationTypes.map(type =>
+            `<span class="animation-type-tag">${type}</span>`
+        ).join('')}
             </div>
         `;
     }
-    
+
     // Build stats summary
     const statsItems = [];
     if (animationData.cssAnimations?.length > 0) {
@@ -170,7 +170,7 @@ function renderAnimationInfo(data) {
     if (animationData.scrollAnimations?.length > 0) {
         statsItems.push(`${animationData.scrollAnimations.length} Scroll`);
     }
-    
+
     // Build code buttons
     let codeButtonsHtml = '';
     const hasCode = animationData.generatedCode && Object.keys(animationData.generatedCode).length > 0;
@@ -183,11 +183,11 @@ function renderAnimationInfo(data) {
                 </button>
                 <div id="animationCodeContainer" style="display: none;">
                     <div class="animation-code-tabs">
-                        ${codeTabs.map((tab, i) => 
-                            `<button class="animation-code-tab ${i === 0 ? 'active' : ''}" data-code-tab="${tab}">
+                        ${codeTabs.map((tab, i) =>
+            `<button class="animation-code-tab ${i === 0 ? 'active' : ''}" data-code-tab="${tab}">
                                 ${tab.charAt(0).toUpperCase() + tab.slice(1)}
                             </button>`
-                        ).join('')}
+        ).join('')}
                     </div>
                     <div class="animation-code-section">
                         <pre id="animationCodeContent">${escapeHtml(animationData.generatedCode[codeTabs[0]] || 'No code available')}</pre>
@@ -199,7 +199,7 @@ function renderAnimationInfo(data) {
             </div>
         `;
     }
-    
+
     animationInfoEl.innerHTML = `
         <div class="animation-info-section">
             <div class="animation-header">
@@ -213,24 +213,24 @@ function renderAnimationInfo(data) {
             ${codeButtonsHtml}
         </div>
     `;
-    
+
     // Attach event listeners
     if (hasCode) {
         const toggleBtn = document.getElementById('toggleAnimationCodeBtn');
         const codeContainer = document.getElementById('animationCodeContainer');
         const codeContent = document.getElementById('animationCodeContent');
         const copyBtn = document.getElementById('copyAnimationCodeBtn');
-        
+
         if (toggleBtn && codeContainer) {
             toggleBtn.addEventListener('click', () => {
                 const isVisible = codeContainer.style.display !== 'none';
                 codeContainer.style.display = isVisible ? 'none' : 'block';
-                toggleBtn.innerHTML = isVisible ? 
-                    '<span>📝</span> View Generated Code' : 
+                toggleBtn.innerHTML = isVisible ?
+                    '<span>📝</span> View Generated Code' :
                     '<span>📝</span> Hide Code';
             });
         }
-        
+
         // Tab switching
         document.querySelectorAll('.animation-code-tab').forEach(tab => {
             tab.addEventListener('click', () => {
@@ -242,7 +242,7 @@ function renderAnimationInfo(data) {
                 }
             });
         });
-        
+
         // Copy button
         if (copyBtn && codeContent) {
             copyBtn.addEventListener('click', async () => {
@@ -286,14 +286,14 @@ function collectShadows(node, shadows = new Set()) {
 // Semantic role detection based on element characteristics
 function detectSemanticRole(node) {
     if (!node) return { role: 'unknown', confidence: 0 };
-    
+
     const tag = (node.tag || '').toLowerCase();
     const classes = (node.selector || '').toLowerCase();
     const role = (node.role || '').toLowerCase();
     const text = (node.textContent || '').toLowerCase();
     const styles = node.styles || {};
     const childCount = (node.children || []).length;
-    
+
     // High confidence detections based on tag/role
     const tagRoles = {
         'button': { role: 'trigger', subRole: 'button', confidence: 0.9 },
@@ -323,11 +323,11 @@ function detectSemanticRole(node) {
         'table': { role: 'table', subRole: 'data-table', confidence: 0.95 },
         'hr': { role: 'divider', subRole: 'separator', confidence: 0.95 },
     };
-    
+
     if (tagRoles[tag]) {
         return tagRoles[tag];
     }
-    
+
     // Class-based detection
     const classPatterns = [
         { patterns: ['dropdown', 'popover', 'menu', 'select'], role: 'dropdown', subRole: 'menu-container' },
@@ -358,28 +358,28 @@ function detectSemanticRole(node) {
         { patterns: ['progress', 'loader', 'spinner'], role: 'feedback', subRole: 'loading' },
         { patterns: ['error', 'warning', 'success', 'info', 'alert'], role: 'feedback', subRole: 'alert' },
     ];
-    
+
     for (const { patterns, role: r, subRole } of classPatterns) {
         if (patterns.some(p => classes.includes(p))) {
             return { role: r, subRole, confidence: 0.75 };
         }
     }
-    
+
     // Style-based detection
     if (styles.display === 'flex' || styles.display === 'grid') {
         if (childCount > 0) {
             return { role: 'container', subRole: 'layout-container', confidence: 0.6 };
         }
     }
-    
+
     if (styles.cursor === 'pointer' && tag === 'div') {
         return { role: 'trigger', subRole: 'clickable', confidence: 0.5 };
     }
-    
+
     if (styles['box-shadow'] && styles['box-shadow'] !== 'none' && styles['border-radius']) {
         return { role: 'card', subRole: 'elevated-container', confidence: 0.5 };
     }
-    
+
     // Text content detection
     if (text && !childCount) {
         if (text.length < 20) {
@@ -387,25 +387,25 @@ function detectSemanticRole(node) {
         }
         return { role: 'text', subRole: 'content', confidence: 0.6 };
     }
-    
+
     // Default container
     if (childCount > 0) {
         return { role: 'container', subRole: 'wrapper', confidence: 0.4 };
     }
-    
+
     return { role: 'element', subRole: 'generic', confidence: 0.3 };
 }
 
 // Build semantic tree with roles and purposes
 function buildSemanticTree(node, depth = 0, parentRole = null) {
     if (!node || depth > 8) return null;
-    
+
     const semantic = detectSemanticRole(node);
     const styles = categorizeStyles(node.styles || {});
-    
+
     // Determine purpose based on role and context
     const purpose = describePurpose(semantic, node, parentRole);
-    
+
     const semanticNode = {
         tag: node.tag,
         selector: node.selector,
@@ -418,7 +418,7 @@ function buildSemanticTree(node, depth = 0, parentRole = null) {
         textContent: node.textContent,
         children: []
     };
-    
+
     // Process children
     if (node.children && node.children.length > 0) {
         for (const child of node.children) {
@@ -428,14 +428,14 @@ function buildSemanticTree(node, depth = 0, parentRole = null) {
             }
         }
     }
-    
+
     return semanticNode;
 }
 
 // Describe the purpose of an element
 function describePurpose(semantic, node, parentRole) {
     const { role, subRole } = semantic;
-    
+
     const purposes = {
         'trigger:button': 'Clickable button for user actions',
         'trigger:toggle': 'Toggle that opens/closes content',
@@ -487,7 +487,7 @@ function describePurpose(semantic, node, parentRole) {
         'form:form-container': 'Form for user input',
         'overlay:backdrop': 'Background overlay',
     };
-    
+
     const key = `${role}:${subRole}`;
     return purposes[key] || `${role} element`;
 }
@@ -497,7 +497,7 @@ function categorizeStyles(styles) {
     if (!styles || Object.keys(styles).length === 0) {
         return null;
     }
-    
+
     const categorized = {
         layout: {},
         spacing: {},
@@ -505,16 +505,16 @@ function categorizeStyles(styles) {
         typography: {},
         interactive: {}
     };
-    
+
     const layoutProps = ['display', 'position', 'flex-direction', 'justify-content', 'align-items', 'flex-wrap', 'gap', 'grid-template-columns', 'grid-template-rows', 'top', 'left', 'right', 'bottom', 'z-index'];
     const spacingProps = ['padding', 'padding-top', 'padding-right', 'padding-bottom', 'padding-left', 'margin', 'margin-top', 'margin-right', 'margin-bottom', 'margin-left'];
     const visualProps = ['background', 'background-color', 'border', 'border-radius', 'border-color', 'border-width', 'box-shadow', 'opacity', 'overflow'];
     const typographyProps = ['color', 'font-family', 'font-size', 'font-weight', 'line-height', 'letter-spacing', 'text-align', 'text-decoration', 'text-transform'];
     const interactiveProps = ['cursor', 'transition', 'transform'];
-    
+
     for (const [prop, value] of Object.entries(styles)) {
         if (!value || value === 'initial' || value === 'none' || value === 'normal' || value === 'auto') continue;
-        
+
         if (layoutProps.includes(prop)) {
             categorized.layout[prop] = value;
         } else if (spacingProps.includes(prop)) {
@@ -527,25 +527,25 @@ function categorizeStyles(styles) {
             categorized.interactive[prop] = value;
         }
     }
-    
+
     // Remove empty categories
     for (const key of Object.keys(categorized)) {
         if (Object.keys(categorized[key]).length === 0) {
             delete categorized[key];
         }
     }
-    
+
     return Object.keys(categorized).length > 0 ? categorized : null;
 }
 
 // Format smart component output - with mode selection
 function formatSmartComponent(data) {
     if (!data?.tree) return 'No component data available.';
-    
+
     // Build semantic tree
     const semanticTree = buildSemanticTree(data.tree);
     if (!semanticTree) return 'Could not analyze component structure.';
-    
+
     // Use selected mode
     if (smartComponentMode === 'visual') {
         return formatSmartComponentVisual(semanticTree, data);
@@ -562,29 +562,29 @@ Each section below is a COMPONENT TYPE with its visual styles.
 Apply to matching elements in your code. Layout/position not included - keep your own.
 
 `;
-    
+
     // Collect all components by type
     const components = collectComponentsByType(semanticTree);
-    
+
     out += '```\n';
-    
+
     // Output each component type
     for (const [type, items] of Object.entries(components)) {
         if (items.length === 0) continue;
-        
+
         const label = type.toUpperCase();
         const count = items.length > 1 ? ` (×${items.length})` : '';
-        
+
         out += `━━━ ${label}${count} ━━━\n`;
-        
+
         // Get unique style combinations
         const uniqueStyles = getUniqueStyles(items);
-        
+
         uniqueStyles.forEach((styleInfo, idx) => {
             if (uniqueStyles.length > 1) {
                 out += `  Variant ${idx + 1}:\n`;
             }
-            
+
             // Format styles in readable CSS-like format
             const styleLines = formatStylesAsCss(styleInfo.styles);
             if (styleLines) {
@@ -595,9 +595,9 @@ Apply to matching elements in your code. Layout/position not included - keep you
             out += '\n';
         });
     }
-    
+
     out += '```\n\n';
-    
+
     // Color palette
     const colors = extractColorsFromTree(semanticTree);
     if (colors.length > 0) {
@@ -607,9 +607,9 @@ Apply to matching elements in your code. Layout/position not included - keep you
         });
         out += '\n';
     }
-    
+
     out += '*Layout, position, and dimensions excluded - keep your existing structure.*\n';
-    
+
     return out;
 }
 
@@ -617,7 +617,7 @@ Apply to matching elements in your code. Layout/position not included - keep you
 function formatSmartComponentStructure(semanticTree, data) {
     const elementCount = data.elementCount || countNodes(semanticTree);
     const rootRole = semanticTree.subRole || semanticTree.role;
-    
+
     let out = `TASK: Apply this component's visual design to your existing component.
 
 Shows hierarchy + visual styles. Layout/position excluded - keep your own structure.
@@ -627,14 +627,14 @@ Shows hierarchy + visual styles. Layout/position excluded - keep your own struct
     out += `COMPONENT: ${rootRole} (${elementCount} elements)\n\n`;
     out += formatCompactTree(semanticTree, 0);
     out += '```\n\n';
-    
+
     // Nested components summary
     const components = collectComponentsByType(semanticTree);
-    const nestedTypes = Object.keys(components).filter(t => 
-        !['container', 'wrapper', 'element', 'text'].includes(t) && 
+    const nestedTypes = Object.keys(components).filter(t =>
+        !['container', 'wrapper', 'element', 'text'].includes(t) &&
         components[t].length > 0
     );
-    
+
     if (nestedTypes.length > 1) {
         out += '**Nested Components Found:**\n';
         nestedTypes.forEach(type => {
@@ -643,7 +643,7 @@ Shows hierarchy + visual styles. Layout/position excluded - keep your own struct
         });
         out += '\n';
     }
-    
+
     // Compact color summary
     const colors = extractColorsFromTree(semanticTree);
     if (colors.length > 0) {
@@ -651,18 +651,18 @@ Shows hierarchy + visual styles. Layout/position excluded - keep your own struct
         const colorSummary = colors.slice(0, 6).map(c => `\`${c.value}\` (${c.usage})`).join(', ');
         out += colorSummary + '\n\n';
     }
-    
+
     out += '*Layout, position, flex/grid excluded - keep your own.*\n';
-    
+
     return out;
 }
 
 // Collect all components grouped by their semantic type
 function collectComponentsByType(node, result = {}) {
     if (!node) return result;
-    
+
     const type = node.subRole || node.role || 'element';
-    
+
     // Skip generic wrappers, focus on meaningful components
     const meaningfulTypes = [
         'button', 'trigger', 'link', 'input', 'textarea', 'select',
@@ -671,16 +671,16 @@ function collectComponentsByType(node, result = {}) {
         'list', 'list-item', 'item', 'tab', 'divider',
         'header', 'footer', 'body', 'navigation'
     ];
-    
+
     // Normalize type
     let normalizedType = type.toLowerCase().replace(/-/g, '');
-    
+
     // Map to standard types
     if (['trigger', 'button', 'clickable'].includes(normalizedType)) normalizedType = 'button';
     if (['listitem', 'item', 'option'].includes(normalizedType)) normalizedType = 'list-item';
     if (['title', 'subtitle', 'headline'].includes(normalizedType)) normalizedType = 'heading';
     if (['wrapper', 'layoutcontainer'].includes(normalizedType)) normalizedType = 'container';
-    
+
     if (meaningfulTypes.some(t => normalizedType.includes(t.replace(/-/g, '')))) {
         if (!result[normalizedType]) {
             result[normalizedType] = [];
@@ -691,12 +691,12 @@ function collectComponentsByType(node, result = {}) {
             selector: node.selector
         });
     }
-    
+
     // Process children
     for (const child of node.children || []) {
         collectComponentsByType(child, result);
     }
-    
+
     return result;
 }
 
@@ -704,7 +704,7 @@ function collectComponentsByType(node, result = {}) {
 function getUniqueStyles(items) {
     const unique = [];
     const seen = new Set();
-    
+
     for (const item of items) {
         const styleKey = JSON.stringify(item.styles);
         if (!seen.has(styleKey)) {
@@ -712,16 +712,16 @@ function getUniqueStyles(items) {
             unique.push(item);
         }
     }
-    
+
     return unique;
 }
 
 // Format styles as CSS-like readable format
 function formatStylesAsCss(styles) {
     if (!styles) return '';
-    
+
     const lines = [];
-    
+
     // Visual styles
     if (styles.visual) {
         const v = styles.visual;
@@ -739,7 +739,7 @@ function formatStylesAsCss(styles) {
             lines.push(`box-shadow: ${v['box-shadow']};`);
         }
     }
-    
+
     // Typography
     if (styles.typography) {
         const t = styles.typography;
@@ -762,32 +762,32 @@ function formatStylesAsCss(styles) {
             lines.push(`line-height: ${t['line-height']};`);
         }
     }
-    
+
     // Spacing (padding only)
     if (styles.spacing) {
         if (styles.spacing['padding'] && styles.spacing['padding'] !== '0px') {
             lines.push(`padding: ${styles.spacing['padding']};`);
         }
     }
-    
+
     return lines.join('\n');
 }
 
 // Compact tree format with inline styles
 function formatCompactTree(node, depth = 0, siblingCounts = {}) {
     if (!node || depth > 6) return '';
-    
+
     const indent = '  '.repeat(depth);
     const role = (node.subRole || node.role || 'element').toUpperCase();
-    
+
     // Build element line
     let line = `${indent}[${role}] <${node.tag}>`;
-    
+
     // Add text content if short
     if (node.textContent && node.textContent.length < 30 && !node.children?.length) {
         line += ` "${node.textContent}"`;
     }
-    
+
     // Add selector hint if useful
     if (node.selector && node.selector !== node.tag && !node.selector.includes('ai-design')) {
         const shortSelector = node.selector.split('.').slice(0, 2).join('.');
@@ -795,20 +795,20 @@ function formatCompactTree(node, depth = 0, siblingCounts = {}) {
             line += ` — ${shortSelector}`;
         }
     }
-    
+
     line += '\n';
-    
+
     // Add compact styles on next line
     const styleStr = formatCompactStyles(node.styles);
     if (styleStr) {
         line += `${indent}  └─ ${styleStr}\n`;
     }
-    
+
     // Process children, grouping similar ones
     const children = node.children || [];
     if (children.length > 0) {
         const grouped = groupSimilarChildren(children);
-        
+
         for (const group of grouped) {
             if (group.count > 1) {
                 // Show grouped similar elements
@@ -817,7 +817,7 @@ function formatCompactTree(node, depth = 0, siblingCounts = {}) {
                 line += `${indent}  [${childRole}] <${child.tag}> × ${group.count}`;
                 if (child.textContent) line += ` — items`;
                 line += '\n';
-                
+
                 const childStyles = formatCompactStyles(child.styles);
                 if (childStyles) {
                     line += `${indent}    └─ ${childStyles}\n`;
@@ -828,7 +828,7 @@ function formatCompactTree(node, depth = 0, siblingCounts = {}) {
             }
         }
     }
-    
+
     return line;
 }
 
@@ -836,10 +836,10 @@ function formatCompactTree(node, depth = 0, siblingCounts = {}) {
 function groupSimilarChildren(children) {
     const groups = [];
     const seen = new Map();
-    
+
     for (const child of children) {
         const key = `${child.role}-${child.tag}-${JSON.stringify(child.styles)}`;
-        
+
         if (seen.has(key)) {
             seen.get(key).items.push(child);
             seen.get(key).count++;
@@ -849,18 +849,18 @@ function groupSimilarChildren(children) {
             groups.push(group);
         }
     }
-    
+
     return groups;
 }
 
 // Format styles in compact single-line format - VISUAL ONLY (look & feel)
 function formatCompactStyles(styles) {
     if (!styles) return '';
-    
+
     const parts = [];
-    
+
     // VISUAL STYLES ONLY - these define the "look"
-    
+
     // Colors & Surfaces
     if (styles.visual) {
         const v = styles.visual;
@@ -881,7 +881,7 @@ function formatCompactStyles(styles) {
             parts.push(`opacity: ${v['opacity']}`);
         }
     }
-    
+
     // Typography - always visual
     if (styles.typography) {
         const t = styles.typography;
@@ -901,7 +901,7 @@ function formatCompactStyles(styles) {
             }
         }
     }
-    
+
     // Padding only (margin is layout-dependent, skip it)
     if (styles.spacing) {
         const s = styles.spacing;
@@ -910,7 +910,7 @@ function formatCompactStyles(styles) {
         }
         // Note: We skip margin, gap - these are layout/context dependent
     }
-    
+
     // Interactive states (visual feedback)
     if (styles.interactive) {
         if (styles.interactive['cursor'] === 'pointer') {
@@ -920,14 +920,14 @@ function formatCompactStyles(styles) {
             parts.push('animated');
         }
     }
-    
+
     // NOTE: We intentionally SKIP layout/structural properties:
     // - display, flex, grid (structural)
     // - position, top, left, right, bottom (structural)
     // - width, height (context-dependent)
     // - margin, gap (layout-dependent)
     // - z-index (structural)
-    
+
     return parts.join(' | ');
 }
 
@@ -955,7 +955,7 @@ function shortenColor(color) {
 function getQuickHints(tree) {
     const hints = [];
     const roles = collectRoles(tree);
-    
+
     if (roles.includes('dropdown') || roles.includes('modal') || roles.includes('trigger')) {
         hints.push('Needs open/close state');
     }
@@ -968,7 +968,7 @@ function getQuickHints(tree) {
     if (roles.includes('icon')) {
         hints.push('Swap icons for your library');
     }
-    
+
     return hints;
 }
 
@@ -985,55 +985,55 @@ function countNodes(node) {
 // Format hierarchy tree
 function formatHierarchy(node, prefix = '', isLast = true) {
     if (!node) return '';
-    
+
     const connector = isLast ? '└── ' : '├── ';
     const childPrefix = prefix + (isLast ? '    ' : '│   ');
-    
+
     let roleDisplay = node.role;
     if (node.subRole && node.subRole !== node.role) {
         roleDisplay = node.subRole;
     }
-    
+
     let line = prefix + connector;
     line += `[${roleDisplay.toUpperCase()}]`;
     line += ` <${node.tag}>`;
-    
+
     if (node.textContent && node.textContent.length < 25) {
         line += ` "${node.textContent}"`;
     }
-    
+
     line += '\n';
-    
+
     const children = node.children || [];
     for (let i = 0; i < children.length; i++) {
         line += formatHierarchy(children[i], childPrefix, i === children.length - 1);
     }
-    
+
     return line;
 }
 
 // Format styles for each element
 function formatElementStyles(node, depth = 0) {
     if (!node) return '';
-    
+
     let out = '';
     const indent = '  '.repeat(depth);
-    
+
     // Element header
     const roleLabel = node.subRole || node.role;
     out += `### ${roleLabel.toUpperCase()} — \`<${node.tag}>\`\n\n`;
     out += `**Purpose:** ${node.purpose}\n`;
-    
+
     if (node.selector && node.selector !== node.tag) {
         out += `**Selector:** \`${node.selector}\`\n`;
     }
-    
+
     out += '\n';
-    
+
     // Categorized styles
     if (node.styles) {
         const { layout, spacing, visual, typography, interactive } = node.styles;
-        
+
         if (layout && Object.keys(layout).length > 0) {
             out += '**Layout:**\n```css\n';
             for (const [prop, val] of Object.entries(layout)) {
@@ -1041,7 +1041,7 @@ function formatElementStyles(node, depth = 0) {
             }
             out += '```\n\n';
         }
-        
+
         if (spacing && Object.keys(spacing).length > 0) {
             out += '**Spacing:**\n```css\n';
             for (const [prop, val] of Object.entries(spacing)) {
@@ -1049,7 +1049,7 @@ function formatElementStyles(node, depth = 0) {
             }
             out += '```\n\n';
         }
-        
+
         if (visual && Object.keys(visual).length > 0) {
             out += '**Visual:**\n```css\n';
             for (const [prop, val] of Object.entries(visual)) {
@@ -1057,7 +1057,7 @@ function formatElementStyles(node, depth = 0) {
             }
             out += '```\n\n';
         }
-        
+
         if (typography && Object.keys(typography).length > 0) {
             out += '**Typography:**\n```css\n';
             for (const [prop, val] of Object.entries(typography)) {
@@ -1065,7 +1065,7 @@ function formatElementStyles(node, depth = 0) {
             }
             out += '```\n\n';
         }
-        
+
         if (interactive && Object.keys(interactive).length > 0) {
             out += '**Interactive:**\n```css\n';
             for (const [prop, val] of Object.entries(interactive)) {
@@ -1076,7 +1076,7 @@ function formatElementStyles(node, depth = 0) {
     } else {
         out += '*No significant styles*\n\n';
     }
-    
+
     // Process children (limit depth for readability)
     if (depth < 4 && node.children && node.children.length > 0) {
         for (const child of node.children) {
@@ -1085,17 +1085,17 @@ function formatElementStyles(node, depth = 0) {
     } else if (node.children && node.children.length > 0) {
         out += `*${node.children.length} child elements (see hierarchy above)*\n\n`;
     }
-    
+
     return out;
 }
 
 // Extract colors with usage context
 function extractColorsFromTree(node, colors = [], parentRole = null) {
     if (!node) return colors;
-    
+
     const styles = node.styles || {};
     const role = node.subRole || node.role;
-    
+
     // Check visual styles for colors
     if (styles.visual) {
         if (styles.visual['background-color']) {
@@ -1111,7 +1111,7 @@ function extractColorsFromTree(node, colors = [], parentRole = null) {
             }
         }
     }
-    
+
     // Check typography for text color
     if (styles.typography && styles.typography['color']) {
         const color = styles.typography['color'];
@@ -1119,65 +1119,65 @@ function extractColorsFromTree(node, colors = [], parentRole = null) {
             colors.push({ value: color, usage: `${role} text` });
         }
     }
-    
+
     // Process children
     for (const child of node.children || []) {
         extractColorsFromTree(child, colors, role);
     }
-    
+
     return colors;
 }
 
 // Generate implementation hints
 function generateImplementationHints(tree) {
     const hints = [];
-    
+
     // Analyze tree for patterns
     const roles = collectRoles(tree);
-    
+
     if (roles.includes('dropdown') || roles.includes('modal')) {
         hints.push('- This component likely needs **state management** for open/closed visibility');
     }
-    
+
     if (roles.includes('trigger')) {
         hints.push('- Include **click handlers** on trigger elements');
     }
-    
+
     if (roles.includes('list-item')) {
         hints.push('- List items should be **mapped from data** rather than hardcoded');
     }
-    
+
     if (roles.includes('input')) {
         hints.push('- Form inputs need **controlled state** and validation');
     }
-    
+
     if (roles.includes('icon')) {
         hints.push('- Replace icons with your **icon library** (Lucide, Heroicons, etc.)');
     }
-    
+
     if (roles.includes('avatar')) {
         hints.push('- Avatar images should use **fallback** for missing images');
     }
-    
+
     // Add general hints
     hints.push('- Text content shown is **placeholder** — replace with your actual content or props');
     hints.push('- Color values can be replaced with your **CSS variables/design tokens**');
-    
+
     return hints.join('\n');
 }
 
 // Collect all roles in tree
 function collectRoles(node, roles = []) {
     if (!node) return roles;
-    
+
     if (node.role && !roles.includes(node.role)) {
         roles.push(node.role);
     }
-    
+
     for (const child of node.children || []) {
         collectRoles(child, roles);
     }
-    
+
     return roles;
 }
 
@@ -1211,7 +1211,7 @@ function extractDesignTokensFromDeepScan(data) {
 function extractDesignTokens(data) {
     const globalCSS = data.globalCSS || {};
     const tree = data.tree;
-    
+
     return {
         colors: tree ? Array.from(collectColors(tree)) : [],
         typo: tree ? collectTypography(tree) : { sizes: new Set(), weights: new Set(), families: new Set() },
@@ -1256,29 +1256,29 @@ const COMPONENT_LABELS = {
 
 function formatComponentStyles(components) {
     if (!components) return '';
-    
+
     let out = '';
-    
+
     for (const [type, items] of Object.entries(components)) {
         if (!items || items.length === 0) continue;
-        
+
         const label = COMPONENT_LABELS[type] || type;
         out += `\n/* ${label} (${items.length} variant${items.length > 1 ? 's' : ''}) */\n`;
-        
+
         items.forEach((item, index) => {
             const styles = item.styles;
             out += `\n.${type}${items.length > 1 ? `-variant-${index + 1}` : ''} {\n`;
-            
+
             // Background
             if (styles.backgroundColor) {
                 out += `  background-color: ${styles.backgroundColor};\n`;
             }
-            
+
             // Text color
             if (styles.color) {
                 out += `  color: ${styles.color};\n`;
             }
-            
+
             // Typography
             if (styles.fontFamily) {
                 out += `  font-family: ${styles.fontFamily}, sans-serif;\n`;
@@ -1298,7 +1298,7 @@ function formatComponentStyles(components) {
             if (styles.textTransform) {
                 out += `  text-transform: ${styles.textTransform};\n`;
             }
-            
+
             // Spacing
             if (styles.padding && styles.padding !== '0px') {
                 out += `  padding: ${styles.padding};\n`;
@@ -1306,7 +1306,7 @@ function formatComponentStyles(components) {
             if (styles.margin && styles.margin !== '0px') {
                 out += `  margin: ${styles.margin};\n`;
             }
-            
+
             // Borders
             if (styles.borderRadius && styles.borderRadius !== '0px') {
                 out += `  border-radius: ${styles.borderRadius};\n`;
@@ -1314,12 +1314,12 @@ function formatComponentStyles(components) {
             if (styles.borderWidth && styles.borderWidth !== '0px') {
                 out += `  border: ${styles.borderWidth} ${styles.borderStyle || 'solid'} ${styles.borderColor || 'currentColor'};\n`;
             }
-            
+
             // Shadows
             if (styles.boxShadow) {
                 out += `  box-shadow: ${styles.boxShadow};\n`;
             }
-            
+
             // Layout
             if (styles.display && (styles.display === 'flex' || styles.display === 'inline-flex')) {
                 out += `  display: ${styles.display};\n`;
@@ -1336,21 +1336,21 @@ function formatComponentStyles(components) {
                     out += `  gap: ${styles.gap};\n`;
                 }
             }
-            
+
             // Transitions
             if (styles.transition) {
                 out += `  transition: ${styles.transition};\n`;
             }
-            
+
             // Cursor
             if (styles.cursor && styles.cursor !== 'auto') {
                 out += `  cursor: ${styles.cursor};\n`;
             }
-            
+
             out += `}\n`;
         });
     }
-    
+
     return out;
 }
 
@@ -1362,7 +1362,7 @@ function formatShadcnCSS(tokens, includeComponents = false) {
     let out = '```css\n';
     out += '@layer base {\n';
     out += '  :root {\n';
-    
+
     // CSS Variables from stylesheets
     if (Object.keys(tokens.rootVariables).length > 0) {
         out += '    /* Original CSS Variables */\n';
@@ -1371,7 +1371,7 @@ function formatShadcnCSS(tokens, includeComponents = false) {
         }
         out += '\n';
     }
-    
+
     // Colors
     if (tokens.colors.length > 0) {
         out += '    /* Colors (extracted from elements) */\n';
@@ -1382,7 +1382,7 @@ function formatShadcnCSS(tokens, includeComponents = false) {
         });
         out += '\n';
     }
-    
+
     // Typography
     out += '    /* Typography */\n';
     const families = tokens.typo?.families ? Array.from(tokens.typo.families) : [];
@@ -1392,7 +1392,7 @@ function formatShadcnCSS(tokens, includeComponents = false) {
             out += `    --font-heading: ${families[1]}, system-ui, sans-serif;\n`;
         }
     }
-    
+
     const sizes = tokens.typo?.sizes ? Array.from(tokens.typo.sizes) : [];
     if (sizes.length > 0) {
         out += '\n    /* Font Sizes */\n';
@@ -1403,7 +1403,7 @@ function formatShadcnCSS(tokens, includeComponents = false) {
             out += `    --text-${name}: ${size};\n`;
         });
     }
-    
+
     // Spacing
     if (tokens.spacing && tokens.spacing.length > 0) {
         out += '\n    /* Spacing Scale */\n';
@@ -1412,7 +1412,7 @@ function formatShadcnCSS(tokens, includeComponents = false) {
             out += `    --spacing-${i + 1}: ${space};\n`;
         });
     }
-    
+
     // Border Radius
     if (tokens.radii && tokens.radii.length > 0) {
         out += '\n    /* Border Radius */\n';
@@ -1424,7 +1424,7 @@ function formatShadcnCSS(tokens, includeComponents = false) {
             });
         }
     }
-    
+
     // Shadows
     if (tokens.shadows && tokens.shadows.length > 0) {
         out += '\n    /* Shadows */\n';
@@ -1432,9 +1432,9 @@ function formatShadcnCSS(tokens, includeComponents = false) {
             out += `    --shadow-${i + 1}: ${shadow};\n`;
         });
     }
-    
+
     out += '  }\n';
-    
+
     // Dark mode
     if (Object.keys(tokens.darkVariables || {}).length > 0) {
         out += '\n  .dark {\n';
@@ -1443,9 +1443,9 @@ function formatShadcnCSS(tokens, includeComponents = false) {
         }
         out += '  }\n';
     }
-    
+
     out += '}\n';
-    
+
     // Component styles
     if (includeComponents && tokens.components) {
         out += '\n/* ============================\n';
@@ -1453,7 +1453,7 @@ function formatShadcnCSS(tokens, includeComponents = false) {
         out += '   ============================ */\n';
         out += formatComponentStyles(tokens.components);
     }
-    
+
     out += '```';
     return out;
 }
@@ -1462,7 +1462,7 @@ function formatStandardCSS(tokens, includeComponents = false) {
     let out = '```css\n';
     out += '/* Global Design System Variables */\n';
     out += ':root {\n';
-    
+
     // Colors
     out += '  /* Colors */\n';
     const uniqueColors = deduplicateColors(tokens.colors);
@@ -1470,7 +1470,7 @@ function formatStandardCSS(tokens, includeComponents = false) {
         const name = getColorName(color, i);
         out += `  --color-${name}: ${color};\n`;
     });
-    
+
     // Typography
     const families = tokens.typo?.families ? Array.from(tokens.typo.families) : [];
     if (families.length > 0) {
@@ -1479,7 +1479,7 @@ function formatStandardCSS(tokens, includeComponents = false) {
             out += `  --font-family-${i + 1}: ${font}, sans-serif;\n`;
         });
     }
-    
+
     const sizes = tokens.typo?.sizes ? Array.from(tokens.typo.sizes) : [];
     if (sizes.length > 0) {
         out += '\n  /* Font Sizes */\n';
@@ -1487,7 +1487,7 @@ function formatStandardCSS(tokens, includeComponents = false) {
             out += `  --font-size-${i + 1}: ${size};\n`;
         });
     }
-    
+
     // Spacing
     if (tokens.spacing?.length > 0) {
         out += '\n  /* Spacing */\n';
@@ -1496,7 +1496,7 @@ function formatStandardCSS(tokens, includeComponents = false) {
             out += `  --spacing-${i + 1}: ${space};\n`;
         });
     }
-    
+
     // Border radius
     if (tokens.radii?.length > 0) {
         out += '\n  /* Border Radius */\n';
@@ -1505,7 +1505,7 @@ function formatStandardCSS(tokens, includeComponents = false) {
             out += `  --radius-${i + 1}: ${radius};\n`;
         });
     }
-    
+
     // Shadows
     if (tokens.shadows?.length > 0) {
         out += '\n  /* Shadows */\n';
@@ -1513,9 +1513,9 @@ function formatStandardCSS(tokens, includeComponents = false) {
             out += `  --shadow-${i + 1}: ${shadow};\n`;
         });
     }
-    
+
     out += '}\n';
-    
+
     // Component styles
     if (includeComponents && tokens.components) {
         out += '\n/* ============================\n';
@@ -1523,7 +1523,7 @@ function formatStandardCSS(tokens, includeComponents = false) {
         out += '   ============================ */\n';
         out += formatComponentStyles(tokens.components);
     }
-    
+
     out += '```';
     return out;
 }
@@ -1534,7 +1534,7 @@ function formatTailwindConfig(tokens, includeComponents = false) {
     out += 'module.exports = {\n';
     out += '  theme: {\n';
     out += '    extend: {\n';
-    
+
     // Colors
     out += '      colors: {\n';
     const uniqueColors = deduplicateColors(tokens.colors);
@@ -1543,7 +1543,7 @@ function formatTailwindConfig(tokens, includeComponents = false) {
         out += `        '${name}': '${color}',\n`;
     });
     out += '      },\n';
-    
+
     // Font family
     const families = tokens.typo?.families ? Array.from(tokens.typo.families) : [];
     if (families.length > 0) {
@@ -1554,7 +1554,7 @@ function formatTailwindConfig(tokens, includeComponents = false) {
         });
         out += '      },\n';
     }
-    
+
     // Font sizes
     const sizes = tokens.typo?.sizes ? Array.from(tokens.typo.sizes) : [];
     if (sizes.length > 0) {
@@ -1566,7 +1566,7 @@ function formatTailwindConfig(tokens, includeComponents = false) {
         });
         out += '      },\n';
     }
-    
+
     // Spacing
     if (tokens.spacing?.length > 0) {
         out += '      spacing: {\n';
@@ -1576,7 +1576,7 @@ function formatTailwindConfig(tokens, includeComponents = false) {
         });
         out += '      },\n';
     }
-    
+
     // Border radius
     if (tokens.radii?.length > 0) {
         out += '      borderRadius: {\n';
@@ -1587,7 +1587,7 @@ function formatTailwindConfig(tokens, includeComponents = false) {
         });
         out += '      },\n';
     }
-    
+
     // Box shadow
     if (tokens.shadows?.length > 0) {
         out += '      boxShadow: {\n';
@@ -1596,12 +1596,12 @@ function formatTailwindConfig(tokens, includeComponents = false) {
         });
         out += '      },\n';
     }
-    
+
     out += '    },\n';
     out += '  },\n';
     out += '}\n';
     out += '```';
-    
+
     // Add component styles as CSS after Tailwind config
     if (includeComponents && tokens.components) {
         out += '\n\n```css\n';
@@ -1611,14 +1611,14 @@ function formatTailwindConfig(tokens, includeComponents = false) {
         out += '}\n';
         out += '```';
     }
-    
+
     return out;
 }
 
 // Color utilities
 function deduplicateColors(colors) {
     if (!colors || colors.length === 0) return [];
-    
+
     // Convert to map of normalized colors
     const colorMap = new Map();
     colors.forEach(color => {
@@ -1627,7 +1627,7 @@ function deduplicateColors(colors) {
             colorMap.set(normalized, color);
         }
     });
-    
+
     return Array.from(colorMap.values());
 }
 
@@ -1640,7 +1640,7 @@ function normalizeColor(color) {
 function getColorName(color, index) {
     // Try to determine if it's a common color
     const c = color.toLowerCase();
-    
+
     if (c.includes('white') || c === 'rgb(255, 255, 255)' || c === '#fff' || c === '#ffffff') {
         return 'white';
     }
@@ -1650,7 +1650,7 @@ function getColorName(color, index) {
     if (c.includes('transparent') || c === 'rgba(0, 0, 0, 0)') {
         return 'transparent';
     }
-    
+
     // Check if it looks like a primary color based on position
     if (index === 0) return 'background';
     if (index === 1) return 'foreground';
@@ -1658,7 +1658,7 @@ function getColorName(color, index) {
     if (index === 3) return 'secondary';
     if (index === 4) return 'accent';
     if (index === 5) return 'muted';
-    
+
     return `${index + 1}`;
 }
 
@@ -1669,62 +1669,62 @@ function getColorName(color, index) {
 function formatCopyDesign(data) {
     if (!data?.tree) return '';
     const { tree } = data;
-    
+
     const colors = Array.from(collectColors(tree));
     const typo = collectTypography(tree);
     const spacing = Array.from(collectSpacing(tree)).sort((a, b) => parseInt(a) - parseInt(b));
     const radii = Array.from(collectBorderRadius(tree));
     const shadows = Array.from(collectShadows(tree));
-    
+
     let out = INTENTS['copy-design'].prompt + '\n\n';
-    
+
     out += '```\n';
-    
+
     if (colors.length > 0) {
         out += `COLORS: ${colors.join(', ')}\n`;
     }
-    
+
     if (typo.families.size > 0 || typo.sizes.size > 0) {
         if (typo.families.size > 0) out += `FONT: ${Array.from(typo.families).join(', ')}\n`;
         if (typo.sizes.size > 0) out += `SIZES: ${Array.from(typo.sizes).join(', ')}\n`;
         if (typo.weights.size > 0) out += `WEIGHTS: ${Array.from(typo.weights).join(', ')}\n`;
     }
-    
+
     if (spacing.length > 0) {
         out += `SPACING: ${spacing.join(', ')}\n`;
     }
-    
+
     if (radii.length > 0) {
         out += `RADIUS: ${radii.join(', ')}\n`;
     }
-    
+
     if (shadows.length > 0) {
         out += `SHADOW: ${shadows.join('; ')}\n`;
     }
-    
+
     out += '```';
-    
+
     return out;
 }
 
 function formatComponentWithDesign(data) {
     if (!data?.tree) return '';
     const { tree } = data;
-    
+
     let out = INTENTS['component-with-design'].prompt + '\n\n';
     out += '```\n';
     out += formatNodeSpec(tree, 0);
     out += '```';
-    
+
     return out;
 }
 
 function formatNodeSpec(node, depth = 0) {
     if (!node || depth > 5) return '';
-    
+
     const indent = '  '.repeat(depth);
     let out = '';
-    
+
     out += `${indent}${node.tag.toUpperCase()}`;
     if (node.role && node.role !== 'element' && node.role !== 'container') {
         out += ` [${node.role}]`;
@@ -1733,25 +1733,25 @@ function formatNodeSpec(node, depth = 0) {
         out += ` (text: "${node.textContent.slice(0, 30)}${node.textContent.length > 30 ? '...' : ''}" - REFERENCE ONLY)`;
     }
     out += '\n';
-    
+
     const styles = getKeyStyles(node.styles);
     if (styles) {
         out += `${indent}  style: ${styles}\n`;
     }
-    
+
     if (node.children?.length > 0) {
         for (const child of node.children) {
             out += formatNodeSpec(child, depth + 1);
         }
     }
-    
+
     return out;
 }
 
 function getKeyStyles(styles) {
     if (!styles) return '';
     const parts = [];
-    
+
     if (styles['display'] === 'flex') {
         let flex = 'flex';
         if (styles['flex-direction'] === 'column') flex += '-col';
@@ -1761,132 +1761,132 @@ function getKeyStyles(styles) {
     if (styles['gap'] && styles['gap'] !== '0px') parts.push(`gap(${styles['gap']})`);
     if (styles['justify-content']) parts.push(`justify-${styles['justify-content'].replace('flex-', '').replace('space-', '')}`);
     if (styles['align-items']) parts.push(`items-${styles['align-items'].replace('flex-', '')}`);
-    
+
     if (styles['padding'] && styles['padding'] !== '0px') parts.push(`p(${styles['padding']})`);
     if (styles['margin'] && styles['margin'] !== '0px') parts.push(`m(${styles['margin']})`);
     if (styles['border-radius'] && styles['border-radius'] !== '0px') parts.push(`rounded(${styles['border-radius']})`);
-    
+
     if (styles['background-color'] && styles['background-color'] !== 'rgba(0, 0, 0, 0)') {
         parts.push(`bg(${styles['background-color']})`);
     }
     if (styles['color']) parts.push(`text(${styles['color']})`);
-    
+
     if (styles['font-size']) parts.push(styles['font-size']);
     if (styles['font-weight'] && styles['font-weight'] !== '400') parts.push(`bold(${styles['font-weight']})`);
-    
+
     if (styles['box-shadow'] && styles['box-shadow'] !== 'none') parts.push('shadow');
-    
+
     return parts.join(', ');
 }
 
 function formatComponentWithoutDesign(data) {
     if (!data?.tree) return '';
     const { tree } = data;
-    
+
     let out = INTENTS['component-without-design'].prompt + '\n\n';
     out += '```\n';
     out += formatStructureOnly(tree, 0);
     out += '```';
-    
+
     return out;
 }
 
 function formatStructureOnly(node, depth = 0) {
     if (!node || depth > 5) return '';
-    
+
     const indent = '  '.repeat(depth);
     let out = `${indent}${node.tag.toUpperCase()}`;
-    
+
     if (node.role && node.role !== 'element' && node.role !== 'container') {
         out += ` [${node.role}]`;
     }
-    
+
     const attrs = [];
     if (node.textContent) attrs.push(`(text: "${node.textContent.slice(0, 30)}${node.textContent.length > 30 ? '...' : ''}" - REFERENCE ONLY)`);
     if (node.href) attrs.push(`href`);
     if (node.src) attrs.push(`src`);
     if (node.alt) attrs.push(`alt="${node.alt}"`);
     if (node.placeholder) attrs.push(`placeholder`);
-    
+
     if (attrs.length > 0) out += ` ${attrs.join(', ')}`;
     out += '\n';
-    
+
     if (node.children?.length > 0) {
         for (const child of node.children) {
             out += formatStructureOnly(child, depth + 1);
         }
     }
-    
+
     return out;
 }
 
 function formatExtractTokens(data) {
     if (!data?.tree) return '';
     const { tree } = data;
-    
+
     const colors = Array.from(collectColors(tree));
     const typo = collectTypography(tree);
     const spacing = Array.from(collectSpacing(tree)).sort((a, b) => parseInt(a) - parseInt(b));
     const radii = Array.from(collectBorderRadius(tree));
     const shadows = Array.from(collectShadows(tree));
-    
+
     let out = INTENTS['extract-tokens'].prompt + '\n\n';
     out += '```\n';
-    
+
     if (colors.length > 0) {
         out += `COLORS\n`;
         colors.forEach((c, i) => { out += `  ${i + 1}. ${c}\n`; });
         out += '\n';
     }
-    
+
     if (typo.families.size > 0) {
         out += `FONTS\n`;
         Array.from(typo.families).forEach((f, i) => { out += `  ${i + 1}. ${f}\n`; });
         out += '\n';
     }
-    
+
     if (typo.sizes.size > 0) {
         out += `FONT SIZES\n`;
         Array.from(typo.sizes).forEach((s, i) => { out += `  ${i + 1}. ${s}\n`; });
         out += '\n';
     }
-    
+
     if (spacing.length > 0) {
         out += `SPACING\n`;
         spacing.forEach((s, i) => { out += `  ${i + 1}. ${s}\n`; });
         out += '\n';
     }
-    
+
     if (radii.length > 0) {
         out += `BORDER RADIUS\n`;
         radii.forEach((r, i) => { out += `  ${i + 1}. ${r}\n`; });
         out += '\n';
     }
-    
+
     if (shadows.length > 0) {
         out += `SHADOWS\n`;
         shadows.forEach((s, i) => { out += `  ${i + 1}. ${s}\n`; });
     }
-    
+
     out += '```';
-    
+
     return out;
 }
 
 function formatExtractGlobalTheme(data) {
     if (!data) return '';
-    
+
     let out = INTENTS['extract-global-theme'].prompt + '\n\n';
-    
+
     // Use deep scan tokens if available
-    const tokens = data.isDeepScan 
+    const tokens = data.isDeepScan
         ? extractDesignTokensFromDeepScan(data)
         : extractDesignTokens(data);
-    
+
     // Format based on selected format (default to shadcn)
     const format = typeof currentFormat !== 'undefined' ? currentFormat : 'shadcn';
     const includeComponents = data.isDeepScan && tokens.components;
-    
+
     switch (format) {
         case 'tailwind':
             out += formatTailwindConfig(tokens, includeComponents);
@@ -1899,34 +1899,34 @@ function formatExtractGlobalTheme(data) {
             out += formatShadcnCSS(tokens, includeComponents);
             break;
     }
-    
+
     out += '\n\n';
-    
+
     // Add summary
     out += '**Extracted Values Summary:**\n';
-    
+
     if (data.isDeepScan && data.deepScanData?.stats) {
         const stats = data.deepScanData.stats;
         out += `- Total elements scanned: ${stats.totalElementsScanned}\n`;
         out += `- Unique components found: ${stats.uniqueComponentsFound}\n`;
     }
-    
+
     if (tokens.colors?.length > 0) out += `- Colors: ${tokens.colors.length} values\n`;
-    
-    const families = tokens.typo?.families 
+
+    const families = tokens.typo?.families
         ? (tokens.typo.families instanceof Set ? Array.from(tokens.typo.families) : tokens.typo.families)
         : [];
     if (families.length > 0) out += `- Fonts: ${families.join(', ')}\n`;
-    
-    const sizes = tokens.typo?.sizes 
+
+    const sizes = tokens.typo?.sizes
         ? (tokens.typo.sizes instanceof Set ? Array.from(tokens.typo.sizes) : tokens.typo.sizes)
         : [];
     if (sizes.length > 0) out += `- Font sizes: ${sizes.length} values\n`;
-    
+
     if (tokens.spacing?.length > 0) out += `- Spacing: ${tokens.spacing.length} values\n`;
     if (tokens.radii?.length > 0) out += `- Border radius: ${tokens.radii.length} values\n`;
     if (tokens.shadows?.length > 0) out += `- Shadows: ${tokens.shadows.length} values\n`;
-    
+
     // Component breakdown
     if (tokens.components) {
         out += '\n**Components Found:**\n';
@@ -1937,7 +1937,7 @@ function formatExtractGlobalTheme(data) {
             }
         }
     }
-    
+
     return out;
 }
 
@@ -1950,15 +1950,15 @@ function formatOutput(data, intentId) {
     if (!data || !data.tree) {
         return 'No design data available. Please select an element first.';
     }
-    
+
     // Map legacy intents to new 4 core intents
     const mappedIntent = mapLegacyIntent(intentId);
-    
+
     // Use EnhancedPromptGenerator for all prompts
     if (window.EnhancedPromptGenerator) {
         return window.EnhancedPromptGenerator.generateQuickPrompt(data, mappedIntent);
     }
-    
+
     // Fallback to legacy formatters
     switch (mappedIntent) {
         case 'apply-design':
@@ -1989,7 +1989,7 @@ function renderPage(data) {
     if (loadingOverlay) {
         loadingOverlay.classList.remove('active');
     }
-    
+
     if (!data || !data.tree) {
         document.querySelector('.container').innerHTML = `
             <div class="empty-state">
@@ -2003,22 +2003,22 @@ function renderPage(data) {
         `;
         return;
     }
-    
+
     currentData = data;
-    
+
     // Page meta
     document.getElementById('pageMeta').textContent = data.pageTitle || 'Unknown page';
-    
+
     // Screenshot
     const container = document.getElementById('screenshotContainer');
     if (data.screenshot) {
         container.innerHTML = `<img src="${data.screenshot}" alt="Captured element" />`;
     }
-    
+
     // Quick stats
     const stats = document.getElementById('quickStats');
     const tree = data.tree;
-    
+
     if (data.isDeepScan && data.deepScanData?.stats) {
         // Show deep scan stats
         const deepStats = data.deepScanData.stats;
@@ -2049,7 +2049,7 @@ function renderPage(data) {
         const globalCSS = data.globalCSS || {};
         const rootVarCount = Object.keys(globalCSS.rootVariables || {}).length;
         const darkVarCount = Object.keys(globalCSS.darkVariables || {}).length;
-        
+
         stats.innerHTML = `
             <div class="stat">
                 <div class="stat-label">Type</div>
@@ -2080,7 +2080,7 @@ function renderPage(data) {
             </div>
         `;
     }
-    
+
     // Color swatches
     let colors = [];
     if (data.isDeepScan && data.deepScanData?.designTokens?.colors) {
@@ -2088,7 +2088,7 @@ function renderPage(data) {
     } else {
         colors = Array.from(collectColors(tree));
     }
-    
+
     const swatchesEl = document.getElementById('colorSwatches');
     if (colors.length > 0) {
         swatchesEl.innerHTML = `
@@ -2097,7 +2097,7 @@ function renderPage(data) {
                 ${colors.map(c => `<div class="color-swatch" style="background:${c}" title="${c}" data-color="${c}"></div>`).join('')}
             </div>
         `;
-        
+
         swatchesEl.querySelectorAll('.color-swatch').forEach(swatch => {
             swatch.addEventListener('click', async () => {
                 await navigator.clipboard.writeText(swatch.dataset.color);
@@ -2105,10 +2105,10 @@ function renderPage(data) {
             });
         });
     }
-    
+
     // Render animation info if present
     renderAnimationInfo(data);
-    
+
     // Show/hide animation intent button based on detected animations
     const animationIntentBtn = document.querySelector('[data-intent="replicate-animation"]');
     const intentSelector = document.getElementById('intentSelector');
@@ -2119,7 +2119,7 @@ function renderPage(data) {
         animationIntentBtn.style.display = 'none';
         intentSelector?.classList.remove('has-animations');
     }
-    
+
     // Load stored intent from popup and then generate output
     chrome.storage.local.get(['currentIntent', 'aiEnabled'], (result) => {
         // Set intent
@@ -2130,23 +2130,23 @@ function renderPage(data) {
         } else {
             currentIntent = 'apply-design'; // default
         }
-        
+
         // Update UI
         document.querySelectorAll('.intent-option').forEach(b => b.classList.remove('active'));
         const activeBtn = document.querySelector(`[data-intent="${currentIntent}"]`);
         if (activeBtn) activeBtn.classList.add('active');
-        
+
         // Show/hide CSS merge section for global tokens
         const cssMergeSection = document.getElementById('cssMergeSection');
         if (cssMergeSection) {
             cssMergeSection.classList.toggle('active', currentIntent === 'global-tokens');
         }
-        
+
         // Update AI status
         if (result.aiEnabled === true) {
             aiEnhancementEnabled = true;
         }
-        
+
         // Generate output (only call once, after storage is loaded)
         updateOutput();
     });
@@ -2157,7 +2157,7 @@ async function updateOutput() {
         console.warn('[Results] updateOutput called with no currentData');
         return;
     }
-    
+
     // Validate data has required structure
     if (!currentData.tree) {
         console.warn('[Results] currentData has no tree property');
@@ -2167,11 +2167,11 @@ async function updateOutput() {
         }
         return;
     }
-    
+
     const shadcnSection = document.getElementById('shadcnOutputSection');
     const regularSection = document.getElementById('regularOutputSection');
     const outputEl = document.getElementById('output');
-    
+
     // Handle shadcn-component intent specially
     if (currentIntent === 'shadcn-component') {
         shadcnSection?.classList.add('active');
@@ -2179,14 +2179,14 @@ async function updateOutput() {
         await buildShadcnOutput();
         return;
     }
-    
+
     // Regular intents
     shadcnSection?.classList.remove('active');
-    if (regularSection) regularSection.style.display = 'block';
-    
+    if (regularSection) regularSection.style.display = 'flex';
+
     let output = '';
     let isEnhanced = false;
-    
+
     // First, always generate template output (fast, synchronous)
     try {
         if (window.EnhancedPromptGenerator) {
@@ -2198,10 +2198,10 @@ async function updateOutput() {
         console.error('Template generation failed:', e);
         output = 'Error generating output. Please try again.';
     }
-    
+
     // Show template output immediately
     if (outputEl) outputEl.value = output;
-    
+
     // Then try AI enhancement if enabled (async, can take time)
     if (aiEnhancementEnabled && window.EnhancedPromptGenerator) {
         try {
@@ -2216,7 +2216,7 @@ async function updateOutput() {
             // Keep template output
         }
     }
-    
+
     // Update AI badge
     const badge = document.getElementById('aiBadge');
     if (badge) {
@@ -2242,18 +2242,18 @@ async function buildShadcnOutput() {
     const errorEl = document.getElementById('shadcnError');
     const successEl = document.getElementById('shadcnSuccess');
     const stepEl = document.getElementById('shadcnBuildingStep');
-    
+
     // Check if required elements exist
     if (!buildingEl || !errorEl || !successEl) {
         console.error('[Results] Required shadcn UI elements not found');
         return;
     }
-    
+
     // Reset states
     buildingEl.classList.add('active');
     errorEl.style.display = 'none';
     successEl.style.display = 'none';
-    
+
     // Check if currentData is valid
     if (!currentData || !currentData.tree) {
         buildingEl.classList.remove('active');
@@ -2264,48 +2264,48 @@ async function buildShadcnOutput() {
         }
         return;
     }
-    
+
     try {
         // Check if ShadcnBuilder is available
         if (!window.ShadcnBuilder) {
             throw new Error('Shadcn Builder module not loaded. Please refresh the page.');
         }
-        
+
         // Update build steps
         stepEl.textContent = 'Detecting required components...';
         await sleep(300);
-        
+
         stepEl.textContent = 'Fetching shadcn components from registry...';
         await sleep(300);
-        
+
         stepEl.textContent = 'Generating component with Gemini AI...';
-        
+
         // Call the builder
         const result = await window.ShadcnBuilder.buildShadcnComponent(currentData);
-        
+
         buildingEl.classList.remove('active');
-        
+
         if (result.success) {
             // Show success state
             successEl.style.display = 'block';
-            
+
             // Populate detected components
             const componentsList = document.getElementById('shadcnComponentsList');
             componentsList.innerHTML = (result.detectedComponents || [])
                 .map(comp => `<span class="shadcn-component-badge">${comp}</span>`)
                 .join('');
-            
+
             // Populate code
             document.getElementById('shadcnComponentCode').value = result.componentCode || '';
             document.getElementById('shadcnCssVars').value = result.cssVariables || '/* No custom CSS variables needed */';
             document.getElementById('shadcnInstallCmd').textContent = result.installCommand || 'npx shadcn@latest add card button';
             document.getElementById('shadcnUsageExample').textContent = result.usageExample || `<${result.componentName || 'Component'} />`;
-            
+
         } else {
             // Show error state
             errorEl.style.display = 'block';
             document.getElementById('shadcnErrorMessage').textContent = result.error || 'Unknown error occurred';
-            
+
             // Show API key hint if that's the issue
             const apiKeyHint = document.getElementById('shadcnApiKeyHint');
             if (result.error && result.error.includes('GEMINI_API_KEY')) {
@@ -2314,14 +2314,14 @@ async function buildShadcnOutput() {
                 apiKeyHint.style.display = 'none';
             }
         }
-        
+
     } catch (error) {
         console.error('Shadcn build error:', error);
-        
+
         buildingEl.classList.remove('active');
         errorEl.style.display = 'block';
         document.getElementById('shadcnErrorMessage').textContent = error.message;
-        
+
         // Show API key hint if needed
         const apiKeyHint = document.getElementById('shadcnApiKeyHint');
         if (error.message.includes('API') || error.message.includes('key') || error.message.includes('Gemini')) {
@@ -2346,15 +2346,15 @@ async function initializeAIResultsStatus() {
     const regenerateBtn = document.getElementById('regeneratePromptBtn');
     const styleSelect = document.getElementById('promptStyleSelect');
     const badge = document.getElementById('aiBadge');
-    
+
     // Get stored AI preference
     chrome.storage.local.get(['aiEnabled', 'geminiApiKey'], async (result) => {
         const hasKey = !!result.geminiApiKey;
         const wasEnabled = result.aiEnabled === true;
-        
+
         if (hasKey) {
             aiStatus.textContent = 'Gemini AI available';
-            
+
             if (wasEnabled) {
                 aiToggle.checked = true;
                 aiEnhancementEnabled = true;
@@ -2384,19 +2384,19 @@ async function getEnhancedOutputResults() {
     if (!aiEnhancementEnabled || !window.EnhancedPromptGenerator || !currentData) {
         return null;
     }
-    
+
     try {
         showAILoadingResults(true);
-        
+
         const style = currentPromptStyle !== 'auto' ? currentPromptStyle : undefined;
-        
+
         const result = await window.EnhancedPromptGenerator.generateEnhancedPrompt(currentData, currentIntent, {
             useGemini: true,
             strategy: style
         });
-        
+
         showAILoadingResults(false);
-        
+
         if (result.success || result.prompt) {
             return {
                 output: result.prompt,
@@ -2408,19 +2408,19 @@ async function getEnhancedOutputResults() {
         console.error('AI enhancement failed:', e);
         showAILoadingResults(false);
     }
-    
+
     return null;
 }
 
 async function regeneratePrompt() {
     if (!currentData) return;
-    
+
     const regenerateBtn = document.getElementById('regeneratePromptBtn');
     regenerateBtn.disabled = true;
     regenerateBtn.innerHTML = '<span>🔄</span> Regenerating...';
-    
+
     await updateOutput();
-    
+
     regenerateBtn.disabled = false;
     regenerateBtn.innerHTML = '<span>🔄</span> Regenerate';
 }
@@ -2429,9 +2429,9 @@ async function regeneratePrompt() {
 function openAISettingsResults() {
     const modal = document.getElementById('aiSettingsModal');
     const apiKeyInput = document.getElementById('resultsApiKeyInput');
-    
+
     modal.classList.add('active');
-    
+
     if (window.GeminiService) {
         window.GeminiService.getApiKey().then(key => {
             if (key) {
@@ -2451,48 +2451,48 @@ async function saveApiKeyResults() {
     const apiKeyInput = document.getElementById('resultsApiKeyInput');
     const statusEl = document.getElementById('resultsApiKeyStatus');
     const saveBtn = document.getElementById('saveResultsApiKeyBtn');
-    
+
     const key = apiKeyInput.value.trim();
-    
+
     if (key === '••••••••••••••••') {
         closeAISettingsResults();
         return;
     }
-    
+
     if (!key) {
         statusEl.className = 'api-status invalid';
         statusEl.innerHTML = '⚠️ Please enter an API key';
         statusEl.style.display = 'flex';
         return;
     }
-    
+
     if (key.length < 20) {
         statusEl.className = 'api-status invalid';
         statusEl.innerHTML = '⚠️ API key seems too short. Get your key from Google AI Studio.';
         statusEl.style.display = 'flex';
         return;
     }
-    
+
     statusEl.className = 'api-status checking';
     statusEl.innerHTML = '🔄 Validating API key with Gemini 2.0 Flash...';
     statusEl.style.display = 'flex';
     saveBtn.disabled = true;
-    
+
     try {
         const isValid = await window.GeminiService.validateApiKey(key);
-        
+
         if (isValid) {
             await window.GeminiService.setApiKey(key);
             statusEl.className = 'api-status valid';
             statusEl.innerHTML = '✓ API key saved! Using Gemini 2.0 Flash (free preview)';
-            
+
             aiEnhancementEnabled = true;
             document.getElementById('resultsAiToggle').checked = true;
             document.getElementById('regeneratePromptBtn').disabled = false;
             document.getElementById('promptStyleSelect').disabled = false;
-            
+
             await initializeAIResultsStatus();
-            
+
             setTimeout(() => {
                 closeAISettingsResults();
                 statusEl.style.display = 'none';
@@ -2506,7 +2506,7 @@ async function saveApiKeyResults() {
         statusEl.className = 'api-status invalid';
         statusEl.innerHTML = '✗ Error: ' + e.message;
     }
-    
+
     saveBtn.disabled = false;
 }
 
@@ -2523,16 +2523,16 @@ document.querySelectorAll('.intent-option').forEach(btn => {
         document.querySelectorAll('.intent-option').forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
         currentIntent = btn.dataset.intent;
-        
+
         // Show/hide CSS merge section for global tokens
         const cssMergeSection = document.getElementById('cssMergeSection');
         if (cssMergeSection) {
             cssMergeSection.classList.toggle('active', currentIntent === 'global-tokens');
         }
-        
+
         // Store preference
         chrome.storage.local.set({ currentIntent: currentIntent });
-        
+
         updateOutput();
     });
 });
@@ -2546,14 +2546,14 @@ document.querySelectorAll('.adapt-tab').forEach(tab => {
     tab.addEventListener('click', () => {
         document.querySelectorAll('.adapt-tab').forEach(t => t.classList.remove('active'));
         tab.classList.add('active');
-        
+
         const tabId = tab.dataset.tab;
-        
+
         // Hide all tab contents
         document.getElementById('adaptTabCss').style.display = 'none';
         document.getElementById('adaptTabSelectors').style.display = 'none';
         document.getElementById('adaptTabFramework').style.display = 'none';
-        
+
         // Show selected tab
         if (tabId === 'css') {
             document.getElementById('adaptTabCss').style.display = 'block';
@@ -2595,10 +2595,10 @@ document.getElementById('copyAIPromptBtn')?.addEventListener('click', async () =
         showAdaptStatus('No extracted design data available.', 'error');
         return;
     }
-    
+
     const userContext = document.getElementById('userCssInput')?.value || '';
     const prompt = generateAIPrompt(currentData, userContext);
-    
+
     try {
         await navigator.clipboard.writeText(prompt);
         showToast('AI prompt copied to clipboard!');
@@ -2615,9 +2615,9 @@ document.querySelectorAll('.css-option').forEach(option => {
         document.querySelectorAll('.css-option').forEach(o => o.classList.remove('selected'));
         option.classList.add('selected');
         option.querySelector('input[type="radio"]').checked = true;
-        
+
         hasCSSOption = option.dataset.option;
-        
+
         // Show/hide existing CSS input
         const existingCssInput = document.getElementById('existingCssInput');
         if (hasCSSOption === 'has-css') {
@@ -2661,9 +2661,9 @@ document.getElementById('copyBtn').addEventListener('click', async () => {
 // Copy with image
 document.getElementById('copyWithImageBtn').addEventListener('click', async () => {
     if (!currentData) return;
-    
+
     const text = document.getElementById('output').value;
-    
+
     try {
         if (currentData.screenshot) {
             const response = await fetch(currentData.screenshot);
@@ -2778,9 +2778,9 @@ function parseUserCSS(cssText) {
         hasTypography: false,
         hasSpacing: false
     };
-    
+
     if (!cssText || typeof cssText !== 'string') return result;
-    
+
     // Extract CSS variables from :root
     const rootMatch = cssText.match(/:root\s*\{([^}]+)\}/g);
     if (rootMatch) {
@@ -2789,7 +2789,7 @@ function parseUserCSS(cssText) {
             vars.forEach(v => {
                 const [name, value] = v.split(':').map(s => s.trim());
                 result.variables[name] = value;
-                
+
                 // Categorize variable by type
                 if (value.match(/^(#|rgb|hsl)/i)) {
                     result.colors.push({ name, value });
@@ -2797,38 +2797,38 @@ function parseUserCSS(cssText) {
             });
         });
     }
-    
+
     // Extract all selectors and their properties
     const rulePattern = /([^{]+)\{([^}]+)\}/g;
     let match;
     while ((match = rulePattern.exec(cssText)) !== null) {
         const selector = match[1].trim();
         const properties = match[2].trim();
-        
+
         if (selector !== ':root' && !selector.startsWith('@')) {
             const props = parseProperties(properties);
             result.selectors[selector] = props;
             result.rules.push({ selector, properties: props });
-            
+
             // Detect component type from selector
             const detectedType = detectComponentTypeFromSelector(selector);
             if (detectedType && !result.componentTypes.includes(detectedType)) {
                 result.componentTypes.push(detectedType);
             }
-            
+
             // Check for typography/spacing
             if (props['font-family'] || props['font-size']) result.hasTypography = true;
             if (props['padding'] || props['margin'] || props['gap']) result.hasSpacing = true;
         }
     }
-    
+
     return result;
 }
 
 // Detect what component type a selector likely represents
 function detectComponentTypeFromSelector(selector) {
     const selectorLower = selector.toLowerCase();
-    
+
     const typePatterns = {
         button: ['btn', 'button', 'cta', 'submit'],
         input: ['input', 'field', 'textbox', 'form-control'],
@@ -2841,7 +2841,7 @@ function detectComponentTypeFromSelector(selector) {
         list: ['list', 'items'],
         container: ['container', 'wrapper', 'section']
     };
-    
+
     for (const [type, patterns] of Object.entries(typePatterns)) {
         for (const pattern of patterns) {
             if (selectorLower.includes(pattern)) {
@@ -2849,7 +2849,7 @@ function detectComponentTypeFromSelector(selector) {
             }
         }
     }
-    
+
     return null;
 }
 
@@ -2862,22 +2862,22 @@ function analyzeOverlap(userCSS, extractedData) {
         colors: [],
         suggestions: []
     };
-    
+
     if (!extractedData) return overlaps;
-    
-    const tokens = extractedData.isDeepScan 
+
+    const tokens = extractedData.isDeepScan
         ? extractDesignTokensFromDeepScan(extractedData)
         : extractDesignTokens(extractedData);
-    
+
     // Find component overlaps
     const extractedComponents = tokens.components ? Object.keys(tokens.components) : [];
     const userComponentTypes = userCSS.componentTypes || [];
-    
+
     for (const type of extractedComponents) {
         const hasInUser = userComponentTypes.includes(type);
         const userSelector = hasInUser ? findMatchingSelector(type, userCSS, {}) : null;
         const extractedCount = tokens.components[type]?.length || 0;
-        
+
         if (extractedCount > 0) {
             overlaps.components.push({
                 type,
@@ -2886,21 +2886,21 @@ function analyzeOverlap(userCSS, extractedData) {
                 userSelector,
                 canAdapt: hasInUser
             });
-            
+
             if (hasInUser) {
                 overlaps.hasOverlap = true;
             }
         }
     }
-    
+
     // Find variable overlaps
     const userVarNames = Object.keys(userCSS.variables || {});
     const extractedVarNames = Object.keys(tokens.rootVariables || {});
-    
+
     for (const extractedVar of extractedVarNames) {
         const mappedVar = mapVariableName(extractedVar, userCSS.variables || {});
         const hasMatch = mappedVar !== extractedVar && userVarNames.includes(mappedVar);
-        
+
         overlaps.variables.push({
             extracted: extractedVar,
             mapped: mappedVar,
@@ -2908,16 +2908,16 @@ function analyzeOverlap(userCSS, extractedData) {
             extractedValue: tokens.rootVariables[extractedVar],
             userValue: hasMatch ? userCSS.variables[mappedVar] : null
         });
-        
+
         if (hasMatch) {
             overlaps.hasOverlap = true;
         }
     }
-    
+
     // Find color overlaps (by similarity)
     const userColors = userCSS.colors || [];
     const extractedColors = tokens.colors || [];
-    
+
     for (const userColor of userColors) {
         for (const extractedColor of extractedColors.slice(0, 20)) {
             const similarity = colorSimilarity(userColor.value, extractedColor);
@@ -2932,7 +2932,7 @@ function analyzeOverlap(userCSS, extractedData) {
             }
         }
     }
-    
+
     // Generate suggestions based on analysis
     if (!overlaps.hasOverlap) {
         overlaps.suggestions.push({
@@ -2941,7 +2941,7 @@ function analyzeOverlap(userCSS, extractedData) {
             action: 'Consider adding component selectors that match the extracted design, or use the AI prompt for manual guidance.'
         });
     }
-    
+
     if (userVarNames.length === 0) {
         overlaps.suggestions.push({
             type: 'no-variables',
@@ -2949,7 +2949,7 @@ function analyzeOverlap(userCSS, extractedData) {
             action: 'Add a :root { } block with variables like --primary, --background, etc. for better mapping.'
         });
     }
-    
+
     if (userComponentTypes.length === 0) {
         overlaps.suggestions.push({
             type: 'no-components',
@@ -2957,7 +2957,7 @@ function analyzeOverlap(userCSS, extractedData) {
             action: 'Add selectors like .btn, .card, .input for component-level adaptation.'
         });
     }
-    
+
     return overlaps;
 }
 
@@ -2977,7 +2977,7 @@ function parseProperties(propString) {
 function parseUserSelectorMappings(mappingText) {
     const mappings = {};
     if (!mappingText) return mappings;
-    
+
     const lines = mappingText.split('\n').filter(l => l.trim());
     lines.forEach(line => {
         const [type, selectors] = line.split(':').map(s => s.trim());
@@ -2985,7 +2985,7 @@ function parseUserSelectorMappings(mappingText) {
             mappings[type.toLowerCase()] = selectors.split(',').map(s => s.trim()).filter(s => s);
         }
     });
-    
+
     return mappings;
 }
 
@@ -2996,15 +2996,15 @@ function findMatchingSelector(componentType, userCSS, userMappings) {
         // Return the first user-defined selector
         return userMappings[componentType][0];
     }
-    
+
     // Then check if any user selectors match our patterns
     const patterns = COMPONENT_SELECTOR_PATTERNS[componentType] || [];
     const userSelectors = Object.keys(userCSS.selectors || {});
-    
+
     // Score-based matching for better accuracy
     let bestMatch = null;
     let bestScore = 0;
-    
+
     for (const userSelector of userSelectors) {
         const score = calculateSelectorMatchScore(componentType, userSelector, patterns);
         if (score > bestScore) {
@@ -3012,11 +3012,11 @@ function findMatchingSelector(componentType, userCSS, userMappings) {
             bestMatch = userSelector;
         }
     }
-    
+
     if (bestMatch && bestScore > 0.3) {
         return bestMatch;
     }
-    
+
     // Fallback to the first common pattern
     return patterns[0] || `.${componentType}`;
 }
@@ -3026,7 +3026,7 @@ function calculateSelectorMatchScore(componentType, userSelector, patterns) {
     let score = 0;
     const selectorLower = userSelector.toLowerCase();
     const typeLower = componentType.toLowerCase();
-    
+
     // Direct pattern match
     for (const pattern of patterns) {
         if (selectorLower === pattern.toLowerCase()) {
@@ -3036,7 +3036,7 @@ function calculateSelectorMatchScore(componentType, userSelector, patterns) {
             score = Math.max(score, 0.8);
         }
     }
-    
+
     // Semantic similarity based on common naming conventions
     const semanticMappings = {
         button: ['btn', 'button', 'cta', 'action', 'submit', 'click'],
@@ -3051,26 +3051,26 @@ function calculateSelectorMatchScore(componentType, userSelector, patterns) {
         listItem: ['item', 'list-item', 'option', 'entry'],
         container: ['container', 'wrapper', 'section', 'layout', 'grid']
     };
-    
+
     const semanticTerms = semanticMappings[componentType] || [typeLower];
     for (const term of semanticTerms) {
         if (selectorLower.includes(term)) {
             score = Math.max(score, 0.6);
         }
     }
-    
+
     // Partial name match
     if (selectorLower.includes(typeLower) || typeLower.includes(selectorLower.replace('.', ''))) {
         score = Math.max(score, 0.5);
     }
-    
+
     return score;
 }
 
 // Parse RGB/RGBA color to components
 function parseColor(colorStr) {
     if (!colorStr) return null;
-    
+
     // Handle rgb/rgba
     const rgbMatch = colorStr.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*([\d.]+))?\)/);
     if (rgbMatch) {
@@ -3081,7 +3081,7 @@ function parseColor(colorStr) {
             a: rgbMatch[4] ? parseFloat(rgbMatch[4]) : 1
         };
     }
-    
+
     // Handle hex
     const hexMatch = colorStr.match(/^#([0-9a-f]{3,8})$/i);
     if (hexMatch) {
@@ -3102,7 +3102,7 @@ function parseColor(colorStr) {
             };
         }
     }
-    
+
     return null;
 }
 
@@ -3110,16 +3110,16 @@ function parseColor(colorStr) {
 function colorSimilarity(color1, color2) {
     const c1 = parseColor(color1);
     const c2 = parseColor(color2);
-    
+
     if (!c1 || !c2) return 0;
-    
+
     // Euclidean distance in RGB space, normalized
     const dist = Math.sqrt(
         Math.pow(c1.r - c2.r, 2) +
         Math.pow(c1.g - c2.g, 2) +
         Math.pow(c1.b - c2.b, 2)
     );
-    
+
     // Max distance is sqrt(3 * 255^2) ≈ 441.67
     const maxDist = 441.67;
     return 1 - (dist / maxDist);
@@ -3129,19 +3129,19 @@ function colorSimilarity(color1, color2) {
 function findSimilarColorVariable(extractedColor, userVariables) {
     let bestMatch = null;
     let bestSimilarity = 0;
-    
+
     for (const [varName, varValue] of Object.entries(userVariables)) {
         // Only consider color-like variables
         if (!varValue || typeof varValue !== 'string') continue;
         if (!varValue.match(/^(#|rgb|hsl)/i)) continue;
-        
+
         const similarity = colorSimilarity(extractedColor, varValue);
         if (similarity > bestSimilarity && similarity > 0.85) {
             bestSimilarity = similarity;
             bestMatch = varName;
         }
     }
-    
+
     return bestMatch;
 }
 
@@ -3154,21 +3154,21 @@ function generateVariableAwareCSS(property, value, userVariables) {
             return `var(${matchingVar})`;
         }
     }
-    
+
     // Check if any user variable has the exact value
     for (const [varName, varValue] of Object.entries(userVariables)) {
         if (varValue === value) {
             return `var(${varName})`;
         }
     }
-    
+
     return value;
 }
 
 // Map CSS variable names to user's variable naming convention
 function mapVariableName(extractedName, userVariables) {
     const userVarNames = Object.keys(userVariables);
-    
+
     // Common variable name mappings
     const commonMappings = {
         '--background': ['--bg', '--background', '--background-color', '--bg-color'],
@@ -3181,7 +3181,7 @@ function mapVariableName(extractedName, userVariables) {
         '--font-sans': ['--font-sans', '--font-family', '--font', '--body-font'],
         '--shadow': ['--shadow', '--box-shadow', '--elevation']
     };
-    
+
     // Check if extracted name has a known mapping
     for (const [standard, variants] of Object.entries(commonMappings)) {
         if (extractedName === standard || variants.includes(extractedName)) {
@@ -3193,7 +3193,7 @@ function mapVariableName(extractedName, userVariables) {
             }
         }
     }
-    
+
     // Check for similar variable names in user's CSS
     const extractedBase = extractedName.replace('--', '').toLowerCase();
     for (const userVar of userVarNames) {
@@ -3202,43 +3202,43 @@ function mapVariableName(extractedName, userVariables) {
             return userVar;
         }
     }
-    
+
     // Return original name if no match found
     return extractedName;
 }
 
 // Generate adapted CSS based on mappings
 function generateAdaptedCSS(extractedData, userCSS, userMappings, framework, overlaps = null) {
-    const tokens = extractedData.isDeepScan 
+    const tokens = extractedData.isDeepScan
         ? extractDesignTokensFromDeepScan(extractedData)
         : extractDesignTokens(extractedData);
-    
+
     const mappings = [];
     let adaptedCSS = '';
     const userVars = userCSS.variables || {};
     const hasUserVars = Object.keys(userVars).length > 0;
-    
+
     // Only generate :root if user has variables or we found color matches
     const colorMatches = overlaps?.colors || [];
     const variableMatches = (overlaps?.variables || []).filter(v => v.hasMatch);
-    
+
     if (hasUserVars || colorMatches.length > 0 || variableMatches.length > 0) {
         adaptedCSS += ':root {\n';
         adaptedCSS += '  /* Updated values from extracted design */\n';
-        
+
         // Only map variables that have actual matches
         if (variableMatches.length > 0) {
             variableMatches.forEach(v => {
                 adaptedCSS += `  ${v.mapped}: ${v.extractedValue}; /* was: ${v.userValue} */\n`;
-                mappings.push({ 
-                    from: v.extracted, 
-                    to: v.mapped, 
+                mappings.push({
+                    from: v.extracted,
+                    to: v.mapped,
                     type: 'variable',
                     hasMatch: true
                 });
             });
         }
-        
+
         // Add color updates for matched colors
         if (colorMatches.length > 0) {
             adaptedCSS += '\n  /* Color updates (similar colors found) */\n';
@@ -3252,49 +3252,49 @@ function generateAdaptedCSS(extractedData, userCSS, userMappings, framework, ove
                 });
             });
         }
-        
+
         adaptedCSS += '}\n\n';
     }
-    
+
     // Generate component styles - ONLY for components with matches
     const componentMatches = overlaps?.components?.filter(c => c.canAdapt) || [];
     const hasComponentMatches = componentMatches.length > 0;
-    
+
     // Also check userMappings for explicit mappings
     const explicitMappings = Object.keys(userMappings);
-    
+
     if (tokens.components && (hasComponentMatches || explicitMappings.length > 0)) {
         adaptedCSS += '/* Component Styles - Adapted to YOUR selectors */\n\n';
-        
+
         for (const [componentType, items] of Object.entries(tokens.components)) {
             if (!items || items.length === 0) continue;
-            
+
             // Check if this component has a match or explicit mapping
             const matchInfo = componentMatches.find(c => c.type === componentType);
             const hasExplicitMapping = explicitMappings.includes(componentType);
-            
+
             if (!matchInfo?.canAdapt && !hasExplicitMapping) {
                 // Skip components without matches
                 continue;
             }
-            
-            const userSelector = matchInfo?.userSelector || 
-                                 (hasExplicitMapping ? userMappings[componentType][0] : null) ||
-                                 findMatchingSelector(componentType, userCSS, userMappings);
-            
-            mappings.push({ 
-                from: componentType, 
-                to: userSelector, 
+
+            const userSelector = matchInfo?.userSelector ||
+                (hasExplicitMapping ? userMappings[componentType][0] : null) ||
+                findMatchingSelector(componentType, userCSS, userMappings);
+
+            mappings.push({
+                from: componentType,
+                to: userSelector,
                 type: 'selector',
                 count: items.length,
                 hasMatch: true
             });
-            
+
             // Generate styles for first variant only (most common pattern)
             const item = items[0];
             adaptedCSS += `${userSelector} {\n`;
             const styles = item.styles;
-            
+
             if (styles.backgroundColor) {
                 const bgValue = generateVariableAwareCSS('background-color', styles.backgroundColor, userVars);
                 adaptedCSS += `  background-color: ${bgValue};\n`;
@@ -3323,16 +3323,16 @@ function generateAdaptedCSS(extractedData, userCSS, userMappings, framework, ove
                 adaptedCSS += `  border: ${styles.borderWidth} ${styles.borderStyle || 'solid'} ${borderColorValue};\n`;
             }
             if (styles.transition) adaptedCSS += `  transition: ${styles.transition};\n`;
-            
+
             adaptedCSS += '}\n\n';
-            
+
             // If multiple variants exist, add a comment
             if (items.length > 1) {
                 adaptedCSS += `/* Note: ${items.length - 1} more ${componentType} variants available in extracted design */\n\n`;
             }
         }
     }
-    
+
     // If no CSS was generated, provide helpful output
     if (!adaptedCSS.trim()) {
         adaptedCSS = `/* No direct matches found between your CSS and the extracted design.
@@ -3359,22 +3359,22 @@ Example CSS structure:
 Paste CSS with this structure and try again, or use the AI Prompt for manual guidance.
 */`;
     }
-    
+
     return { adaptedCSS, mappings };
 }
 
 // Generate AI-optimized prompt for external AI tools
 function generateAIPrompt(extractedData, userContext) {
-    const tokens = extractedData.isDeepScan 
+    const tokens = extractedData.isDeepScan
         ? extractDesignTokensFromDeepScan(extractedData)
         : extractDesignTokens(extractedData);
-    
+
     // Analyze what the user has
     const userCSS = userContext ? parseUserCSS(userContext) : null;
     const userVarCount = userCSS ? Object.keys(userCSS.variables).length : 0;
     const userSelectorCount = userCSS ? Object.keys(userCSS.selectors).length : 0;
     const userComponentTypes = userCSS?.componentTypes || [];
-    
+
     let prompt = `TASK: Help me apply this extracted design to my codebase.
 
 `;
@@ -3382,17 +3382,17 @@ function generateAIPrompt(extractedData, userContext) {
     // Section 1: What the user has
     if (userContext && userContext.trim()) {
         prompt += `MY EXISTING CSS (${userVarCount} variables, ${userSelectorCount} selectors):\n\`\`\`css\n${userContext.trim()}\n\`\`\`\n\n`;
-        
+
         if (userComponentTypes.length > 0) {
             prompt += `Components I have: ${userComponentTypes.join(', ')}\n\n`;
         }
     } else {
         prompt += `⚠️ I haven't provided my CSS yet. Please give me general guidance on how to apply these extracted styles.\n\n`;
     }
-    
+
     // Section 2: Relevant extracted values (filtered to what might match)
     prompt += `EXTRACTED DESIGN VALUES:\n`;
-    
+
     // Only show a focused subset of colors
     if (tokens.colors && tokens.colors.length > 0) {
         prompt += `\nKey Colors (${Math.min(tokens.colors.length, 6)} of ${tokens.colors.length}):\n`;
@@ -3400,24 +3400,24 @@ function generateAIPrompt(extractedData, userContext) {
             prompt += `  ${i + 1}. ${color}\n`;
         });
     }
-    
+
     // Typography
-    const families = tokens.typo?.families 
+    const families = tokens.typo?.families
         ? (tokens.typo.families instanceof Set ? Array.from(tokens.typo.families) : tokens.typo.families)
         : [];
     if (families.length > 0) {
         prompt += `\nFonts: ${families.slice(0, 2).join(', ')}\n`;
     }
-    
+
     // Only show component types that user might want
     if (tokens.components) {
         const relevantComponents = userComponentTypes.length > 0
-            ? Object.entries(tokens.components).filter(([type]) => 
-                userComponentTypes.includes(type) || 
+            ? Object.entries(tokens.components).filter(([type]) =>
+                userComponentTypes.includes(type) ||
                 userComponentTypes.some(ut => type.includes(ut) || ut.includes(type))
-              )
+            )
             : Object.entries(tokens.components).slice(0, 5);
-        
+
         if (relevantComponents.length > 0) {
             prompt += `\nRelevant Components:\n`;
             relevantComponents.forEach(([type, items]) => {
@@ -3432,7 +3432,7 @@ function generateAIPrompt(extractedData, userContext) {
             });
         }
     }
-    
+
     // Section 3: Clear, specific instructions
     prompt += `
 INSTRUCTIONS:
@@ -3445,7 +3445,7 @@ INSTRUCTIONS:
 OUTPUT:
 Generate ONLY the CSS I need to add/update. Use my exact selector names.
 Add comments like /* updated from extracted design */ where you make changes.`;
-    
+
     return prompt;
 }
 
@@ -3504,29 +3504,29 @@ Paste something like this, then click "Analyze & Adapt".
 ## Alternative: Use AI Assistant
 
 Click **"Copy AI Prompt"** to get a prompt you can paste into ChatGPT/Claude for more sophisticated mapping.`;
-        
+
         return out;
     }
-    
+
     const matchedMappings = adaptationState.mappings.filter(m => m.hasMatch);
     const totalMappings = adaptationState.mappings.length;
-    
+
     let out = `## Adapted CSS for Your Codebase\n\n`;
     out += `**${matchedMappings.length} direct matches** found between your CSS and the extracted design.\n\n`;
-    
+
     out += '```css\n';
     out += adaptationState.adaptedCSS;
     out += '```\n\n';
-    
+
     // Add mapping summary
     if (matchedMappings.length > 0) {
         out += '---\n\n';
         out += '### What Was Mapped\n\n';
-        
+
         const selectorMappings = matchedMappings.filter(m => m.type === 'selector');
         const varMappings = matchedMappings.filter(m => m.type === 'variable');
         const colorMappings = matchedMappings.filter(m => m.type === 'color');
-        
+
         if (selectorMappings.length > 0) {
             out += '**Components:**\n';
             selectorMappings.forEach(m => {
@@ -3536,7 +3536,7 @@ Click **"Copy AI Prompt"** to get a prompt you can paste into ChatGPT/Claude for
             });
             out += '\n';
         }
-        
+
         if (varMappings.length > 0) {
             out += '**Variables:**\n';
             varMappings.forEach(m => {
@@ -3544,7 +3544,7 @@ Click **"Copy AI Prompt"** to get a prompt you can paste into ChatGPT/Claude for
             });
             out += '\n';
         }
-        
+
         if (colorMappings.length > 0) {
             out += '**Colors:**\n';
             colorMappings.forEach(m => {
@@ -3553,17 +3553,17 @@ Click **"Copy AI Prompt"** to get a prompt you can paste into ChatGPT/Claude for
             out += '\n';
         }
     }
-    
+
     out += '---\n\n';
     out += '### Next Steps\n\n';
     out += '1. **Review** the CSS above - it uses YOUR selector names\n';
     out += '2. **Preview** - Click "Preview on Website" to see changes live\n';
     out += '3. **Copy** - Paste into your project when satisfied\n';
-    
+
     if (totalMappings > matchedMappings.length) {
         out += `\n💡 **Tip:** ${totalMappings - matchedMappings.length} more components available in the extracted design. Add matching selectors to your CSS to adapt them too.\n`;
     }
-    
+
     return out;
 }
 
@@ -3573,15 +3573,15 @@ function analyzeAndAdaptStyles() {
         showAdaptStatus('No extracted design data available. Extract styles first.', 'error');
         return;
     }
-    
+
     showAdaptStatus('Analyzing your codebase structure...', 'loading');
-    
+
     // Get user input based on active tab
     const activeTab = document.querySelector('.adapt-tab.active')?.dataset.tab || 'css';
-    
+
     let userCSS = { variables: {}, selectors: {}, rules: [], colors: [], componentTypes: [] };
     let userMappings = {};
-    
+
     if (activeTab === 'css') {
         const cssInput = document.getElementById('userCssInput')?.value || '';
         if (!cssInput.trim()) {
@@ -3616,54 +3616,54 @@ function analyzeAndAdaptStyles() {
             }
         }
     }
-    
+
     // Small delay to show loading state
     setTimeout(() => {
         try {
             // First, analyze the overlap
             const overlaps = analyzeOverlap(userCSS, currentData);
             adaptationState.detectedOverlaps = overlaps;
-            
+
             // Show overlap analysis
             renderOverlapAnalysis(overlaps);
-            
+
             if (!overlaps.hasOverlap && activeTab === 'css') {
                 showAdaptStatus(
-                    'Limited overlap detected. See analysis below for suggestions.', 
+                    'Limited overlap detected. See analysis below for suggestions.',
                     'info'
                 );
                 // Still generate what we can, but warn the user
             }
-            
+
             // Generate adapted CSS only for overlapping components
             const result = generateAdaptedCSS(
-                currentData, 
-                userCSS, 
-                userMappings, 
+                currentData,
+                userCSS,
+                userMappings,
                 adaptationState.selectedFramework,
                 overlaps // Pass overlaps to filter output
             );
-            
+
             adaptationState.adaptedCSS = result.adaptedCSS;
             adaptationState.mappings = result.mappings;
-            
+
             // Update output
             updateOutput();
-            
+
             // Show mappings preview
             renderMappingsPreview(result.mappings);
-            
+
             const matchCount = result.mappings.filter(m => m.hasMatch).length;
             const totalCount = result.mappings.length;
-            
+
             if (matchCount > 0) {
                 showAdaptStatus(
-                    `Found ${matchCount} direct matches out of ${totalCount} possible mappings.`, 
+                    `Found ${matchCount} direct matches out of ${totalCount} possible mappings.`,
                     'success'
                 );
             } else {
                 showAdaptStatus(
-                    `Generated ${totalCount} mappings using defaults. Add more CSS for better results.`, 
+                    `Generated ${totalCount} mappings using defaults. Add more CSS for better results.`,
                     'info'
                 );
             }
@@ -3678,13 +3678,13 @@ function analyzeAndAdaptStyles() {
 function renderOverlapAnalysis(overlaps) {
     const previewEl = document.getElementById('mappingPreview');
     const listEl = document.getElementById('mappingList');
-    
+
     if (!previewEl || !listEl) return;
-    
+
     previewEl.classList.add('show');
-    
+
     let html = '';
-    
+
     // Show what was found in user's CSS
     if (adaptationState.userAnalysis) {
         const analysis = adaptationState.userAnalysis;
@@ -3695,7 +3695,7 @@ function renderOverlapAnalysis(overlaps) {
             • ${analysis.componentTypes.length} component types detected: ${analysis.componentTypes.join(', ') || 'none'}
         </div>`;
     }
-    
+
     // Show suggestions if any
     if (overlaps.suggestions.length > 0) {
         html += `<div style="margin-bottom: 12px; padding: 10px; background: #fff8e6; border-radius: 8px; font-size: 12px; border-left: 3px solid #f9a825;">
@@ -3705,11 +3705,11 @@ function renderOverlapAnalysis(overlaps) {
         });
         html += `</div>`;
     }
-    
+
     // Show component matches
     const matchingComponents = overlaps.components.filter(c => c.canAdapt);
     const availableComponents = overlaps.components.filter(c => !c.canAdapt && c.extractedCount > 0);
-    
+
     if (matchingComponents.length > 0) {
         html += `<div style="font-size: 11px; color: #4a6b4d; margin-bottom: 8px; font-weight: 600;">✓ Can adapt (${matchingComponents.length}):</div>`;
         matchingComponents.forEach(c => {
@@ -3720,7 +3720,7 @@ function renderOverlapAnalysis(overlaps) {
             </div>`;
         });
     }
-    
+
     if (availableComponents.length > 0 && availableComponents.length <= 5) {
         html += `<div style="font-size: 11px; color: #9a9a9a; margin: 8px 0; font-weight: 600;">Available in design (add to your CSS to adapt):</div>`;
         availableComponents.slice(0, 5).forEach(c => {
@@ -3731,7 +3731,7 @@ function renderOverlapAnalysis(overlaps) {
             </div>`;
         });
     }
-    
+
     // Show color matches
     if (overlaps.colors.length > 0) {
         html += `<div style="font-size: 11px; color: #4a6b4d; margin: 8px 0; font-weight: 600;">✓ Color matches (${overlaps.colors.length}):</div>`;
@@ -3745,7 +3745,7 @@ function renderOverlapAnalysis(overlaps) {
             </div>`;
         });
     }
-    
+
     listEl.innerHTML = html || '<div style="color: #9a9a9a; text-align: center; padding: 10px;">Paste your CSS to see analysis</div>';
 }
 
@@ -3753,10 +3753,10 @@ function renderOverlapAnalysis(overlaps) {
 function showAdaptStatus(message, type) {
     const statusEl = document.getElementById('adaptStatus');
     if (!statusEl) return;
-    
+
     statusEl.textContent = message;
     statusEl.className = 'adapt-status show ' + type;
-    
+
     if (type === 'success' || type === 'info') {
         setTimeout(() => {
             statusEl.classList.remove('show');
@@ -3769,7 +3769,7 @@ function renderMappingsPreview(mappings) {
     // Note: renderOverlapAnalysis handles the main preview now
     // This function updates the header badge if needed
     const previewBadge = document.getElementById('previewBadge');
-    
+
     const matchCount = mappings.filter(m => m.hasMatch).length;
     if (matchCount > 0 && previewBadge) {
         // Show that we have real matches
@@ -3789,30 +3789,30 @@ function resetAdaptation() {
         adaptedCSS: '',
         isPreviewActive: false
     };
-    
+
     // Clear inputs
     const cssInput = document.getElementById('userCssInput');
     const selectorsInput = document.getElementById('userSelectorsInput');
     if (cssInput) cssInput.value = '';
     if (selectorsInput) selectorsInput.value = '';
-    
+
     // Clear framework selection
     document.querySelectorAll('.framework-option').forEach(opt => opt.classList.remove('selected'));
-    
+
     // Hide mappings preview
     const previewEl = document.getElementById('mappingPreview');
     if (previewEl) previewEl.classList.remove('show');
-    
+
     // Clear status
     const statusEl = document.getElementById('adaptStatus');
     if (statusEl) statusEl.classList.remove('show');
-    
+
     // Update output
     updateOutput();
-    
+
     // Remove live preview if active
     removeStylePreview();
-    
+
     showToast('Adaptation reset');
 }
 
@@ -3846,28 +3846,28 @@ async function ensureContentScript(tabId) {
 async function toggleStylePreview() {
     const previewBtn = document.getElementById('previewStylesBtn');
     const previewBadge = document.getElementById('previewBadge');
-    
+
     if (!adaptationState.adaptedCSS) {
         showAdaptStatus('Please analyze your codebase first to generate adapted CSS.', 'error');
         return;
     }
-    
+
     try {
         const tab = await getActiveTab();
         if (!tab || !tab.id) {
             showAdaptStatus('No active tab found.', 'error');
             return;
         }
-        
+
         // Check if we can run on this tab
         if (tab.url?.startsWith('chrome://') || tab.url?.startsWith('chrome-extension://')) {
             showAdaptStatus('Cannot preview on browser internal pages.', 'error');
             return;
         }
-        
+
         // Ensure content script is injected
         await ensureContentScript(tab.id);
-        
+
         if (adaptationState.isPreviewActive) {
             // Remove preview
             chrome.tabs.sendMessage(tab.id, { action: 'REMOVE_STYLES' }, (response) => {
@@ -3875,40 +3875,40 @@ async function toggleStylePreview() {
                     console.error('Error:', chrome.runtime.lastError);
                     return;
                 }
-                
+
                 adaptationState.isPreviewActive = false;
-                
+
                 // Update button state
                 if (previewBtn) {
                     previewBtn.classList.remove('active');
                     previewBtn.innerHTML = '<span>👁️</span> Preview on Website';
                 }
                 if (previewBadge) previewBadge.style.display = 'none';
-                
+
                 showAdaptStatus('Live preview removed.', 'info');
             });
         } else {
             // Inject styles for preview
-            chrome.tabs.sendMessage(tab.id, { 
-                action: 'INJECT_STYLES', 
-                css: adaptationState.adaptedCSS 
+            chrome.tabs.sendMessage(tab.id, {
+                action: 'INJECT_STYLES',
+                css: adaptationState.adaptedCSS
             }, (response) => {
                 if (chrome.runtime.lastError) {
                     console.error('Error:', chrome.runtime.lastError);
                     showAdaptStatus('Failed to inject styles. Try refreshing the target page.', 'error');
                     return;
                 }
-                
+
                 if (response?.status === 'injected') {
                     adaptationState.isPreviewActive = true;
-                    
+
                     // Update button state
                     if (previewBtn) {
                         previewBtn.classList.add('active');
                         previewBtn.innerHTML = '<span>✓</span> Preview Active';
                     }
                     if (previewBadge) previewBadge.style.display = 'inline-flex';
-                    
+
                     showAdaptStatus('Live preview activated! Check your website tab.', 'success');
                 }
             });
@@ -3923,19 +3923,19 @@ async function toggleStylePreview() {
 async function removeStylePreview() {
     const previewBtn = document.getElementById('previewStylesBtn');
     const previewBadge = document.getElementById('previewBadge');
-    
+
     try {
         const tab = await getActiveTab();
         if (!tab || !tab.id) return;
-        
+
         chrome.tabs.sendMessage(tab.id, { action: 'REMOVE_STYLES' }, (response) => {
             if (chrome.runtime.lastError) {
                 // Ignore errors when content script isn't present
                 return;
             }
-            
+
             adaptationState.isPreviewActive = false;
-            
+
             if (previewBtn) {
                 previewBtn.classList.remove('active');
                 previewBtn.innerHTML = '<span>👁️</span> Preview on Website';
@@ -3953,13 +3953,13 @@ async function checkPreviewStatus() {
     try {
         const tab = await getActiveTab();
         if (!tab || !tab.id) return;
-        
+
         chrome.tabs.sendMessage(tab.id, { action: 'GET_PREVIEW_STATUS' }, (response) => {
             if (chrome.runtime.lastError || !response) return;
-            
+
             const previewBtn = document.getElementById('previewStylesBtn');
             const previewBadge = document.getElementById('previewBadge');
-            
+
             if (response.isActive) {
                 adaptationState.isPreviewActive = true;
                 if (previewBtn) {
@@ -3985,7 +3985,7 @@ function parseExistingCSS(cssText) {
         themeVariables: {},
         otherRules: []
     };
-    
+
     // Parse :root { --variable: value; } - for light mode and shared values
     const rootMatch = cssText.match(/:root\s*\{([^}]+)\}/);
     if (rootMatch) {
@@ -3995,7 +3995,7 @@ function parseExistingCSS(cssText) {
             result.rootVariables[name] = value;
         });
     }
-    
+
     // Parse .dark { --variable: value; } - for dark mode
     const darkMatch = cssText.match(/\.dark\s*\{([^}]+)\}/);
     if (darkMatch) {
@@ -4005,7 +4005,7 @@ function parseExistingCSS(cssText) {
             result.darkVariables[name] = value;
         });
     }
-    
+
     // Parse @theme inline { --variable: value; } - optional theme variables
     const themeMatch = cssText.match(/@theme\s+inline\s*\{([^}]+)\}/);
     if (themeMatch) {
@@ -4015,23 +4015,23 @@ function parseExistingCSS(cssText) {
             result.themeVariables[name] = value;
         });
     }
-    
+
     return result;
 }
 
 function generateMergedCSS(existingCSS) {
     if (!currentData) return '';
-    
+
     const existing = parseExistingCSS(existingCSS);
-    const tokens = currentData.isDeepScan 
+    const tokens = currentData.isDeepScan
         ? extractDesignTokensFromDeepScan(currentData)
         : extractDesignTokens(currentData);
-    
+
     // Start with user's existing variables - we'll only update what they have
     const mergedRoot = { ...existing.rootVariables };
     const mergedDark = { ...existing.darkVariables };
     const mergedTheme = { ...existing.themeVariables };
-    
+
     // Map extracted variables to user's variables using semantic matching
     if (tokens.rootVariables && Object.keys(tokens.rootVariables).length > 0) {
         // For each extracted variable, find the matching user variable
@@ -4056,7 +4056,7 @@ function generateMergedCSS(existingCSS) {
                 }
             }
         });
-        
+
         // Also check user variables for direct matches (backwards compatibility)
         Object.keys(existing.rootVariables).forEach(userVar => {
             if (tokens.rootVariables[userVar] && !mergedRoot[userVar]) {
@@ -4064,7 +4064,7 @@ function generateMergedCSS(existingCSS) {
             }
         });
     }
-    
+
     if (tokens.darkVariables && Object.keys(tokens.darkVariables).length > 0) {
         // Same semantic matching for dark mode variables
         Object.entries(tokens.darkVariables).forEach(([extractedVar, extractedValue]) => {
@@ -4084,7 +4084,7 @@ function generateMergedCSS(existingCSS) {
                 }
             }
         });
-        
+
         // Backwards compatibility check
         Object.keys(existing.darkVariables).forEach(userVar => {
             if (tokens.darkVariables[userVar] && !mergedDark[userVar]) {
@@ -4092,10 +4092,10 @@ function generateMergedCSS(existingCSS) {
             }
         });
     }
-    
+
     // Handle theme variables if user has them (though extracted sites rarely have @theme inline)
     // We preserve user's theme variables as-is since they're optional
-    
+
     // Fallback: Use extracted colors/fonts/etc. for common variables if not already updated
     // Check if variable exists in user's CSS and hasn't been updated by semantic matching above
     const colors = deduplicateColors(tokens.colors);
@@ -4110,9 +4110,9 @@ function generateMergedCSS(existingCSS) {
             mergedRoot['--foreground'] = colors[1];
         }
     }
-    
+
     // Only update typography if user has the variable and it wasn't already updated
-    const families = tokens.typo?.families 
+    const families = tokens.typo?.families
         ? (tokens.typo.families instanceof Set ? Array.from(tokens.typo.families) : tokens.typo.families)
         : [];
     if (families.length > 0 && existing.rootVariables['--font-sans']) {
@@ -4120,14 +4120,14 @@ function generateMergedCSS(existingCSS) {
             mergedRoot['--font-sans'] = `${families[0]}, sans-serif`;
         }
     }
-    
+
     // Only update radius if user has the variable and it wasn't already updated
     if (tokens.radii?.length > 0 && existing.rootVariables['--radius']) {
         if (mergedRoot['--radius'] === existing.rootVariables['--radius']) {
             mergedRoot['--radius'] = tokens.radii[0];
         }
     }
-    
+
     // Only update shadows if user has the variable and it wasn't already updated
     if (tokens.shadows) {
         tokens.shadows.forEach((shadow, i) => {
@@ -4139,16 +4139,16 @@ function generateMergedCSS(existingCSS) {
             }
         });
     }
-    
+
     // Generate output based on format - ONLY supported shadcn formats
     let out = `TASK: Merge these extracted styles with your existing CSS.\n\n`;
     out += `The following CSS includes your existing variables with updated values from the captured design.\n`;
     out += `Only variables that exist in your CSS have been updated - no new variables were added.\n`;
     out += `Only supported formats are included: :root, .dark, and @theme inline.\n`;
     out += `Copy this to your global.css or equivalent file.\n\n`;
-    
+
     out += '```css\n';
-    
+
     // Output :root { --variable: value; } - for light mode and shared values
     if (Object.keys(mergedRoot).length > 0) {
         out += ':root {\n';
@@ -4157,7 +4157,7 @@ function generateMergedCSS(existingCSS) {
         }
         out += '}\n';
     }
-    
+
     // Output .dark { --variable: value; } - for dark mode
     if (Object.keys(mergedDark).length > 0) {
         out += '\n.dark {\n';
@@ -4166,7 +4166,7 @@ function generateMergedCSS(existingCSS) {
         }
         out += '}\n';
     }
-    
+
     // Output @theme inline { --variable: value; } - optional theme variables (preserve if user has them)
     if (Object.keys(mergedTheme).length > 0) {
         out += '\n@theme inline {\n';
@@ -4175,9 +4175,9 @@ function generateMergedCSS(existingCSS) {
         }
         out += '}\n';
     }
-    
+
     out += '```\n\n';
-    
+
     out += '**Merged Summary:**\n';
     out += `- Total :root variables: ${Object.keys(mergedRoot).length}\n`;
     if (Object.keys(mergedDark).length > 0) {
@@ -4186,7 +4186,7 @@ function generateMergedCSS(existingCSS) {
     if (Object.keys(mergedTheme).length > 0) {
         out += `- Total @theme inline variables: ${Object.keys(mergedTheme).length}\n`;
     }
-    
+
     return out;
 }
 
@@ -4197,13 +4197,13 @@ function generateMergedCSS(existingCSS) {
 document.addEventListener('DOMContentLoaded', async () => {
     // Initialize AI status
     await initializeAIResultsStatus();
-    
+
     // AI Toggle handler
     const aiToggle = document.getElementById('resultsAiToggle');
     if (aiToggle) {
         aiToggle.addEventListener('change', async (e) => {
             const isChecked = e.target.checked;
-            
+
             if (isChecked && window.GeminiService) {
                 const status = await window.GeminiService.getServiceStatus();
                 if (!status.hasApiKey || !status.isValid) {
@@ -4212,30 +4212,30 @@ document.addEventListener('DOMContentLoaded', async () => {
                     return;
                 }
             }
-            
+
             aiEnhancementEnabled = isChecked;
-            
+
             const regenerateBtn = document.getElementById('regeneratePromptBtn');
             const styleSelect = document.getElementById('promptStyleSelect');
             const badge = document.getElementById('aiBadge');
-            
+
             regenerateBtn.disabled = !isChecked;
             styleSelect.disabled = !isChecked;
             badge.textContent = isChecked ? 'ON' : 'OFF';
             badge.classList.toggle('active', isChecked);
-            
+
             if (currentData) {
                 updateOutput();
             }
         });
     }
-    
+
     // Regenerate button handler
     const regenerateBtn = document.getElementById('regeneratePromptBtn');
     if (regenerateBtn) {
         regenerateBtn.addEventListener('click', regeneratePrompt);
     }
-    
+
     // Prompt style selector handler
     const styleSelect = document.getElementById('promptStyleSelect');
     if (styleSelect) {
@@ -4246,25 +4246,25 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
         });
     }
-    
+
     // AI Settings modal handlers
     const openSettingsBtn = document.getElementById('openAISettingsBtn');
     const closeSettingsBtn = document.getElementById('closeAISettingsBtn');
     const saveApiKeyBtn = document.getElementById('saveResultsApiKeyBtn');
     const settingsModal = document.getElementById('aiSettingsModal');
-    
+
     if (openSettingsBtn) {
         openSettingsBtn.addEventListener('click', openAISettingsResults);
     }
-    
+
     if (closeSettingsBtn) {
         closeSettingsBtn.addEventListener('click', closeAISettingsResults);
     }
-    
+
     if (saveApiKeyBtn) {
         saveApiKeyBtn.addEventListener('click', saveApiKeyResults);
     }
-    
+
     if (settingsModal) {
         settingsModal.addEventListener('click', (e) => {
             if (e.target.id === 'aiSettingsModal') {
@@ -4272,20 +4272,20 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
         });
     }
-    
+
     // ============================================
     // SHADCN UI EVENT HANDLERS
     // ============================================
-    
+
     // Shadcn tab switching
     document.querySelectorAll('.shadcn-tab').forEach(tab => {
         tab.addEventListener('click', () => {
             const tabName = tab.dataset.shadcnTab;
-            
+
             // Update active tab
             document.querySelectorAll('.shadcn-tab').forEach(t => t.classList.remove('active'));
             tab.classList.add('active');
-            
+
             // Update active content
             document.querySelectorAll('.shadcn-tab-content').forEach(content => {
                 content.classList.remove('active');
@@ -4293,7 +4293,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             document.getElementById(`shadcnTab${tabName.charAt(0).toUpperCase() + tabName.slice(1)}`).classList.add('active');
         });
     });
-    
+
     // Copy shadcn component
     const copyShadcnComponentBtn = document.getElementById('copyShadcnComponent');
     if (copyShadcnComponentBtn) {
@@ -4305,7 +4305,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
         });
     }
-    
+
     // Copy all shadcn output
     const copyShadcnAllBtn = document.getElementById('copyShadcnAll');
     if (copyShadcnAllBtn) {
@@ -4313,7 +4313,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             const component = document.getElementById('shadcnComponentCode').value;
             const css = document.getElementById('shadcnCssVars').value;
             const install = document.getElementById('shadcnInstallCmd').textContent;
-            
+
             const combined = `// ============================================
 // COMPONENT CODE
 // ============================================
@@ -4332,43 +4332,43 @@ ${css}
 
 // ${install}
 `;
-            
+
             await navigator.clipboard.writeText(combined);
             showToast('All output copied to clipboard!');
         });
     }
-    
+
     // Open AI settings from error hint
     const openFromError = document.getElementById('openAISettingsFromError');
     if (openFromError) {
         openFromError.addEventListener('click', openAISettingsResults);
     }
-    
+
     // Track the timestamp of currently displayed data to detect updates
     let currentSelectionTimestamp = null;
     let extractionLoadingInterval = null;
-    
+
     // Store original title
     const originalTitle = document.title;
-    
+
     // Show/hide extraction loading overlay
     function showExtractionLoading(show, estimatedElements = 0) {
         const overlay = document.getElementById('extractionLoadingOverlay');
         const elementCount = document.getElementById('extractionElementCount');
         const elementNumber = document.getElementById('extractionElementNumber');
         const progressBar = document.getElementById('extractionProgressBar');
-        
+
         if (!overlay) return;
-        
+
         if (show) {
             overlay.classList.add('active');
             document.title = '⏳ Extracting Design...';
-            
+
             if (estimatedElements > 0) {
                 elementCount.style.display = 'block';
                 elementNumber.textContent = estimatedElements;
             }
-            
+
             // Animate progress bar
             let progress = 0;
             clearInterval(extractionLoadingInterval);
@@ -4388,25 +4388,25 @@ ${css}
             progressBar.style.width = '100%';
             clearInterval(extractionLoadingInterval);
             document.title = originalTitle;
-            
+
             setTimeout(() => {
                 overlay.classList.remove('active');
                 progressBar.style.width = '0%';
             }, 300);
         }
     }
-    
+
     // Update extraction loading step
     function updateExtractionStep(step) {
         const stepEl = document.getElementById('extractionStep');
         if (stepEl) stepEl.textContent = step;
     }
-    
+
     // Load data with retry mechanism - improved for complex elements
     function loadDataWithRetry(retryCount = 0, maxRetries = 15, retryDelay = 400) {
         chrome.storage.local.get(['lastSelection', 'extractionState'], (result) => {
             const extractionState = result.extractionState;
-            
+
             // Check if extraction failed
             if (extractionState?.failed) {
                 console.error('[Results] Extraction failed:', extractionState.error);
@@ -4414,14 +4414,14 @@ ${css}
                 showExtractionError(extractionState.error);
                 return;
             }
-            
+
             // Check if extraction is in progress
             if (extractionState?.inProgress) {
                 const elapsedTime = Date.now() - (extractionState.startTime || Date.now());
-                console.log(`[Results] Extraction in progress (${Math.round(elapsedTime/1000)}s elapsed)...`);
-                
+                console.log(`[Results] Extraction in progress (${Math.round(elapsedTime / 1000)}s elapsed)...`);
+
                 showExtractionLoading(true, extractionState.estimatedElements || 0);
-                
+
                 // Update step message based on elapsed time
                 if (elapsedTime > 10000) {
                     updateExtractionStep('Processing complex element... (this may take a moment)');
@@ -4430,26 +4430,26 @@ ${css}
                 } else {
                     updateExtractionStep('Analyzing styles and structure...');
                 }
-                
+
                 // Wait and retry
                 setTimeout(() => {
                     loadDataWithRetry(0, maxRetries, retryDelay);
                 }, retryDelay);
                 return;
             }
-            
+
             // Check if we have valid data
             if (result.lastSelection && result.lastSelection.tree) {
                 // Hide loading overlay
                 showExtractionLoading(false);
-                
+
                 // Store timestamp to detect future updates
                 currentSelectionTimestamp = result.lastSelection._selectionTimestamp || null;
-                
+
                 // Data loaded successfully
                 console.log('[Results] Data loaded successfully');
                 renderPage(result.lastSelection);
-                
+
                 // Check if preview is already active on the current tab
                 setTimeout(() => {
                     checkPreviewStatus();
@@ -4457,13 +4457,13 @@ ${css}
             } else if (retryCount < maxRetries) {
                 // Data not ready yet, retry after delay
                 console.log(`[Results] Data not ready, retrying... (${retryCount + 1}/${maxRetries})`);
-                
+
                 // Show loading state after first few retries
                 if (retryCount > 2) {
                     showExtractionLoading(true);
                     updateExtractionStep('Waiting for design data...');
                 }
-                
+
                 setTimeout(() => {
                     loadDataWithRetry(retryCount + 1, maxRetries, retryDelay);
                 }, retryDelay);
@@ -4475,7 +4475,7 @@ ${css}
             }
         });
     }
-    
+
     // Show extraction error
     function showExtractionError(errorMessage) {
         const container = document.querySelector('.container');
@@ -4500,15 +4500,15 @@ ${css}
             `;
         }
     }
-    
+
     // Listen for storage changes to update when extraction completes
     chrome.storage.onChanged.addListener((changes, areaName) => {
         if (areaName !== 'local') return;
-        
+
         // Handle extraction state changes
         if (changes.extractionState) {
             const newState = changes.extractionState.newValue;
-            
+
             if (newState?.failed) {
                 console.error('[Results] Extraction failed:', newState.error);
                 showExtractionLoading(false);
@@ -4520,22 +4520,22 @@ ${css}
                 updateExtractionStep('Finalizing...');
             }
         }
-        
+
         // Handle new selection data
         if (changes.lastSelection) {
             const newData = changes.lastSelection.newValue;
-            
+
             // Check if this is actually new data (different timestamp)
             if (newData && newData.tree) {
                 const newTimestamp = newData._selectionTimestamp;
-                
+
                 // Only update if this is genuinely new data
                 if (newTimestamp && newTimestamp !== currentSelectionTimestamp) {
                     console.log('[Results] New selection detected, refreshing...');
                     showExtractionLoading(false);
                     currentSelectionTimestamp = newTimestamp;
                     renderPage(newData);
-                    
+
                     // Check preview status after re-render
                     setTimeout(() => {
                         checkPreviewStatus();
@@ -4544,7 +4544,7 @@ ${css}
             }
         }
     });
-    
+
     // Initial load
     loadDataWithRetry();
 });
