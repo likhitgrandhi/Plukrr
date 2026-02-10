@@ -3,19 +3,32 @@
 
 <head>
   <meta charset="UTF-8">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Nanum+Pen+Script&display=swap" rel="stylesheet">
   <style>
     * {
       box-sizing: border-box;
     }
 
+    :root {
+      --bg: #f7f5f2;
+      --card: #ffffff;
+      --line: #e6e1d9;
+      --text: #1f1f1f;
+      --muted: #6b6b6b;
+      --accent: #ff5b7f;
+      --shadow: 0 2px 6px rgba(30, 20, 10, 0.08);
+    }
+
     body {
-      width: 320px;
+      width: 360px;
       min-height: 200px;
       padding: 20px;
       font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
       margin: 0;
-      background: #1c1c1e;
-      color: #ffffff;
+      background: var(--bg);
+      color: var(--text);
     }
 
     /* Loading State */
@@ -33,8 +46,8 @@
     .loading-spinner {
       width: 28px;
       height: 28px;
-      border: 3px solid rgba(255, 255, 255, 0.1);
-      border-top-color: #3b82f6;
+      border: 3px solid rgba(0, 0, 0, 0.08);
+      border-top-color: var(--accent);
       border-radius: 50%;
       animation: spin 0.8s linear infinite;
     }
@@ -58,9 +71,7 @@
       display: flex;
       justify-content: space-between;
       align-items: center;
-      margin-bottom: 20px;
-      padding-bottom: 16px;
-      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+      margin-bottom: 16px;
     }
 
     .header-left {
@@ -70,15 +81,16 @@
     }
 
     .header h1 {
-      font-size: 17px;
-      font-weight: 600;
+      font-size: 34px;
+      font-weight: 700;
       margin: 0;
-      color: #ffffff;
+      color: var(--accent);
+      font-family: "Nanum Pen Script", "SF Pro Display", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     }
 
     .header .version {
-      font-size: 11px;
-      color: rgba(255, 255, 255, 0.4);
+      font-size: 10px;
+      color: #9a9a9a;
       font-weight: 400;
     }
 
@@ -90,7 +102,7 @@
 
     /* Subscription Badge */
     .sub-badge {
-      padding: 4px 10px;
+      padding: 4px 8px;
       font-size: 9px;
       font-weight: 600;
       border-radius: 20px;
@@ -99,9 +111,9 @@
     }
 
     .sub-badge.trial {
-      background: rgba(251, 191, 36, 0.15);
-      border: 1px solid rgba(251, 191, 36, 0.3);
-      color: #fbbf24;
+      background: #fff2d7;
+      border: 1px solid #f3d9a2;
+      color: #a86a00;
     }
 
     .sub-badge.pro {
@@ -132,10 +144,10 @@
     .trial-banner {
       display: none;
       padding: 12px 14px;
-      background: rgba(251, 191, 36, 0.1);
-      border: 1px solid rgba(251, 191, 36, 0.2);
-      border-radius: 12px;
-      margin-bottom: 16px;
+      background: #fff7e5;
+      border: 1px solid #f1dfb4;
+      border-radius: 14px;
+      margin-bottom: 14px;
     }
 
     .trial-banner.active {
@@ -157,7 +169,7 @@
     .trial-text {
       font-size: 12px;
       font-weight: 500;
-      color: #fbbf24;
+      color: #a86a00;
     }
 
     .trial-days {
@@ -168,147 +180,199 @@
       padding: 6px 12px;
       font-size: 11px;
       font-weight: 600;
-      color: #1c1c1e;
-      background: #fbbf24;
+      color: #1f1f1f;
+      background: #ffd27a;
       border: none;
-      border-radius: 6px;
+      border-radius: 999px;
       cursor: pointer;
       transition: all 0.15s ease;
     }
 
     .btn-upgrade-small:hover {
-      background: #f59e0b;
+      background: #ffc353;
     }
 
-    /* Buttons */
-    .btn-primary {
-      width: 100%;
-      padding: 14px 20px;
-      background: #3b82f6;
+    /* Auth Prompt */
+    .auth-prompt {
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      gap: 14px;
+      padding: 26px 10px 18px;
+    }
+
+    .auth-prompt.active {
+      display: flex;
+    }
+
+    .auth-icon {
+      font-size: 34px;
+      font-weight: 700;
+      color: var(--accent);
+      font-family: "Nanum Pen Script", "SF Pro Display", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      line-height: 1;
+    }
+
+    .auth-title {
+      font-size: 18px;
+      font-weight: 600;
+      color: var(--text);
+      line-height: 1.3;
+      max-width: 220px;
+    }
+
+    .auth-button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      background: #1f1f1f;
       color: #ffffff;
       border: none;
-      border-radius: 12px;
-      cursor: pointer;
+      border-radius: 999px;
+      padding: 10px 18px;
       font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      box-shadow: 0 8px 16px rgba(31, 31, 31, 0.12);
+    }
+
+    .auth-button:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 12px 20px rgba(31, 31, 31, 0.18);
+    }
+
+    .auth-button:active {
+      transform: translateY(0);
+    }
+
+    /* Action Rows */
+    .action-btn,
+    .account-link {
+      width: 100%;
+      padding: 12px 14px;
+      background: var(--card);
+      color: var(--text);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      cursor: pointer;
+      font-size: 15px;
       font-weight: 600;
       display: flex;
       align-items: center;
-      justify-content: center;
-      gap: 8px;
+      justify-content: space-between;
+      gap: 12px;
       transition: all 0.15s ease;
+      box-shadow: var(--shadow);
+      text-decoration: none;
       font-family: inherit;
     }
 
-    .btn-primary:hover {
-      background: #2563eb;
+    .action-btn:hover,
+    .account-link:hover {
+      border-color: #d6cec2;
+      box-shadow: 0 4px 10px rgba(30, 20, 10, 0.12);
+      transform: translateY(-1px);
     }
 
-    .btn-primary:active {
-      transform: scale(0.98);
+    .action-btn:active,
+    .account-link:active {
+      transform: translateY(0);
     }
 
-    .btn-primary:disabled {
-      opacity: 0.5;
-      cursor: not-allowed;
+    .action-btn.locked {
+      opacity: 0.8;
     }
 
-    .btn-primary svg {
-      width: 18px;
-      height: 18px;
-      stroke: currentColor;
-      fill: none;
-      stroke-width: 2;
+    .action-btn.locked .action-right::before {
+      content: "PRO";
+      background: #f1f1f1;
+      color: #6b6b6b;
+      font-size: 11px;
+      font-weight: 700;
+      padding: 3px 8px;
+      border-radius: 999px;
     }
 
-    .btn-secondary {
-      width: 100%;
-      padding: 14px 20px;
-      background: rgba(255, 255, 255, 0.06);
-      color: rgba(255, 255, 255, 0.8);
-      border: 1px solid rgba(255, 255, 255, 0.08);
-      border-radius: 12px;
-      cursor: pointer;
-      font-size: 14px;
-      font-weight: 500;
+    .action-left {
       display: flex;
       align-items: center;
-      justify-content: center;
-      gap: 8px;
-      transition: all 0.15s ease;
-      font-family: inherit;
+      gap: 10px;
+      min-width: 0;
     }
 
-    .btn-secondary:hover {
-      background: rgba(255, 255, 255, 0.1);
-      color: #ffffff;
+    .action-label {
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
 
-    .btn-secondary:active {
-      transform: scale(0.98);
-    }
-
-    .btn-secondary:disabled {
-      opacity: 0.5;
-      cursor: not-allowed;
-    }
-
-    .btn-secondary svg {
-      width: 18px;
-      height: 18px;
-      stroke: currentColor;
+    .action-icon {
+      width: 20px;
+      height: 20px;
+      stroke: #2f2f2f;
       fill: none;
       stroke-width: 2;
+      flex-shrink: 0;
     }
 
-    .btn-live-edit {
-      background: linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%);
-      color: #ffffff;
-      border: none;
+    .action-icon.filled {
+      stroke: none;
+      fill: #2f2f2f;
     }
 
-    .btn-live-edit:hover {
-      background: linear-gradient(135deg, #7c3aed 0%, #4f46e5 100%);
+    .action-right {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: #9b9b9b;
     }
 
-    /* Pro Feature Lock */
-    .btn-secondary.locked {
-      position: relative;
+    .action-pill {
+      background: #f1f1f1;
+      color: #6b6b6b;
+      font-size: 12px;
+      font-weight: 600;
+      padding: 4px 8px;
+      border-radius: 999px;
     }
 
-    .btn-secondary.locked::after {
-      content: 'PRO';
-      position: absolute;
-      right: 14px;
-      font-size: 9px;
-      font-weight: 700;
-      color: rgba(255, 255, 255, 0.3);
-      background: rgba(255, 255, 255, 0.08);
-      padding: 2px 6px;
-      border-radius: 4px;
+    .action-chevron {
+      display: none;
+    }
+
+    .action-help-icon {
+      width: 18px;
+      height: 18px;
+      stroke: #9b9b9b;
+      fill: none;
+      stroke-width: 2;
     }
 
     /* Button Group */
     .button-group {
       display: flex;
       flex-direction: column;
-      gap: 10px;
+      gap: 12px;
     }
 
     /* Status */
     .status {
       font-size: 12px;
-      color: rgba(255, 255, 255, 0.4);
-      text-align: center;
-      margin-top: 16px;
+      color: var(--muted);
+      text-align: left;
+      margin-top: 12px;
       line-height: 1.5;
     }
 
     /* Settings Button */
     .btn-icon {
-      width: 36px;
-      height: 36px;
-      background: rgba(255, 255, 255, 0.06);
-      border: none;
+      width: 34px;
+      height: 34px;
+      background: var(--card);
+      border: 1px solid var(--line);
       padding: 0;
       cursor: pointer;
       font-size: 14px;
@@ -317,12 +381,13 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      color: rgba(255, 255, 255, 0.6);
+      color: #6b6b6b;
+      box-shadow: var(--shadow);
     }
 
     .btn-icon:hover {
-      background: rgba(255, 255, 255, 0.1);
-      color: #ffffff;
+      border-color: #d6cec2;
+      color: #3b3b3b;
     }
 
     .btn-icon svg {
@@ -549,39 +614,11 @@
     }
     */
 
-    /* Account link */
-    .account-link {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 6px;
-      font-size: 12px;
-      color: rgba(255, 255, 255, 0.4);
-      text-decoration: none;
-      margin-top: 16px;
-      padding: 10px;
-      border-radius: 8px;
-      transition: all 0.15s ease;
-    }
-
-    .account-link:hover {
-      background: rgba(255, 255, 255, 0.04);
-      color: rgba(255, 255, 255, 0.6);
-    }
-
-    .account-link svg {
-      width: 14px;
-      height: 14px;
-      stroke: currentColor;
-      fill: none;
-      stroke-width: 2;
-    }
-
     /* Divider */
     .divider {
       height: 1px;
-      background: rgba(255, 255, 255, 0.06);
-      margin: 16px 0;
+      background: var(--line);
+      margin: 16px 0 12px;
     }
   </style>
 </head>
@@ -592,11 +629,18 @@
     <div class="loading-spinner"></div>
   </div>
 
+  <!-- Auth Prompt -->
+    <div class="auth-prompt" id="authPrompt">
+      <div class="auth-icon">Plukrr</div>
+    <div class="auth-title">Please log in to use Plukrr</div>
+    <button class="auth-button" id="loginBtn">Login</button>
+  </div>
+
   <!-- Main Content -->
   <div class="main-content" id="mainContent">
     <div class="header">
       <div class="header-left">
-        <h1>ExactAI <span class="version">v1.0</span></h1>
+        <h1>Plukrr <span class="version">v1.0</span></h1>
         <span class="sub-badge trial" id="subBadge" style="display: none;">TRIAL</span>
       </div>
       <div class="header-actions">
@@ -615,7 +659,7 @@
     <div class="trial-banner" id="trialBanner">
       <div class="trial-info">
         <span class="trial-icon">⏰</span>
-        <span class="trial-text"><span class="trial-days" id="trialDays">7</span> days left</span>
+        <span class="trial-text"><span class="trial-days" id="trialDays">9999</span> extractions left</span>
       </div>
       <button class="btn-upgrade-small" id="upgradeBtnBanner">Upgrade</button>
     </div>
@@ -639,29 +683,43 @@
 
     <!-- Main Actions -->
     <div class="button-group">
-      <button id="selectBtn" class="btn-primary">
-        <svg viewBox="0 0 24 24"><path d="M5 3l14 9-14 9V3z" fill="currentColor" stroke="none"></path></svg>
-        Select Element
+      <button id="selectBtn" class="action-btn">
+        <span class="action-left">
+          <svg viewBox="0 0 24 24" class="action-icon filled"><path d="M5 3l14 9-14 9V3z"></path></svg>
+          <span class="action-label">Copy Element</span>
+        </span>
+        <span class="action-right"></span>
       </button>
 
-      <button id="extractGlobalBtn" class="btn-secondary">
-        <svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="3" y1="9" x2="21" y2="9"></line><line x1="9" y1="21" x2="9" y2="9"></line></svg>
-        Extract Full Page
+      <button id="extractGlobalBtn" class="action-btn">
+        <span class="action-left">
+          <svg viewBox="0 0 24 24" class="action-icon"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="3" y1="9" x2="21" y2="9"></line><line x1="9" y1="21" x2="9" y2="9"></line></svg>
+          <span class="action-label">Extract Full Page</span>
+        </span>
+        <span class="action-right"></span>
       </button>
 
-      <button id="liveEditBtn" class="btn-secondary btn-live-edit">
-        <svg viewBox="0 0 24 24"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
-        Live Edit
+      <button id="liveEditBtn" class="action-btn">
+        <span class="action-left">
+          <svg viewBox="0 0 24 24" class="action-icon"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
+          <span class="action-label">Live Edit</span>
+        </span>
+        <span class="action-right"></span>
       </button>
     </div>
 
-    <div id="status" class="status">
-      Click an action to start extracting design styles
-    </div>
+    <div id="status" class="status"></div>
+
+    <div class="divider"></div>
 
     <a href="#" class="account-link" id="accountLink">
-      <svg viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
-      Manage subscription
+      <span class="action-left">
+        <svg viewBox="0 0 24 24" class="action-icon"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
+        <span class="action-label">Manage subscription</span>
+      </span>
+      <span class="action-right">
+        <svg viewBox="0 0 24 24" class="action-help-icon"><circle cx="12" cy="12" r="9"></circle><path d="M9.5 9a2.5 2.5 0 0 1 5 0c0 1.7-2.5 1.8-2.5 3.5"></path><circle cx="12" cy="17" r="1"></circle></svg>
+      </span>
     </a>
   </div>
 

@@ -6,6 +6,7 @@
 // Track the results tab
 let resultsTabId = null;
 let extractionInProgress = false;
+const DEFAULT_TRIAL_EXTRACTIONS = 9999;
 
 // Subscription sync interval (5 minutes)
 const SYNC_INTERVAL = 5 * 60 * 1000;
@@ -120,8 +121,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         chrome.storage.local.set({ 
             lastSelection: dataWithTimestamp,
             extractionState: { inProgress: false, complete: true }
-        }, () => {
+        }, async () => {
             console.log('[Background] Design data saved to storage');
+
+            await recordTrialExtraction();
             
             // Open or focus results tab
             openOrFocusResultsTab();
@@ -194,22 +197,25 @@ async function handleSyncSubscription() {
 
 async function handleCheckFeatureAccess(feature) {
     try {
-        const result = await chrome.storage.local.get(['exactai_subscription', 'exactai_trial']);
+        const result = await chrome.storage.local.get(['exactai_subscription', 'exactai_trial', 'exactai_auth']);
         
         const subscription = result.exactai_subscription;
         const trial = result.exactai_trial;
+        const auth = result.exactai_auth;
+
+        if (!auth || !auth.accessToken) {
+            return { hasAccess: false, feature, requiresAuth: true };
+        }
         
         // Default feature access
         let hasAccess = false;
         
         // Check trial first
         if (trial && trial.startDate) {
-            const startDate = new Date(trial.startDate);
-            const totalDays = trial.days || 7;
-            const endDate = new Date(startDate);
-            endDate.setDate(endDate.getDate() + totalDays);
-            
-            if (new Date() < endDate) {
+            const totalExtractions = Math.max(trial.extractionsTotal ?? 0, DEFAULT_TRIAL_EXTRACTIONS);
+            const extractionsUsed = trial.extractionsUsed ?? 0;
+            const extractionsRemaining = Math.max(0, totalExtractions - extractionsUsed);
+            if (extractionsRemaining > 0) {
                 // Trial active - all features available
                 hasAccess = true;
             }
@@ -237,6 +243,43 @@ async function handleCheckFeatureAccess(feature) {
     } catch (error) {
         console.error('[Background] Check feature access error:', error);
         return { hasAccess: false, error: error.message };
+    }
+}
+
+async function recordTrialExtraction() {
+    try {
+        const result = await chrome.storage.local.get(['exactai_subscription', 'exactai_trial', 'exactai_auth']);
+        const subscription = result.exactai_subscription;
+        const trial = result.exactai_trial;
+        const auth = result.exactai_auth;
+
+        if (!auth || !auth.accessToken) {
+            return;
+        }
+
+        if (subscription && subscription.isActive) {
+            return;
+        }
+
+        if (!trial || !trial.startDate) {
+            return;
+        }
+
+        const totalExtractions = Math.max(trial.extractionsTotal ?? 0, DEFAULT_TRIAL_EXTRACTIONS);
+        const extractionsUsed = Math.min(totalExtractions, (trial.extractionsUsed || 0) + 1);
+
+        await chrome.storage.local.set({
+            exactai_trial: {
+                ...trial,
+                extractionsTotal: totalExtractions,
+                extractionsUsed
+            }
+        });
+
+        // Clear cached subscription status to force fresh trial counts
+        await chrome.storage.local.remove(['exactai_subscription']);
+    } catch (error) {
+        console.error('[Background] Failed to record trial extraction:', error);
     }
 }
 

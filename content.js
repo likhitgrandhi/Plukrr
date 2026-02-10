@@ -290,10 +290,10 @@
             top: ${top}px !important;
             width: ${panelWidth}px !important;
             max-height: ${panelHeight}px !important;
-            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%) !important;
-            border: 1px solid rgba(107, 143, 113, 0.4) !important;
+            background: #ffffff !important;
+            border: 1px solid #e6e1d9 !important;
             border-radius: 16px !important;
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255,255,255,0.05) !important;
+            box-shadow: 0 16px 40px rgba(30, 20, 10, 0.15) !important;
             z-index: 2147483647 !important;
             font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Roboto, sans-serif !important;
             overflow: hidden !important;
@@ -311,19 +311,19 @@
                 }
                 .picker-header {
                     padding: 14px 16px !important;
-                    border-bottom: 1px solid rgba(255,255,255,0.1) !important;
+                    border-bottom: 1px solid #f0ece6 !important;
                     display: flex !important;
                     justify-content: space-between !important;
                     align-items: center !important;
                 }
                 .picker-title {
-                    color: #fff !important;
+                    color: #1f1f1f !important;
                     font-size: 13px !important;
                     font-weight: 600 !important;
                     letter-spacing: 0.3px !important;
                 }
                 .picker-subtitle {
-                    color: rgba(255,255,255,0.5) !important;
+                    color: #6b6b6b !important;
                     font-size: 11px !important;
                     margin-top: 2px !important;
                 }
@@ -331,9 +331,9 @@
                     width: 28px !important;
                     height: 28px !important;
                     border-radius: 8px !important;
-                    border: none !important;
-                    background: rgba(255,255,255,0.1) !important;
-                    color: rgba(255,255,255,0.7) !important;
+                    border: 1px solid #e6e1d9 !important;
+                    background: #f7f5f2 !important;
+                    color: #6b6b6b !important;
                     cursor: pointer !important;
                     display: flex !important;
                     align-items: center !important;
@@ -342,8 +342,9 @@
                     transition: all 0.15s ease !important;
                 }
                 .picker-close:hover {
-                    background: rgba(255,100,100,0.2) !important;
-                    color: #ff6b6b !important;
+                    background: #fff1f5 !important;
+                    color: #b0314f !important;
+                    border-color: #f3c3d1 !important;
                 }
                 .picker-list {
                     max-height: 320px !important;
@@ -357,7 +358,7 @@
                     background: transparent !important;
                 }
                 .picker-list::-webkit-scrollbar-thumb {
-                    background: rgba(255,255,255,0.2) !important;
+                    background: rgba(31, 31, 31, 0.15) !important;
                     border-radius: 3px !important;
                 }
                 .picker-item {
@@ -367,15 +368,15 @@
                     transition: all 0.15s ease !important;
                     border: 1px solid transparent !important;
                     margin-bottom: 4px !important;
-                    background: rgba(255,255,255,0.03) !important;
+                    background: #ffffff !important;
                 }
                 .picker-item:hover {
-                    background: rgba(107, 143, 113, 0.15) !important;
-                    border-color: rgba(107, 143, 113, 0.3) !important;
+                    background: #fff7fb !important;
+                    border-color: #ff5b7f !important;
                 }
                 .picker-item.selected {
-                    background: rgba(107, 143, 113, 0.25) !important;
-                    border-color: rgba(107, 143, 113, 0.5) !important;
+                    background: #fff1f5 !important;
+                    border-color: #ff5b7f !important;
                 }
                 .picker-item-header {
                     display: flex !important;
@@ -384,7 +385,7 @@
                     margin-bottom: 4px !important;
                 }
                 .picker-tag {
-                    background: linear-gradient(135deg, #6b8f71 0%, #5a7d5f 100%) !important;
+                    background: #ff5b7f !important;
                     color: white !important;
                     padding: 2px 8px !important;
                     border-radius: 4px !important;
@@ -393,7 +394,7 @@
                     font-family: 'SF Mono', 'Fira Code', monospace !important;
                 }
                 .picker-selector {
-                    color: rgba(255,255,255,0.7) !important;
+                    color: #6b6b6b !important;
                     font-size: 11px !important;
                     font-family: 'SF Mono', 'Fira Code', monospace !important;
                     overflow: hidden !important;
@@ -402,17 +403,17 @@
                     flex: 1 !important;
                 }
                 .picker-depth {
-                    color: rgba(255,255,255,0.3) !important;
+                    color: #6b6b6b !important;
                     font-size: 10px !important;
                     padding: 2px 6px !important;
-                    background: rgba(255,255,255,0.05) !important;
+                    background: #f1f1f1 !important;
                     border-radius: 4px !important;
                 }
                 .picker-meta {
                     display: flex !important;
                     gap: 12px !important;
                     font-size: 10px !important;
-                    color: rgba(255,255,255,0.4) !important;
+                    color: #9a9a9a !important;
                 }
                 .picker-meta span {
                     display: flex !important;
@@ -420,7 +421,7 @@
                     gap: 4px !important;
                 }
                 .picker-preview {
-                    color: rgba(255,255,255,0.5) !important;
+                    color: #7a7a7a !important;
                     font-size: 11px !important;
                     margin-top: 4px !important;
                     overflow: hidden !important;
@@ -429,21 +430,17 @@
                 }
                 .picker-hint {
                     padding: 10px 16px !important;
-                    background: rgba(107, 143, 113, 0.1) !important;
-                    border-top: 1px solid rgba(255,255,255,0.05) !important;
+                    background: #fdf9f3 !important;
+                    border-top: 1px solid #f0ece6 !important;
                     font-size: 11px !important;
-                    color: rgba(255,255,255,0.5) !important;
+                    color: #6b6b6b !important;
                     text-align: center !important;
-                }
-                .arrow-up {
-                    margin-left: 8px !important;
-                    opacity: 0.4 !important;
                 }
             </style>
             
             <div class="picker-header">
                 <div>
-                    <div class="picker-title">🎯 Select Element Scope</div>
+                    <div class="picker-title">Select Element Scope</div>
                     <div class="picker-subtitle">Click on the element you want to capture</div>
                 </div>
                 <button class="picker-close" id="picker-close-btn">✕</button>
@@ -468,7 +465,7 @@
             </div>
             
             <div class="picker-hint">
-                ↑ Go up to capture parent containers • Click to select
+                Go up to capture parent containers • Click to select
             </div>
         `;
 

@@ -80,8 +80,15 @@ async function loadUserInfo() {
 }
 
 async function loadSubscriptionStatus() {
+    let status = await SubscriptionService.getSubscriptionStatus();
+    if (status.canStartTrial && typeof TrialService !== 'undefined') {
+        await TrialService.startTrial();
+        if (typeof SubscriptionService.clearCache === 'function') {
+            await SubscriptionService.clearCache();
+        }
+        status = await SubscriptionService.getSubscriptionStatus();
+    }
     const subscriptionInfo = await SubscriptionService.getSubscriptionInfo();
-    const status = await SubscriptionService.getSubscriptionStatus();
     
     const subscriptionBadge = document.getElementById('subscriptionBadge');
     const subscriptionTier = document.getElementById('subscriptionTier');
@@ -115,12 +122,13 @@ async function loadSubscriptionStatus() {
     }
     
     // Show/hide trial progress
-    if (status.tier === 'trial' && status.trialDaysRemaining !== undefined) {
+    if (status.tier === 'trial' && status.trialExtractionsRemaining !== undefined) {
         trialProgress.style.display = 'block';
         updateTrialUI({
-            daysRemaining: status.trialDaysRemaining,
-            totalDays: 7
+            extractionsRemaining: status.trialExtractionsRemaining,
+            totalExtractions: status.trialTotalExtractions || 9999
         });
+        subscriptionStatus.textContent = 'Free trial active';
     } else {
         trialProgress.style.display = 'none';
     }
@@ -137,18 +145,20 @@ function updateTrialUI(trialStatus) {
     const trialProgressFill = document.getElementById('trialProgressFill');
     const trialDaysText = document.getElementById('trialDaysText');
     
-    const total = trialStatus.totalDays || 7;
-    const remaining = trialStatus.daysRemaining || 0;
+    const total = trialStatus.totalExtractions || 9999;
+    const remaining = trialStatus.extractionsRemaining || 0;
     const percentage = (remaining / total) * 100;
     
     trialProgressFill.style.width = `${percentage}%`;
-    trialDaysText.textContent = `${remaining} of ${total} days remaining`;
+    trialDaysText.textContent = `${remaining} of ${total} extractions remaining`;
     
-    // Change color based on days remaining
-    if (remaining <= 1) {
-        trialProgressFill.style.background = 'linear-gradient(90deg, #ef4444 0%, #dc2626 100%)';
-    } else if (remaining <= 3) {
-        trialProgressFill.style.background = 'linear-gradient(90deg, #f97316 0%, #ea580c 100%)';
+    // Subtle warning colors when running low
+    if (remaining <= 2) {
+        trialProgressFill.style.background = '#ef4444';
+    } else if (remaining <= 5) {
+        trialProgressFill.style.background = '#f59e0b';
+    } else {
+        trialProgressFill.style.background = '#ff5b7f';
     }
 }
 
@@ -340,4 +350,3 @@ async function saveSettings() {
         saveBtn.textContent = 'Save Settings';
     }
 }
-

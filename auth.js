@@ -94,6 +94,10 @@ function setupOTPInputs() {
 function setupFooterLinks() {
     const termsLink = document.getElementById('termsLink');
     const privacyLink = document.getElementById('privacyLink');
+
+    if (!termsLink || !privacyLink) {
+        return;
+    }
     
     if (typeof CONFIG !== 'undefined') {
         if (CONFIG.TERMS_URL) {

@@ -2142,9 +2142,11 @@ function renderPage(data) {
             cssMergeSection.classList.toggle('active', currentIntent === 'global-tokens');
         }
         
-        // Update AI status
-        if (result.aiEnabled === true) {
+        // Update AI status only if AI UI is present
+        if (document.getElementById('aiEnhancementPanel') && result.aiEnabled === true) {
             aiEnhancementEnabled = true;
+        } else {
+            aiEnhancementEnabled = false;
         }
         
         // Generate output (only call once, after storage is loaded)
@@ -2346,6 +2348,10 @@ async function initializeAIResultsStatus() {
     const regenerateBtn = document.getElementById('regeneratePromptBtn');
     const styleSelect = document.getElementById('promptStyleSelect');
     const badge = document.getElementById('aiBadge');
+
+    if (!aiToggle || !aiStatus || !regenerateBtn || !styleSelect || !badge) {
+        return;
+    }
     
     // Get stored AI preference
     chrome.storage.local.get(['aiEnabled', 'geminiApiKey'], async (result) => {
@@ -4195,8 +4201,13 @@ function generateMergedCSS(existingCSS) {
 // ============================================
 
 document.addEventListener('DOMContentLoaded', async () => {
-    // Initialize AI status
-    await initializeAIResultsStatus();
+    const aiPanel = document.getElementById('aiEnhancementPanel');
+    if (aiPanel) {
+        // Initialize AI status
+        await initializeAIResultsStatus();
+    } else {
+        aiEnhancementEnabled = false;
+    }
     
     // AI Toggle handler
     const aiToggle = document.getElementById('resultsAiToggle');

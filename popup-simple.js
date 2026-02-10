@@ -17,10 +17,18 @@ document.addEventListener('DOMContentLoaded', async () => {
 async function initPopup() {
     const loadingScreen = document.getElementById('loadingScreen');
     const mainContent = document.getElementById('mainContent');
+    const authPrompt = document.getElementById('authPrompt');
 
     try {
         // Check auth and subscription status
-        await checkAuthAndSubscription();
+        const isAuth = await checkAuthAndSubscription();
+
+        if (!isAuth) {
+            loadingScreen.classList.add('hidden');
+            authPrompt.classList.add('active');
+            setupAuthPrompt();
+            return;
+        }
 
         // Initialize AI status
         await initializeAIStatus();
@@ -43,10 +51,13 @@ async function checkAuthAndSubscription() {
     // Check if services are available
     if (typeof AuthService === 'undefined' || typeof SubscriptionService === 'undefined') {
         console.warn('[Popup] Auth/Subscription services not loaded');
-        return;
+        return false;
     }
 
     const isAuth = await AuthService.isAuthenticated();
+    if (!isAuth) {
+        return false;
+    }
 
     // Get subscription status
     currentSubscription = await SubscriptionService.getSubscriptionStatus();
@@ -54,22 +65,20 @@ async function checkAuthAndSubscription() {
     // Update UI based on subscription
     updateSubscriptionUI(currentSubscription);
 
-    // Check if trial/subscription expired and user not authenticated
-    if (!isAuth && currentSubscription.status === 'expired') {
-        // Redirect to auth page
-        window.location.href = 'auth.html';
-        return;
-    }
-
     // If no trial started yet, start one
     if (typeof TrialService !== 'undefined') {
         const trialStatus = await TrialService.getTrialStatus();
-        if (!trialStatus.hasTrialStarted && !isAuth) {
+        if (!trialStatus.hasTrialStarted && (!currentSubscription || !currentSubscription.isActive)) {
             await TrialService.startTrial();
+            if (typeof SubscriptionService.clearCache === 'function') {
+                await SubscriptionService.clearCache();
+            }
             currentSubscription = await SubscriptionService.getSubscriptionStatus();
             updateSubscriptionUI(currentSubscription);
         }
     }
+
+    return true;
 }
 
 function updateSubscriptionUI(subscription) {
@@ -89,9 +98,9 @@ function updateSubscriptionUI(subscription) {
             subBadge.textContent = 'TRIAL';
             subBadge.classList.add('trial');
             // Show trial banner
-            if (subscription.trialDaysRemaining !== undefined) {
+            if (subscription.trialExtractionsRemaining !== undefined) {
                 trialBanner.classList.add('active');
-                trialDays.textContent = subscription.trialDaysRemaining;
+                trialDays.textContent = subscription.trialExtractionsRemaining;
             }
             break;
         case 'pro':
@@ -200,11 +209,24 @@ function setupEventListeners() {
     });
 }
 
+function setupAuthPrompt() {
+    const loginBtn = document.getElementById('loginBtn');
+    if (!loginBtn) return;
+    loginBtn.addEventListener('click', () => {
+        chrome.tabs.create({ url: chrome.runtime.getURL('auth.html') });
+    });
+}
+
 // ============================================
 // MAIN ACTIONS
 // ============================================
 
 async function handleSelectElement() {
+    if (currentSubscription && !currentSubscription.isActive) {
+        document.getElementById('status').innerHTML = '<span style="color: #e57373;">You have used all free extractions. Please upgrade to continue.</span>';
+        return;
+    }
+
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     if (!tab) return;
 
@@ -243,6 +265,11 @@ async function handleSelectElement() {
 }
 
 async function handleLiveEdit() {
+    if (currentSubscription && !currentSubscription.isActive) {
+        document.getElementById('status').innerHTML = '<span style="color: #e57373;">You have used all free extractions. Please upgrade to continue.</span>';
+        return;
+    }
+
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     if (!tab) return;
 
@@ -276,7 +303,7 @@ async function handleLiveEdit() {
 async function handleExtractFullPage() {
     // Check feature access
     if (currentSubscription && !currentSubscription.isActive) {
-        document.getElementById('status').innerHTML = '<span style="color: #e57373;">Please upgrade to use this feature</span>';
+        document.getElementById('status').innerHTML = '<span style="color: #e57373;">You have used all free extractions. Please upgrade to continue.</span>';
         return;
     }
 

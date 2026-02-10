@@ -1,6 +1,6 @@
 // ============================================
 // ExactAI - Trial Service
-// Manages free trial period for new users
+// Manages free trial usage for new users
 // ============================================
 
 const TrialService = {
@@ -20,7 +20,8 @@ const TrialService = {
         
         const trialData = {
             startDate: new Date().toISOString(),
-            days: CONFIG.TRIAL_DAYS || 7,
+            extractionsTotal: CONFIG.TRIAL_EXTRACTIONS || 9999,
+            extractionsUsed: 0,
             active: true
         };
         
@@ -48,9 +49,9 @@ const TrialService = {
             return {
                 hasTrialStarted: false,
                 isActive: false,
-                daysRemaining: 0,
-                daysUsed: 0,
-                totalDays: CONFIG.TRIAL_DAYS || 7,
+                extractionsRemaining: 0,
+                extractionsUsed: 0,
+                totalExtractions: CONFIG.TRIAL_EXTRACTIONS || 9999,
                 startDate: null,
                 endDate: null,
                 expired: false
@@ -58,25 +59,33 @@ const TrialService = {
         }
         
         const startDate = new Date(trialData.startDate);
-        const totalDays = trialData.days || CONFIG.TRIAL_DAYS || 7;
-        const endDate = new Date(startDate);
-        endDate.setDate(endDate.getDate() + totalDays);
-        
-        const now = new Date();
-        const msPerDay = 24 * 60 * 60 * 1000;
-        const daysUsed = Math.floor((now - startDate) / msPerDay);
-        const daysRemaining = Math.max(0, totalDays - daysUsed);
-        const isActive = daysRemaining > 0;
-        const expired = daysRemaining === 0;
+        const configuredTotal = CONFIG.TRIAL_EXTRACTIONS || 9999;
+        const storedTotal = trialData.extractionsTotal ?? trialData.totalExtractions ?? 0;
+        const totalExtractions = Math.max(storedTotal, configuredTotal);
+        const extractionsUsed = trialData.extractionsUsed ?? 0;
+        const extractionsRemaining = Math.max(0, totalExtractions - extractionsUsed);
+        const isActive = extractionsRemaining > 0;
+        const expired = extractionsRemaining === 0;
+
+        // Normalize stored trial data when migrating from older formats
+        if (trialData.extractionsTotal !== totalExtractions || trialData.extractionsUsed !== extractionsUsed) {
+            await chrome.storage.local.set({
+                [this.STORAGE_KEY]: {
+                    ...trialData,
+                    extractionsTotal: totalExtractions,
+                    extractionsUsed: extractionsUsed
+                }
+            });
+        }
         
         return {
             hasTrialStarted: true,
             isActive,
-            daysRemaining,
-            daysUsed,
-            totalDays,
+            extractionsRemaining,
+            extractionsUsed,
+            totalExtractions,
             startDate: startDate.toISOString(),
-            endDate: endDate.toISOString(),
+            endDate: null,
             expired
         };
     },
@@ -90,11 +99,11 @@ const TrialService = {
     },
     
     /**
-     * Get days remaining in trial
+     * Get extractions remaining in trial
      */
-    async getTrialDaysRemaining() {
+    async getTrialExtractionsRemaining() {
         const status = await this.getTrialStatus();
-        return status.daysRemaining;
+        return status.extractionsRemaining;
     },
     
     /**
@@ -106,11 +115,11 @@ const TrialService = {
     },
     
     /**
-     * Check if trial is expiring soon (within specified days)
+     * Check if trial is running low (within specified extractions)
      */
-    async isTrialExpiringSoon(withinDays = 3) {
+    async isTrialExpiringSoon(withinExtractions = 3) {
         const status = await this.getTrialStatus();
-        return status.isActive && status.daysRemaining <= withinDays;
+        return status.isActive && status.extractionsRemaining <= withinExtractions;
     },
     
     /**
@@ -135,27 +144,49 @@ const TrialService = {
             };
         }
         
-        if (status.daysRemaining === 1) {
+        if (status.extractionsRemaining === 1) {
             return {
                 type: 'warning',
-                message: 'Your trial ends tomorrow! Upgrade now to keep access.',
-                shortMessage: '1 day left'
+                message: 'Only 1 extraction left. Upgrade now to keep access.',
+                shortMessage: '1 left'
             };
         }
         
-        if (status.daysRemaining <= 3) {
+        if (status.extractionsRemaining <= 3) {
             return {
                 type: 'warning',
-                message: `Your trial ends in ${status.daysRemaining} days. Upgrade to continue.`,
-                shortMessage: `${status.daysRemaining} days left`
+                message: `Only ${status.extractionsRemaining} extractions left. Upgrade to continue.`,
+                shortMessage: `${status.extractionsRemaining} left`
             };
         }
         
         return {
             type: 'active',
-            message: `${status.daysRemaining} days remaining in your trial`,
-            shortMessage: `${status.daysRemaining} days left`
+            message: `${status.extractionsRemaining} free extractions remaining`,
+            shortMessage: `${status.extractionsRemaining} left`
         };
+    },
+
+    /**
+     * Record a successful extraction against the trial limit
+     */
+    async recordExtraction() {
+        const trialData = await this.getTrialData();
+        if (!trialData || !trialData.startDate) {
+            return null;
+        }
+
+        const totalExtractions = Math.max(trialData.extractionsTotal ?? 0, CONFIG.TRIAL_EXTRACTIONS || 9999);
+        const extractionsUsed = Math.min(totalExtractions, (trialData.extractionsUsed || 0) + 1);
+
+        const updated = {
+            ...trialData,
+            extractionsTotal: totalExtractions,
+            extractionsUsed
+        };
+
+        await chrome.storage.local.set({ [this.STORAGE_KEY]: updated });
+        return updated;
     },
     
     /**
@@ -167,9 +198,9 @@ const TrialService = {
     },
     
     /**
-     * Extend trial by specified number of days (for promotions, etc.)
+     * Extend trial by specified number of extractions (for promotions, etc.)
      */
-    async extendTrial(additionalDays) {
+    async extendTrial(additionalExtractions) {
         const trialData = await this.getTrialData();
         
         if (!trialData) {
@@ -177,10 +208,10 @@ const TrialService = {
             return null;
         }
         
-        trialData.days = (trialData.days || CONFIG.TRIAL_DAYS || 7) + additionalDays;
+        trialData.extractionsTotal = (trialData.extractionsTotal || CONFIG.TRIAL_EXTRACTIONS || 9999) + additionalExtractions;
         await chrome.storage.local.set({ [this.STORAGE_KEY]: trialData });
         
-        console.log('[TrialService] Trial extended by', additionalDays, 'days');
+        console.log('[TrialService] Trial extended by', additionalExtractions, 'extractions');
         return trialData;
     }
 };
@@ -189,4 +220,3 @@ const TrialService = {
 if (typeof window !== 'undefined') {
     window.TrialService = TrialService;
 }
-

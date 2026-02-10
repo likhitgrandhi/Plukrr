@@ -2,18 +2,33 @@
 <html>
 <head>
   <meta charset="UTF-8">
-  <title>ExactAI - Captured Design</title>
+  <title>Plukrr - Captured Design</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Nanum+Pen+Script&display=swap" rel="stylesheet">
   <style>
     * {
       box-sizing: border-box;
+    }
+
+    :root {
+      --bg: #f7f5f2;
+      --card: #ffffff;
+      --line: #e6e1d9;
+      --text: #1f1f1f;
+      --muted: #6b6b6b;
+      --accent: #ff5b7f;
+      --accent-soft: #fff1f5;
+      --accent-strong: #b0314f;
+      --shadow: 0 8px 20px rgba(30, 20, 10, 0.08);
     }
     
     body {
       font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, sans-serif;
       margin: 0;
       padding: 0;
-      background: #f5f5f0;
-      color: #3d3d3d;
+      background: var(--bg);
+      color: var(--text);
       min-height: 100vh;
     }
     
@@ -32,15 +47,24 @@
     }
     
     .header h1 {
-      font-size: 24px;
-      font-weight: 600;
+      font-size: 34px;
+      font-weight: 700;
       margin: 0;
-      color: #2d2d2d;
+      color: var(--accent);
+      font-family: "Nanum Pen Script", "SF Pro Display", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+
+    .header-title-muted {
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, sans-serif;
+      font-size: 16px;
+      font-weight: 400;
+      color: var(--muted);
+      margin-left: 6px;
     }
     
     .header-meta {
       font-size: 14px;
-      color: #9a9a9a;
+      color: var(--muted);
     }
     
     /* Main layout */
@@ -58,16 +82,24 @@
     
     /* Cards */
     .card {
-      background: #ffffff;
+      background: var(--card);
       border-radius: 16px;
       padding: 20px;
-      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+      border: 1px solid var(--line);
+      box-shadow: none;
+      transition: box-shadow 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
+    }
+
+    .card:hover {
+      box-shadow: var(--shadow);
+      border-color: #d6cec2;
+      transform: translateY(-1px);
     }
     
     .card-header {
       font-size: 14px;
       font-weight: 600;
-      color: #5a5a5a;
+      color: var(--muted);
       margin-bottom: 16px;
       display: flex;
       align-items: center;
@@ -76,8 +108,9 @@
     
     /* Screenshot */
     .screenshot-container {
-      background: #fafaf8;
+      background: #fdfbf7;
       border-radius: 12px;
+      border: 1px solid var(--line);
       overflow: hidden;
       display: flex;
       align-items: center;
@@ -92,7 +125,7 @@
     }
     
     .no-screenshot {
-      color: #9a9a9a;
+      color: var(--muted);
       font-size: 14px;
     }
     
@@ -108,16 +141,16 @@
       font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas, monospace;
       font-size: 12px;
       line-height: 1.6;
-      border: none;
+      border: 1px solid var(--line);
       border-radius: 12px;
       resize: vertical;
-      background: #fafaf8;
-      color: #3d3d3d;
+      background: #ffffff;
+      color: var(--text);
     }
     
     textarea:focus {
       outline: none;
-      box-shadow: inset 0 0 0 2px #d0d0d0;
+      box-shadow: 0 0 0 3px rgba(255, 91, 127, 0.12);
     }
     
     /* Intent selector */
@@ -129,8 +162,8 @@
     }
     
     .intent-option {
-      background: #fafaf8;
-      border: 2px solid transparent;
+      background: #ffffff;
+      border: 1px solid var(--line);
       padding: 12px 14px;
       border-radius: 10px;
       cursor: pointer;
@@ -139,32 +172,32 @@
     }
     
     .intent-option:hover {
-      background: #f0f0eb;
+      border-color: #d6cec2;
     }
     
     .intent-option.active {
-      background: #e8f0e9;
-      border-color: #6b8f71;
+      background: var(--accent-soft);
+      border-color: var(--accent);
     }
     
     .intent-label {
       font-size: 13px;
       font-weight: 600;
-      color: #3d3d3d;
+      color: var(--text);
       margin-bottom: 2px;
     }
     
     .intent-desc {
       font-size: 11px;
-      color: #9a9a9a;
+      color: var(--muted);
     }
     
     .intent-option.active .intent-label {
-      color: #4a6b4d;
+      color: var(--accent-strong);
     }
     
     .intent-option.active .intent-desc {
-      color: #6b8f71;
+      color: var(--accent);
     }
     
     /* Buttons */
@@ -176,7 +209,7 @@
     
     .btn {
       padding: 12px 20px;
-      border-radius: 10px;
+      border-radius: 999px;
       cursor: pointer;
       font-size: 14px;
       font-weight: 500;
@@ -188,17 +221,18 @@
     }
     
     .btn-primary {
-      background: #e8dcc8;
-      color: #6b5a3d;
+      background: #1f1f1f;
+      color: #ffffff;
     }
     
     .btn-primary:hover {
-      background: #ddd0b8;
+      background: #111111;
     }
     
     .btn-secondary {
-      background: #d4e5d6;
-      color: #4a6b4d;
+      background: #ffffff;
+      color: var(--text);
+      border: 1px solid var(--line);
     }
     
     .btn-secondary:hover {
@@ -380,7 +414,7 @@
       align-items: center;
       gap: 6px;
       padding: 8px 14px;
-      background: #6b8f71;
+      background: var(--accent);
       color: white;
       border: none;
       border-radius: 8px;
@@ -391,7 +425,7 @@
     }
     
     .animation-code-btn:hover {
-      background: #5a7d5f;
+      background: #ff7a96;
     }
     
     .animation-code-section {
@@ -436,8 +470,8 @@
     }
     
     .animation-code-tab.active {
-      background: rgba(107, 143, 113, 0.2);
-      color: #8fb996;
+      background: rgba(255, 91, 127, 0.15);
+      color: #ff9ab0;
     }
     
     /* Empty state */
@@ -497,13 +531,13 @@
     }
     
     .css-option.selected {
-      border-color: #6b8f71;
-      background: #e8f0e9;
+      border-color: var(--accent);
+      background: var(--accent-soft);
     }
     
     .css-option input[type="radio"] {
       margin: 0;
-      accent-color: #6b8f71;
+      accent-color: var(--accent);
     }
     
     .css-option-label {
@@ -542,7 +576,7 @@
     
     .existing-css-input textarea:focus {
       outline: none;
-      border-color: #6b8f71;
+      border-color: var(--accent);
     }
     
     .existing-css-input label {
@@ -555,7 +589,7 @@
     .merge-btn {
       margin-top: 12px;
       padding: 10px 16px;
-      background: #6b8f71;
+      background: var(--accent);
       color: white;
       border: none;
       border-radius: 8px;
@@ -566,7 +600,7 @@
     }
     
     .merge-btn:hover {
-      background: #5a7d5f;
+      background: #ff7a96;
     }
     
     /* Format selector */
@@ -588,13 +622,13 @@
     }
     
     .format-option:hover {
-      border-color: #6b8f71;
+      border-color: var(--accent);
     }
     
     .format-option.selected {
-      background: #e8f0e9;
-      border-color: #6b8f71;
-      color: #4a6b4d;
+      background: var(--accent-soft);
+      border-color: var(--accent);
+      color: var(--accent-strong);
     }
     
     /* Adapt to Codebase Section */
@@ -621,7 +655,7 @@
     .adapt-header-icon {
       width: 36px;
       height: 36px;
-      background: linear-gradient(135deg, #6b8f71 0%, #5a7d5f 100%);
+      background: linear-gradient(135deg, var(--accent) 0%, #ff7a96 100%);
       border-radius: 10px;
       display: flex;
       align-items: center;
@@ -669,8 +703,8 @@
     }
     
     .adapt-tab.active {
-      background: #e8f0e9;
-      color: #4a6b4d;
+      background: var(--accent-soft);
+      color: var(--accent-strong);
     }
     
     .adapt-input-section {
@@ -702,8 +736,8 @@
     
     .adapt-textarea:focus {
       outline: none;
-      border-color: #6b8f71;
-      box-shadow: 0 0 0 3px rgba(107, 143, 113, 0.1);
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(255, 91, 127, 0.12);
     }
     
     .adapt-textarea::placeholder {
@@ -730,13 +764,13 @@
     }
     
     .adapt-btn-primary {
-      background: linear-gradient(135deg, #6b8f71 0%, #5a7d5f 100%);
+      background: linear-gradient(135deg, var(--accent) 0%, #ff7a96 100%);
       color: white;
     }
     
     .adapt-btn-primary:hover {
       transform: translateY(-1px);
-      box-shadow: 0 4px 12px rgba(107, 143, 113, 0.3);
+      box-shadow: 0 4px 12px rgba(255, 91, 127, 0.25);
     }
     
     .adapt-btn-primary:disabled {
@@ -754,20 +788,20 @@
     
     .adapt-btn-secondary:hover {
       background: #f5f5f5;
-      border-color: #6b8f71;
+      border-color: var(--accent);
     }
     
     .adapt-btn-preview {
-      background: #e8dcc8;
-      color: #6b5a3d;
+      background: var(--accent-soft);
+      color: var(--accent-strong);
     }
     
     .adapt-btn-preview:hover {
-      background: #ddd0b8;
+      background: #ffe3ea;
     }
     
     .adapt-btn-preview.active {
-      background: #6b8f71;
+      background: var(--accent);
       color: white;
     }
     
@@ -843,13 +877,13 @@
     }
     
     .mapping-arrow {
-      color: #6b8f71;
+      color: var(--accent);
       margin: 0 10px;
       font-weight: bold;
     }
     
     .mapping-to {
-      color: #4a6b4d;
+      color: var(--accent-strong);
       font-family: ui-monospace, SFMono-Regular, monospace;
       font-weight: 600;
       flex: 1;
@@ -861,7 +895,7 @@
       align-items: center;
       gap: 4px;
       padding: 4px 10px;
-      background: #6b8f71;
+      background: var(--accent);
       color: white;
       border-radius: 20px;
       font-size: 11px;
@@ -898,14 +932,14 @@
     }
     
     .framework-option:hover {
-      border-color: #6b8f71;
+      border-color: var(--accent);
       background: #f8faf8;
     }
     
     .framework-option.selected {
-      border-color: #6b8f71;
-      background: #e8f0e9;
-      color: #4a6b4d;
+      border-color: var(--accent);
+      background: var(--accent-soft);
+      color: var(--accent-strong);
     }
     
     /* Spinner animation */
@@ -957,34 +991,34 @@
       gap: 4px;
       padding: 12px 14px;
       background: #ffffff;
-      border: 2px solid #e0e5e1;
+      border: 2px solid var(--line);
       border-radius: 10px;
       cursor: pointer;
       font-size: 13px;
       font-weight: 600;
-      color: #3d3d3d;
+      color: var(--text);
       transition: all 0.15s ease;
       text-align: left;
     }
     
     .smart-mode-option:hover {
-      border-color: #6b8f71;
+      border-color: var(--accent);
     }
     
     .smart-mode-option.selected {
-      border-color: #6b8f71;
-      background: #e8f0e9;
-      color: #4a6b4d;
+      border-color: var(--accent);
+      background: var(--accent-soft);
+      color: var(--accent-strong);
     }
     
     .smart-mode-option small {
       font-size: 11px;
       font-weight: 400;
-      color: #9a9a9a;
+      color: var(--muted);
     }
     
     .smart-mode-option.selected small {
-      color: #6b8f71;
+      color: var(--accent);
     }
     
     .smart-mode-option span {
@@ -993,8 +1027,8 @@
     
     /* AI Enhancement Panel */
     .ai-enhancement-panel {
-      background: linear-gradient(135deg, #f8f4ff 0%, #f0f4ff 100%);
-      border: 1px solid #e0d8f0;
+      background: #fff7fb;
+      border: 1px solid var(--line);
       border-radius: 12px;
       padding: 14px;
       margin-bottom: 16px;
@@ -1013,7 +1047,7 @@
       gap: 8px;
       font-size: 14px;
       font-weight: 600;
-      color: #4a3d6a;
+      color: var(--text);
     }
     
     .ai-sparkle {
@@ -1024,13 +1058,13 @@
       font-size: 10px;
       padding: 2px 8px;
       border-radius: 10px;
-      background: #ddd;
-      color: #666;
+      background: #f1f1f1;
+      color: #6b6b6b;
       font-weight: 600;
     }
     
     .ai-badge.active {
-      background: linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%);
+      background: linear-gradient(135deg, var(--accent) 0%, #ff7a96 100%);
       color: white;
     }
     
@@ -1072,7 +1106,7 @@
     }
     
     input:checked + .toggle-slider {
-      background: linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%);
+      background: linear-gradient(135deg, var(--accent) 0%, #ff7a96 100%);
     }
     
     input:checked + .toggle-slider:before {
@@ -1081,7 +1115,7 @@
     
     .ai-panel-status {
       font-size: 12px;
-      color: #7a6a9a;
+      color: var(--muted);
       margin-bottom: 10px;
     }
     
@@ -1097,18 +1131,18 @@
       gap: 6px;
       padding: 8px 12px;
       background: white;
-      border: 1px solid #e0d8f0;
+      border: 1px solid var(--line);
       border-radius: 8px;
       font-size: 12px;
       font-weight: 500;
-      color: #4a3d6a;
+      color: var(--text);
       cursor: pointer;
       transition: all 0.15s ease;
     }
     
     .ai-action-btn:hover:not(:disabled) {
-      background: #f0e8ff;
-      border-color: #c0b0e0;
+      background: var(--accent-soft);
+      border-color: var(--accent);
     }
     
     .ai-action-btn:disabled {
@@ -1123,10 +1157,10 @@
     .ai-style-select {
       padding: 8px 12px;
       background: white;
-      border: 1px solid #e0d8f0;
+      border: 1px solid var(--line);
       border-radius: 8px;
       font-size: 12px;
-      color: #4a3d6a;
+      color: var(--text);
       cursor: pointer;
     }
     
@@ -1140,11 +1174,11 @@
       align-items: center;
       gap: 10px;
       padding: 10px 12px;
-      background: rgba(139, 92, 246, 0.1);
+      background: var(--accent-soft);
       border-radius: 8px;
       margin-top: 10px;
       font-size: 12px;
-      color: #6d28d9;
+      color: var(--accent-strong);
     }
     
     .ai-loading.active {
@@ -1154,8 +1188,8 @@
     .ai-loading-spinner {
       width: 16px;
       height: 16px;
-      border: 2px solid #e0d0f0;
-      border-top-color: #8b5cf6;
+      border: 2px solid #f3d3dc;
+      border-top-color: var(--accent);
       border-radius: 50%;
       animation: spin 0.8s linear infinite;
     }
@@ -1256,7 +1290,7 @@
       border-radius: 8px;
       font-size: 13px;
       font-weight: 500;
-      color: #5a5a5a;
+      color: var(--muted);
       cursor: pointer;
       transition: all 0.15s ease;
     }
@@ -1267,8 +1301,9 @@
     
     .shadcn-tab.active {
       background: white;
-      color: #2d2d2d;
-      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+      color: var(--text);
+      box-shadow: none;
+      border: 1px solid var(--line);
     }
     
     .shadcn-tab-content {
@@ -1286,17 +1321,18 @@
       font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas, monospace;
       font-size: 12px;
       line-height: 1.6;
-      border: none;
+      border: 1px solid var(--line);
       border-radius: 12px;
       resize: vertical;
-      background: #fafaf8;
-      color: #3d3d3d;
+      background: #ffffff;
+      color: var(--text);
     }
     
     .shadcn-detected {
       margin-bottom: 12px;
       padding: 12px;
-      background: #f0f0eb;
+      background: #fdfbf7;
+      border: 1px solid var(--line);
       border-radius: 10px;
     }
     
@@ -1550,7 +1586,7 @@
       width: 64px;
       height: 64px;
       margin: 0 auto 24px;
-      background: linear-gradient(135deg, #6b8f71 0%, #5a7d5f 100%);
+      background: linear-gradient(135deg, var(--accent) 0%, #ff7a96 100%);
       border-radius: 16px;
       display: flex;
       align-items: center;
@@ -1587,7 +1623,7 @@
     
     .extraction-progress-bar {
       height: 100%;
-      background: linear-gradient(90deg, #6b8f71 0%, #8fb996 100%);
+      background: linear-gradient(90deg, var(--accent) 0%, #ff9ab0 100%);
       border-radius: 8px;
       width: 0%;
       transition: width 0.3s ease;
@@ -1612,7 +1648,7 @@
       width: 14px;
       height: 14px;
       border: 2px solid #e0e0e0;
-      border-top-color: #6b8f71;
+      border-top-color: var(--accent);
       border-radius: 50%;
       animation: spin 0.8s linear infinite;
     }
@@ -1627,7 +1663,7 @@
     }
     
     .extraction-element-count strong {
-      color: #4a6b4d;
+      color: var(--accent-strong);
     }
     
     .extraction-tip {
@@ -1661,7 +1697,7 @@
 
   <div class="container">
     <div class="header">
-      <h1>ExactAI <span style="font-weight: 400; color: #6b6b6b;">/ Captured Design</span></h1>
+      <h1>Plukrr <span class="header-title-muted">/ Captured Design</span></h1>
       <div class="header-meta" id="pageMeta">Loading...</div>
     </div>
     
@@ -1711,42 +1747,6 @@
               <div class="intent-label">🎬 Animations</div>
               <div class="intent-desc">JS animation code</div>
             </button>
-          </div>
-          
-          <!-- AI Enhancement Panel -->
-          <div class="ai-enhancement-panel" id="aiEnhancementPanel">
-            <div class="ai-panel-header">
-              <div class="ai-panel-title">
-                <span class="ai-sparkle">✨</span>
-                <span>AI Enhancement</span>
-                <span class="ai-badge" id="aiBadge">OFF</span>
-              </div>
-              <label class="toggle-switch">
-                <input type="checkbox" id="resultsAiToggle" />
-                <span class="toggle-slider"></span>
-              </label>
-            </div>
-            <div class="ai-panel-status" id="aiPanelStatus">
-              Configure API key to enable AI-enhanced prompts
-            </div>
-            <div class="ai-panel-actions">
-              <button class="ai-action-btn" id="regeneratePromptBtn" disabled>
-                <span>🔄</span> Regenerate
-              </button>
-              <select class="ai-style-select" id="promptStyleSelect" disabled>
-                <option value="auto">Auto</option>
-                <option value="concise">Concise</option>
-                <option value="detailed">Detailed</option>
-                <option value="structured">Structured</option>
-              </select>
-              <button class="ai-action-btn ai-settings-btn" id="openAISettingsBtn">
-                <span>⚙️</span>
-              </button>
-            </div>
-            <div class="ai-loading" id="aiLoadingResults">
-              <div class="ai-loading-spinner"></div>
-              <span>Enhancing with Gemini AI...</span>
-            </div>
           </div>
           
           <!-- Smart Component Mode Selector -->
@@ -1988,27 +1988,6 @@ container: .container, .wrapper, .box"></textarea>
   </div>
   
   <div class="toast" id="toast">Copied!</div>
-  
-  <!-- AI Enhancement Modal -->
-  <div class="modal-overlay" id="aiSettingsModal">
-    <div class="modal">
-      <div class="modal-header">
-        <h2>✨ AI Enhancement Settings</h2>
-        <button class="modal-close" id="closeAISettingsBtn">&times;</button>
-      </div>
-      
-      <div class="form-group">
-        <label class="form-label">Gemini API Key</label>
-        <input type="password" class="form-input" id="resultsApiKeyInput" placeholder="Enter your Gemini API key" />
-        <div class="form-hint">
-          Get your free API key from <a href="https://aistudio.google.com/app/apikey" target="_blank">Google AI Studio</a>
-        </div>
-        <div class="api-status" id="resultsApiKeyStatus" style="display: none;"></div>
-      </div>
-      
-      <button class="btn btn-primary" id="saveResultsApiKeyBtn">Save API Key</button>
-    </div>
-  </div>
   
   <script src="config.js"></script>
   <script src="auth-service.js"></script>

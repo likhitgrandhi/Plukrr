@@ -25,7 +25,9 @@ const SubscriptionService = {
     async getSubscriptionStatus() {
         // Check cache first
         const cached = await this.getCachedSubscription();
-        if (cached && !this._isCacheExpired(cached)) {
+        if (cached && cached.trialDaysRemaining !== undefined && cached.trialExtractionsRemaining === undefined) {
+            await this.clearCache();
+        } else if (cached && !this._isCacheExpired(cached)) {
             return cached;
         }
         
@@ -36,8 +38,10 @@ const SubscriptionService = {
         
         const isAuth = await AuthService.isAuthenticated();
         if (!isAuth) {
-            // Check trial status for unauthenticated users
-            return this._getTrialBasedStatus();
+            return {
+                ...this._getDefaultStatus(),
+                requiresAuth: true
+            };
         }
         
         // Fetch from Supabase
@@ -122,8 +126,8 @@ const SubscriptionService = {
                 tier: this.TIERS.TRIAL,
                 status: 'trial',
                 isActive: true,
-                trialDaysRemaining: trialStatus.daysRemaining,
-                trialEndDate: trialStatus.endDate,
+                trialExtractionsRemaining: trialStatus.extractionsRemaining,
+                trialTotalExtractions: trialStatus.totalExtractions,
                 lastSynced: new Date().toISOString()
             };
         }
@@ -409,7 +413,7 @@ const SubscriptionService = {
         };
         
         if (status.tier === this.TIERS.TRIAL) {
-            info.statusText = `${status.trialDaysRemaining} days remaining`;
+            info.statusText = 'Free trial active';
         } else if (status.tier === this.TIERS.LIFETIME) {
             info.statusText = 'Forever access';
         } else if (status.isActive && status.currentPeriodEnd) {
@@ -472,4 +476,3 @@ const SubscriptionService = {
 if (typeof window !== 'undefined') {
     window.SubscriptionService = SubscriptionService;
 }
-

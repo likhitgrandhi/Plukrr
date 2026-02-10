@@ -26,7 +26,7 @@ const CONFIG = {
     },
     
     // Trial Configuration
-    TRIAL_DAYS: 7,
+    TRIAL_EXTRACTIONS: 9999,
     
     // Lifetime Plan Configuration
     LIFETIME_SLOTS_LIMIT: 200,
@@ -90,4 +90,3 @@ if (typeof window !== 'undefined') {
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = CONFIG;
 }
-
