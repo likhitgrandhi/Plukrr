@@ -416,8 +416,8 @@ const SubscriptionService = {
         const tierNames = {
             [this.TIERS.FREE]: 'Free',
             [this.TIERS.LAUNCH_OFFER]: 'Launch Offer',
-            [this.TIERS.PRO]: 'Monthly',
-            [this.TIERS.LIFETIME]: 'Lifetime'
+            [this.TIERS.PRO]: 'Plukrr Monthly',
+            [this.TIERS.LIFETIME]: 'Plukrr Lifetime'
         };
 
         const info = {
@@ -431,7 +431,7 @@ const SubscriptionService = {
             if (status.trialDaysRemaining !== undefined) {
                 info.statusText = `${status.trialDaysRemaining} day${status.trialDaysRemaining === 1 ? '' : 's'} remaining`;
             } else {
-                info.statusText = '7-day free trial active';
+                info.statusText = '3-day free trial active';
             }
         } else if (status.tier === this.TIERS.LIFETIME) {
             info.statusText = 'Forever access';
@@ -462,18 +462,18 @@ const SubscriptionService = {
             launch_offer: {
                 name: 'Launch Offer',
                 price: 0,
-                period: '7 days free',
-                description: 'Try all features free for 7 days',
+                period: '3 days free',
+                description: 'Everything free for 3 days',
                 features: [
                     'Full design extraction',
                     'Live Edit mode',
                     'Full page extraction',
-                    'All features for 7 days'
+                    'All features for 3 days'
                 ]
             },
             pro: {
-                name: 'Monthly',
-                price: 5,
+                name: 'Plukrr Monthly',
+                price: 8,
                 period: 'month',
                 description: 'Full extraction, Live Edit, all features',
                 features: [
@@ -484,7 +484,7 @@ const SubscriptionService = {
                 ]
             },
             lifetime: {
-                name: 'Lifetime',
+                name: 'Plukrr Lifetime',
                 price: 30,
                 period: 'one-time',
                 description: 'All features forever, one-time payment',

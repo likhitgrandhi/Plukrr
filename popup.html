@@ -116,6 +116,18 @@
       color: #a86a00;
     }
 
+    .sub-badge.launch {
+      background: #fff2d7;
+      border: 1px solid #f3d9a2;
+      color: #a86a00;
+    }
+
+    .sub-badge.free {
+      background: #f1f1f1;
+      border: 1px solid #e0e0e0;
+      color: #6b6b6b;
+    }
+
     .sub-badge.pro {
       background: rgba(59, 130, 246, 0.15);
       border: 1px solid rgba(59, 130, 246, 0.3);
@@ -741,6 +753,17 @@
         </svg>
       </span>
     </a>
+
+    <button id="signOutBtn" class="action-btn" style="margin-top: 8px; color: #e57373;">
+      <span class="action-left">
+        <svg viewBox="0 0 24 24" class="action-icon" style="stroke: #e57373;">
+          <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+          <polyline points="16 17 21 12 16 7"></polyline>
+          <line x1="21" y1="12" x2="9" y2="12"></line>
+        </svg>
+        <span class="action-label">Sign Out</span>
+      </span>
+    </button>
   </div>
 
   <!-- Settings Modal - COMMENTED OUT -->
@@ -771,6 +794,7 @@
 
   <script src="config.js"></script>
   <script src="auth-service.js"></script>
+  <script src="access-client.js"></script>
   <script src="trial-service.js"></script>
   <script src="subscription-service.js"></script>
   <script src="popup-simple.js"></script>

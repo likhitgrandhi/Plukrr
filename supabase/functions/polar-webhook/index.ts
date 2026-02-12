@@ -69,7 +69,22 @@ async function resolveUserId(
   return null;
 }
 
-function determinePlanType(productName: string): string {
+// Known product IDs for direct matching
+const PRODUCT_IDS = {
+  LAUNCH_OFFER: '622b7b6a-fd7a-4dd2-9587-8ed7d6ba8f49',
+  MONTHLY: 'ee8e71c5-8a01-4f17-a6a8-b507541f32ee',
+  LIFETIME: '1fd257e0-fbf1-430b-8abb-496b911ead22'
+};
+
+function determinePlanType(productName: string, productId?: string): string {
+  // First, check by product ID (most reliable)
+  if (productId) {
+    if (productId === PRODUCT_IDS.LAUNCH_OFFER) return "launch_offer";
+    if (productId === PRODUCT_IDS.LIFETIME) return "lifetime";
+    if (productId === PRODUCT_IDS.MONTHLY) return "pro";
+  }
+  
+  // Fallback to name matching
   const name = productName.toLowerCase();
   if (name.includes("lifetime")) return "lifetime";
   if (
@@ -120,10 +135,11 @@ Deno.serve(
       const userId = await resolveUserId(customer);
       if (!userId) return;
 
-      const planType = determinePlanType(getProductName(product));
+      const productId = product?.id as string | undefined;
+      const planType = determinePlanType(getProductName(product), productId);
 
       console.log(
-        `[polar-webhook] Subscription ACTIVE: user=${userId}, plan=${planType}, product="${product?.name}"`
+        `[polar-webhook] Subscription ACTIVE: user=${userId}, plan=${planType}, product="${product?.name}", productId=${productId}`
       );
 
       const { error } = await supabase.from("subscriptions").upsert(
@@ -159,11 +175,12 @@ Deno.serve(
       const userId = await resolveUserId(customer);
       if (!userId) return;
 
-      const planType = determinePlanType(getProductName(product));
+      const productId = product?.id as string | undefined;
+      const planType = determinePlanType(getProductName(product), productId);
       const status = mapPolarStatus((sub.status as string) || "incomplete");
 
       console.log(
-        `[polar-webhook] Subscription CREATED: user=${userId}, plan=${planType}, status=${status}`
+        `[polar-webhook] Subscription CREATED: user=${userId}, plan=${planType}, status=${status}, productId=${productId}`
       );
 
       const { error } = await supabase.from("subscriptions").upsert(
@@ -217,9 +234,11 @@ Deno.serve(
         updated_at: new Date().toISOString(),
       };
 
-      if (product?.name) {
+      if (product?.name || product?.id) {
+        const productId = product?.id as string | undefined;
         updateData.plan_type = determinePlanType(
-          (product.name as string).toLowerCase()
+          (product?.name as string || "").toLowerCase(),
+          productId
         );
       }
       if (sub.id) {
@@ -233,12 +252,13 @@ Deno.serve(
 
       if (error) {
         // Fallback: upsert if record doesn't exist yet
+        const productIdFallback = product?.id as string | undefined;
         const { error: e2 } = await supabase.from("subscriptions").upsert(
           {
             user_id: userId,
             polar_customer_id: (customer?.id as string) || null,
             polar_subscription_id: (sub.id as string) || null,
-            plan_type: determinePlanType(getProductName(product)),
+            plan_type: determinePlanType(getProductName(product), productIdFallback),
             ...updateData,
           },
           { onConflict: "user_id" }
@@ -266,12 +286,13 @@ Deno.serve(
       const userId = await resolveUserId(customer);
       if (!userId) return;
 
-      const planType = determinePlanType(getProductName(product));
+      const productId = product?.id as string | undefined;
+      const planType = determinePlanType(getProductName(product), productId);
       const billingReason =
         (order.billingReason as string) || (order.billing_reason as string);
 
       console.log(
-        `[polar-webhook] Order CREATED: user=${userId}, plan=${planType}, reason=${billingReason}`
+        `[polar-webhook] Order CREATED: user=${userId}, plan=${planType}, reason=${billingReason}, productId=${productId}`
       );
 
       if (planType === "lifetime") {

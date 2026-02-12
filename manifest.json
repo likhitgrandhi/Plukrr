@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "ExactAI",
+  "name": "Plukrr",
   "version": "1.0.0",
   "description": "Extract designs pixel-perfect with AI. Replicate any design, extract CSS tokens, generate shadcn/ui components.",
   "permissions": [
@@ -9,9 +9,14 @@
     "scripting",
     "storage",
     "unlimitedStorage",
-    "identity",
     "alarms"
   ],
+  "externally_connectable": {
+    "matches": [
+      "https://app.plukrr.com/*",
+      "http://localhost:5173/*"
+    ]
+  },
   "host_permissions": [
     "<all_urls>",
     "https://generativelanguage.googleapis.com/*",
@@ -40,6 +45,16 @@
       "css": [
         "styles.css"
       ]
+    },
+    {
+      "matches": [
+        "https://app.plukrr.com/*",
+        "http://localhost:5173/*"
+      ],
+      "js": [
+        "web-app-bridge.js"
+      ],
+      "run_at": "document_start"
     }
   ],
   "icons": {
@@ -47,14 +62,5 @@
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
   },
-  "web_accessible_resources": [
-    {
-      "resources": [
-        "auth-callback.html"
-      ],
-      "matches": [
-        "<all_urls>"
-      ]
-    }
-  ]
+  "web_accessible_resources": []
 }

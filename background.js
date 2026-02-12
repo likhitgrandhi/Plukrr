@@ -1,6 +1,6 @@
 // ============================================
-// ExactAI - Background Service Worker
-// Handles messaging, screenshot capture, and auth/subscription sync
+// Plukrr - Background Service Worker
+// Handles messaging, screenshot capture, and access sync
 // ============================================
 
 // Track the results tab
@@ -37,6 +37,38 @@ chrome.tabs.onRemoved.addListener((tabId) => {
 // ============================================
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+    // Auth tokens from web app bridge (content script)
+    if (request.type === 'AUTH_TOKEN_FROM_WEBAPP') {
+        const authData = {
+            accessToken: request.accessToken,
+            refreshToken: request.refreshToken,
+            user: request.user,
+            expiresAt: request.expiresAt
+        };
+
+        chrome.storage.local.set({ plukrr_auth: authData }, async () => {
+            console.log('[Background] Auth tokens stored from web app bridge');
+
+            // Immediately fetch access info
+            if (typeof AccessClient !== 'undefined') {
+                await AccessClient.forceRefresh();
+            }
+
+            sendResponse({ success: true });
+        });
+
+        return true;
+    }
+
+    if (request.type === 'SIGN_OUT_FROM_WEBAPP') {
+        // Clear auth and access data
+        chrome.storage.local.remove(['plukrr_auth', 'plukrr_access'], () => {
+            console.log('[Background] Auth cleared via web app bridge sign out');
+            sendResponse({ success: true });
+        });
+        return true;
+    }
+
     // Auth-related messages
     if (request.type === 'GET_AUTH_STATUS') {
         handleGetAuthStatus().then(sendResponse);
@@ -181,18 +213,60 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 });
 
 // ============================================
-// AUTH & SUBSCRIPTION HANDLERS
+// EXTERNAL MESSAGE HANDLING (from web app)
+// ============================================
+
+chrome.runtime.onMessageExternal.addListener((request, sender, sendResponse) => {
+    console.log('[Background] External message received:', request.type, 'from:', sender.url);
+
+    if (request.type === 'AUTH_TOKEN') {
+        // Store auth tokens from web app
+        const authData = {
+            accessToken: request.accessToken,
+            refreshToken: request.refreshToken,
+            user: request.user,
+            expiresAt: request.expiresAt
+        };
+
+        chrome.storage.local.set({ plukrr_auth: authData }, async () => {
+            console.log('[Background] Auth tokens stored from web app');
+
+            // Immediately fetch access info
+            if (typeof AccessClient !== 'undefined') {
+                await AccessClient.forceRefresh();
+            }
+
+            sendResponse({ success: true });
+        });
+
+        return true;
+    }
+
+    if (request.type === 'SIGN_OUT') {
+        // Clear auth and access data
+        chrome.storage.local.remove(['plukrr_auth', 'plukrr_access'], () => {
+            console.log('[Background] Auth cleared via web app sign out');
+            sendResponse({ success: true });
+        });
+        return true;
+    }
+
+    sendResponse({ error: 'Unknown message type' });
+    return true;
+});
+
+// ============================================
+// AUTH & ACCESS HANDLERS
 // ============================================
 
 async function handleGetAuthStatus() {
     try {
-        const result = await chrome.storage.local.get(['exactai_auth', 'exactai_trial', 'exactai_subscription']);
+        const result = await chrome.storage.local.get(['plukrr_auth', 'plukrr_access']);
 
         return {
-            isAuthenticated: !!(result.exactai_auth && result.exactai_auth.accessToken),
-            user: result.exactai_auth?.user || null,
-            trial: result.exactai_trial || null,
-            subscription: result.exactai_subscription || null
+            isAuthenticated: !!(result.plukrr_auth && result.plukrr_auth.accessToken),
+            user: result.plukrr_auth?.user || null,
+            access: result.plukrr_access || null
         };
     } catch (error) {
         console.error('[Background] Get auth status error:', error);
@@ -202,36 +276,28 @@ async function handleGetAuthStatus() {
 
 async function handleSyncSubscription() {
     try {
-        // This would typically call the subscription service
-        // For now, just return the cached status
-        const result = await chrome.storage.local.get(['exactai_subscription']);
-        return { success: true, subscription: result.exactai_subscription };
+        if (typeof AccessClient !== 'undefined') {
+            const access = await AccessClient.forceRefresh();
+            return { success: true, access };
+        }
+        return { success: false, error: 'AccessClient not available' };
     } catch (error) {
-        console.error('[Background] Sync subscription error:', error);
+        console.error('[Background] Sync access error:', error);
         return { success: false, error: error.message };
     }
 }
 
 async function handleCheckFeatureAccess(feature) {
     try {
-        const result = await chrome.storage.local.get(['exactai_subscription', 'exactai_auth']);
-        const subscription = result.exactai_subscription;
-        const auth = result.exactai_auth;
-
-        if (!auth || !auth.accessToken) {
-            return { hasAccess: false, feature, requiresAuth: true };
+        if (typeof AccessClient !== 'undefined') {
+            const hasAccess = await AccessClient.hasFeature(feature);
+            return { hasAccess, feature };
         }
 
-        let hasAccess = false;
-
-        if (subscription) {
-            const tier = (subscription.tier || 'free').toUpperCase().replace('-', '_');
-            const features = (typeof CONFIG !== 'undefined' && CONFIG.FEATURES)
-                ? (CONFIG.FEATURES[tier] || CONFIG.FEATURES.FREE)
-                : {};
-            hasAccess = features[feature] === true;
-        }
-
+        // Fallback: check from cached data
+        const result = await chrome.storage.local.get(['plukrr_access']);
+        const access = result.plukrr_access;
+        const hasAccess = access?.features?.[feature] ?? false;
         return { hasAccess, feature };
     } catch (error) {
         console.error('[Background] Check feature access error:', error);
@@ -241,20 +307,20 @@ async function handleCheckFeatureAccess(feature) {
 
 async function recordFreeSelection() {
     try {
-        const result = await chrome.storage.local.get(['exactai_subscription', 'exactai_usage']);
-        const subscription = result.exactai_subscription;
+        const result = await chrome.storage.local.get(['plukrr_access', 'plukrr_usage']);
+        const access = result.plukrr_access;
 
         // Only record for Free tier users
-        if (subscription && ['pro', 'lifetime', 'launch_offer'].includes(subscription.tier)) {
+        if (access && access.tier !== 'free') {
             return;
         }
 
-        // Increment selection count in local storage
-        const usage = result.exactai_usage || { selectionsUsed: 0 };
+        // Increment selection count
+        const usage = result.plukrr_usage || { selectionsUsed: 0 };
         usage.selectionsUsed = (usage.selectionsUsed || 0) + 1;
         usage.lastSelectionAt = new Date().toISOString();
 
-        await chrome.storage.local.set({ exactai_usage: usage });
+        await chrome.storage.local.set({ plukrr_usage: usage });
         console.log('[Background] Free selection recorded:', usage.selectionsUsed);
     } catch (error) {
         console.error('[Background] Failed to record free selection:', error);
@@ -385,16 +451,17 @@ async function cropScreenshot(dataUrl, bounds) {
 }
 
 // ============================================
-// PERIODIC SUBSCRIPTION SYNC (Alarm-based)
+// PERIODIC ACCESS SYNC (Alarm-based)
 // ============================================
 
 // Set up alarm for periodic sync
-chrome.alarms.create('syncSubscription', { periodInMinutes: 5 });
+chrome.alarms.create('syncAccess', { periodInMinutes: 5 });
 
 chrome.alarms.onAlarm.addListener(async (alarm) => {
-    if (alarm.name === 'syncSubscription') {
-        console.log('[Background] Running periodic subscription sync');
-        // In a full implementation, this would sync with Supabase
-        // For now, just log that it ran
+    if (alarm.name === 'syncAccess') {
+        console.log('[Background] Running periodic access sync');
+        if (typeof AccessClient !== 'undefined') {
+            await AccessClient.forceRefresh();
+        }
     }
 });

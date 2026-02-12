@@ -154,7 +154,7 @@ function updateTrialDaysUI(daysRemaining) {
     const trialProgressFill = document.getElementById('trialProgressFill');
     const trialDaysText = document.getElementById('trialDaysText');
 
-    const totalDays = 7;
+    const totalDays = 3;
     const percentage = Math.max(0, (daysRemaining / totalDays) * 100);
 
     trialProgressFill.style.width = `${percentage}%`;

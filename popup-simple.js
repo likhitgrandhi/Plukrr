@@ -43,50 +43,61 @@ async function initPopup() {
     } catch (error) {
         console.error('[Popup] Init error:', error);
         loadingScreen.classList.add('hidden');
-        mainContent.classList.add('active');
+        // On error, show auth prompt instead of main content
+        authPrompt.classList.add('active');
+        setupAuthPrompt();
     }
 }
 
 async function checkAuthAndSubscription() {
-    // Check if services are available
-    if (typeof AuthService === 'undefined' || typeof SubscriptionService === 'undefined') {
-        console.warn('[Popup] Auth/Subscription services not loaded');
+    // Check if AccessClient is available
+    if (typeof AccessClient === 'undefined') {
+        console.warn('[Popup] AccessClient not loaded');
         return false;
     }
 
-    const isAuth = await AuthService.isAuthenticated();
-    if (!isAuth) {
+    // Check if we have stored auth
+    const authData = await chrome.storage.local.get(['plukrr_auth']);
+    if (!authData.plukrr_auth || !authData.plukrr_auth.accessToken) {
         return false;
     }
 
-    // Get subscription status
-    currentSubscription = await SubscriptionService.getSubscriptionStatus();
+    try {
+        // Force refresh access status from server when popup opens
+        // This ensures subscription changes (e.g. after checkout) are reflected immediately
+        const access = await AccessClient.forceRefresh();
+        currentSubscription = access;
 
-    // Update UI based on subscription
-    updateSubscriptionUI(currentSubscription);
+        // Update UI based on access
+        updateSubscriptionUI(access);
 
-    return true;
+        return true;
+    } catch (error) {
+        console.error('[Popup] Error fetching access:', error);
+        return false;
+    }
 }
 
-function updateSubscriptionUI(subscription) {
+function updateSubscriptionUI(access) {
     const subBadge = document.getElementById('subBadge');
     const trialBanner = document.getElementById('trialBanner');
     const trialDays = document.getElementById('trialDays');
 
-    if (!subscription) return;
+    if (!access) return;
+
+    const tier = access.tier || 'free';
 
     // Show/update subscription badge
     subBadge.style.display = 'inline-block';
     subBadge.className = 'sub-badge';
 
-    switch (subscription.tier) {
+    switch (tier) {
         case 'launch_offer':
             subBadge.textContent = 'LAUNCH OFFER';
             subBadge.classList.add('launch');
-            // Show days remaining banner
-            if (subscription.trialDaysRemaining !== undefined) {
+            if (access.limits?.trialDaysRemaining !== undefined) {
                 trialBanner.classList.add('active');
-                trialDays.textContent = subscription.trialDaysRemaining + ' days left';
+                trialDays.textContent = access.limits.trialDaysRemaining + ' days left';
             }
             break;
         case 'pro':
@@ -103,42 +114,37 @@ function updateSubscriptionUI(subscription) {
         default:
             subBadge.textContent = 'FREE';
             subBadge.classList.add('free');
-            // Show usage remaining for free users
-            if (typeof UsageTracker !== 'undefined') {
-                UsageTracker.getSelectionsRemaining().then(remaining => {
-                    const limit = (typeof CONFIG !== 'undefined' && CONFIG.FREE_SELECTION_LIMIT) || 10;
-                    trialBanner.classList.add('active');
-                    trialDays.textContent = `${remaining}/${limit} selections`;
-                });
+            if (access.limits?.freeSelectionsRemaining !== undefined) {
+                trialBanner.classList.add('active');
+                trialDays.textContent = `${access.limits.freeSelectionsRemaining} selections left`;
             }
             break;
     }
 
     // Update feature availability
-    updateFeatureAvailability(subscription);
+    updateFeatureAvailability(access);
 }
 
-function updateFeatureAvailability(subscription) {
+function updateFeatureAvailability(access) {
     const extractGlobalBtn = document.getElementById('extractGlobalBtn');
     const liveEditBtn = document.getElementById('liveEditBtn');
-    const isFreeTier = subscription.tier === 'free';
+    const features = access?.features || {};
 
-    // Free tier: Lock Live Edit and Full Page Extraction
-    if (isFreeTier) {
-        // Lock Full Page Extraction
+    // Lock features based on server response
+    if (!features.fullPageExtraction) {
         extractGlobalBtn.classList.add('locked');
         extractGlobalBtn.title = 'Upgrade to unlock full page extraction';
+    } else {
+        extractGlobalBtn.classList.remove('locked');
+        extractGlobalBtn.title = '';
+    }
 
-        // Lock Live Edit
+    if (!features.liveEdit) {
         if (liveEditBtn) {
             liveEditBtn.classList.add('locked');
             liveEditBtn.title = 'Upgrade to unlock Live Edit';
         }
     } else {
-        // Paid/trial tiers: unlock everything
-        extractGlobalBtn.classList.remove('locked');
-        extractGlobalBtn.title = '';
-
         if (liveEditBtn) {
             liveEditBtn.classList.remove('locked');
             liveEditBtn.title = '';
@@ -160,38 +166,56 @@ function setupEventListeners() {
     // Live Edit button
     document.getElementById('liveEditBtn').addEventListener('click', handleLiveEdit);
 
-    // Account button - go to dashboard if logged in, auth if not
+    // Account button - go to web app dashboard
     document.getElementById('accountBtn').addEventListener('click', async () => {
-        const isAuth = await AuthService.isAuthenticated();
-        if (isAuth) {
-            chrome.tabs.create({ url: chrome.runtime.getURL('dashboard.html') });
+        const authData = await chrome.storage.local.get(['plukrr_auth']);
+        if (authData.plukrr_auth) {
+            chrome.tabs.create({ url: CONFIG.WEB_APP_URL + '/dashboard' });
         } else {
-            chrome.tabs.create({ url: chrome.runtime.getURL('auth.html') });
+            chrome.tabs.create({ url: CONFIG.WEB_APP_URL + '/login' });
         }
     });
 
-    // Account link - go to dashboard if logged in, auth if not
+    // Account link - go to web app dashboard
     document.getElementById('accountLink').addEventListener('click', async (e) => {
         e.preventDefault();
-        const isAuth = await AuthService.isAuthenticated();
-        if (isAuth) {
-            chrome.tabs.create({ url: chrome.runtime.getURL('dashboard.html') });
+        const authData = await chrome.storage.local.get(['plukrr_auth']);
+        if (authData.plukrr_auth) {
+            chrome.tabs.create({ url: CONFIG.WEB_APP_URL + '/dashboard' });
         } else {
-            chrome.tabs.create({ url: chrome.runtime.getURL('auth.html') });
+            chrome.tabs.create({ url: CONFIG.WEB_APP_URL + '/login' });
         }
     });
 
     // Upgrade button in banner
     document.getElementById('upgradeBtnBanner').addEventListener('click', () => {
-        chrome.tabs.create({ url: chrome.runtime.getURL('dashboard.html') });
+        chrome.tabs.create({ url: CONFIG.WEB_APP_URL + '/dashboard' });
     });
+
+    // Sign out button
+    document.getElementById('signOutBtn').addEventListener('click', handleSignOut);
+}
+
+async function handleSignOut() {
+    // Clear all auth and access data
+    await chrome.storage.local.remove(['plukrr_auth', 'plukrr_access', 'plukrr_usage']);
+    
+    // Also clear AccessClient cache
+    if (typeof AccessClient !== 'undefined') {
+        await AccessClient.clearCache();
+    }
+
+    console.log('[Popup] User signed out');
+
+    // Refresh the popup to show login screen
+    window.location.reload();
 }
 
 function setupAuthPrompt() {
     const loginBtn = document.getElementById('loginBtn');
     if (!loginBtn) return;
     loginBtn.addEventListener('click', () => {
-        chrome.tabs.create({ url: chrome.runtime.getURL('auth.html') });
+        chrome.tabs.create({ url: CONFIG.WEB_APP_URL + '/login' });
     });
 }
 
@@ -210,7 +234,7 @@ async function handleSelectElement() {
                 if (upgradeLink) {
                     upgradeLink.addEventListener('click', (e) => {
                         e.preventDefault();
-                        chrome.tabs.create({ url: chrome.runtime.getURL('dashboard.html') });
+                        chrome.tabs.create({ url: CONFIG.WEB_APP_URL + '/dashboard' });
                     });
                 }
                 return;
@@ -267,7 +291,7 @@ async function handleLiveEdit() {
         if (upgradeLink) {
             upgradeLink.addEventListener('click', (e) => {
                 e.preventDefault();
-                chrome.tabs.create({ url: chrome.runtime.getURL('dashboard.html') });
+                chrome.tabs.create({ url: CONFIG.WEB_APP_URL + '/dashboard' });
             });
         }
         return;
@@ -311,7 +335,7 @@ async function handleExtractFullPage() {
         if (upgradeLink) {
             upgradeLink.addEventListener('click', (e) => {
                 e.preventDefault();
-                chrome.tabs.create({ url: chrome.runtime.getURL('dashboard.html') });
+                chrome.tabs.create({ url: CONFIG.WEB_APP_URL + '/dashboard' });
             });
         }
         return;
