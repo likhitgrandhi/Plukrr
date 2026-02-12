@@ -2019,66 +2019,58 @@ function renderPage(data) {
     const stats = document.getElementById('quickStats');
     const tree = data.tree;
     
-    if (data.isDeepScan && data.deepScanData?.stats) {
-        // Show deep scan stats
-        const deepStats = data.deepScanData.stats;
-        stats.innerHTML = `
-            <div class="stat">
-                <div class="stat-label">Type</div>
-                <div class="stat-value">Deep Scan</div>
-            </div>
-            <div class="stat">
-                <div class="stat-label">Elements Scanned</div>
-                <div class="stat-value">${deepStats.totalElementsScanned.toLocaleString()}</div>
-            </div>
-            <div class="stat">
-                <div class="stat-label">Components Found</div>
-                <div class="stat-value">${deepStats.uniqueComponentsFound}</div>
-            </div>
-            <div class="stat">
-                <div class="stat-label">Colors</div>
-                <div class="stat-value">${deepStats.colorsFound}</div>
-            </div>
-            <div class="stat">
-                <div class="stat-label">Fonts</div>
-                <div class="stat-value">${deepStats.fontsFound}</div>
-            </div>
-        `;
-    } else if (data.isGlobalThemeExtraction) {
-        // Show global theme stats
-        const globalCSS = data.globalCSS || {};
-        const rootVarCount = Object.keys(globalCSS.rootVariables || {}).length;
-        const darkVarCount = Object.keys(globalCSS.darkVariables || {}).length;
-        
-        stats.innerHTML = `
-            <div class="stat">
-                <div class="stat-label">Type</div>
-                <div class="stat-value">Global Theme</div>
-            </div>
-            <div class="stat">
-                <div class="stat-label">CSS Variables</div>
-                <div class="stat-value">${rootVarCount} root${darkVarCount > 0 ? `, ${darkVarCount} dark` : ''}</div>
-            </div>
-            <div class="stat">
-                <div class="stat-label">Source</div>
-                <div class="stat-value">Full Page</div>
-            </div>
-        `;
-    } else {
-        stats.innerHTML = `
-            <div class="stat">
-                <div class="stat-label">Element</div>
-                <div class="stat-value">&lt;${tree?.tag || '?'}&gt;</div>
-            </div>
-            <div class="stat">
-                <div class="stat-label">Size</div>
-                <div class="stat-value">${tree?.dimensions?.width || '?'} × ${tree?.dimensions?.height || '?'}</div>
-            </div>
-            <div class="stat">
-                <div class="stat-label">Children</div>
-                <div class="stat-value">${data.elementCount || 1}</div>
-            </div>
-        `;
+    if (stats) {
+        if (data.isDeepScan && data.deepScanData?.stats) {
+            // Show deep scan stats
+            const deepStats = data.deepScanData.stats;
+            stats.innerHTML = `
+                <div class="stat">
+                    <div class="stat-label">Type</div>
+                    <div class="stat-value">Deep Scan</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-label">Elements Scanned</div>
+                    <div class="stat-value">${deepStats.totalElementsScanned.toLocaleString()}</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-label">Components Found</div>
+                    <div class="stat-value">${deepStats.uniqueComponentsFound}</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-label">Colors</div>
+                    <div class="stat-value">${deepStats.colorsFound}</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-label">Fonts</div>
+                    <div class="stat-value">${deepStats.fontsFound}</div>
+                </div>
+            `;
+            stats.style.display = 'flex';
+        } else if (data.isGlobalThemeExtraction) {
+            // Show global theme stats
+            const globalCSS = data.globalCSS || {};
+            const rootVarCount = Object.keys(globalCSS.rootVariables || {}).length;
+            const darkVarCount = Object.keys(globalCSS.darkVariables || {}).length;
+            
+            stats.innerHTML = `
+                <div class="stat">
+                    <div class="stat-label">Type</div>
+                    <div class="stat-value">Global Theme</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-label">CSS Variables</div>
+                    <div class="stat-value">${rootVarCount} root${darkVarCount > 0 ? `, ${darkVarCount} dark` : ''}</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-label">Source</div>
+                    <div class="stat-value">Full Page</div>
+                </div>
+            `;
+            stats.style.display = 'flex';
+        } else {
+            stats.innerHTML = '';
+            stats.style.display = 'none';
+        }
     }
     
     // Color swatches
@@ -3717,7 +3709,7 @@ function renderOverlapAnalysis(overlaps) {
     const availableComponents = overlaps.components.filter(c => !c.canAdapt && c.extractedCount > 0);
     
     if (matchingComponents.length > 0) {
-        html += `<div style="font-size: 11px; color: #4a6b4d; margin-bottom: 8px; font-weight: 600;">✓ Can adapt (${matchingComponents.length}):</div>`;
+        html += `<div style="font-size: 11px; color: #4a6b4d; margin-bottom: 8px; font-weight: 400;">✓ Can adapt (${matchingComponents.length}):</div>`;
         matchingComponents.forEach(c => {
             html += `<div class="mapping-item" style="background: #e8f5e9;">
                 <span class="mapping-from">${c.type}</span>
@@ -3728,7 +3720,7 @@ function renderOverlapAnalysis(overlaps) {
     }
     
     if (availableComponents.length > 0 && availableComponents.length <= 5) {
-        html += `<div style="font-size: 11px; color: #9a9a9a; margin: 8px 0; font-weight: 600;">Available in design (add to your CSS to adapt):</div>`;
+        html += `<div style="font-size: 11px; color: #9a9a9a; margin: 8px 0; font-weight: 400;">Available in design (add to your CSS to adapt):</div>`;
         availableComponents.slice(0, 5).forEach(c => {
             html += `<div class="mapping-item" style="opacity: 0.6;">
                 <span class="mapping-from">${c.type} (${c.extractedCount})</span>
@@ -3740,7 +3732,7 @@ function renderOverlapAnalysis(overlaps) {
     
     // Show color matches
     if (overlaps.colors.length > 0) {
-        html += `<div style="font-size: 11px; color: #4a6b4d; margin: 8px 0; font-weight: 600;">✓ Color matches (${overlaps.colors.length}):</div>`;
+        html += `<div style="font-size: 11px; color: #4a6b4d; margin: 8px 0; font-weight: 400;">✓ Color matches (${overlaps.colors.length}):</div>`;
         overlaps.colors.slice(0, 3).forEach(c => {
             html += `<div class="mapping-item">
                 <span style="display: inline-block; width: 14px; height: 14px; background: ${c.userValue}; border-radius: 3px; margin-right: 6px;"></span>
@@ -4497,7 +4489,7 @@ ${css}
                     <h2 style="color: #c62828;">Extraction Failed</h2>
                     <p style="color: #6b6b6b; margin-bottom: 16px;">${errorMessage || 'The element may be too complex to extract.'}</p>
                     <div style="background: #fff8e1; padding: 16px; border-radius: 12px; text-align: left; max-width: 400px; margin: 0 auto;">
-                        <div style="font-weight: 600; color: #f57c00; margin-bottom: 8px;">💡 Tips:</div>
+                        <div style="font-weight: 400; color: #f57c00; margin-bottom: 8px;">💡 Tips:</div>
                         <ul style="color: #6b6b6b; font-size: 13px; margin: 0; padding-left: 20px; line-height: 1.6;">
                             <li>Try selecting a smaller section of the page</li>
                             <li>Select specific components instead of large containers</li>
@@ -4505,7 +4497,7 @@ ${css}
                         </ul>
                     </div>
                     <p style="margin-top: 20px;">
-                        <a href="#" onclick="location.reload()" style="color: #6b8f71; text-decoration: none; font-weight: 500;">↻ Try Again</a>
+                        <a href="#" onclick="location.reload()" style="color: #6b8f71; text-decoration: none; font-weight: 400;">↻ Try Again</a>
                     </p>
                 </div>
             `;

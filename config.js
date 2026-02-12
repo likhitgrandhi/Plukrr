@@ -7,73 +7,52 @@ const CONFIG = {
     // Supabase Configuration
     SUPABASE_URL: 'https://ebejohsdxoidxkhbvbls.supabase.co', // e.g., 'https://xxxxx.supabase.co'
     SUPABASE_ANON_KEY: 'sb_publishable_pei3qbLbgfzOK8nNgONkJA_KFYjV2Dq', // Your Supabase anon/public key
-    
-    // Stripe Configuration
-    STRIPE_PUBLISHABLE_KEY: 'my_publishable_key', // pk_live_xxx or pk_test_xxx
-    
-    // Stripe Price IDs (create these in your Stripe dashboard)
-    STRIPE_PRICES: {
-        PRO_MONTHLY: 'price_pro_monthly_id', // $5/month
-        PRO_PLUS_MONTHLY: 'price_pro_plus_monthly_id', // $10/month
-        LIFETIME: 'price_lifetime_id' // $30 one-time
+
+    // Polar.sh Configuration
+    POLAR_PRODUCT_IDS: {
+        LAUNCH_OFFER: '622b7b6a-fd7a-4dd2-9587-8ed7d6ba8f49', // TODO: Replace with Polar product ID
+        MONTHLY: 'ee8e71c5-8a01-4f17-a6a8-b507541f32ee',
+        LIFETIME: '1fd257e0-fbf1-430b-8abb-496b911ead22'
     },
-    
-    // Stripe Payment Links (alternative to Checkout Sessions - easier setup)
-    STRIPE_PAYMENT_LINKS: {
-        PRO_MONTHLY: '', // https://buy.stripe.com/xxx
-        PRO_PLUS_MONTHLY: '', // https://buy.stripe.com/xxx
-        LIFETIME: '' // https://buy.stripe.com/xxx
-    },
-    
-    // Trial Configuration
-    TRIAL_EXTRACTIONS: 9999,
-    
+
+    // Supabase Edge Function URL for creating checkout sessions
+    // Format: https://<your-project>.supabase.co/functions/v1/create-checkout
+    CHECKOUT_API_URL: 'https://ebejohsdxoidxkhbvbls.supabase.co/functions/v1/create-checkout',
+
+    // Free Tier Configuration
+    FREE_SELECTION_LIMIT: 10,
+
     // Lifetime Plan Configuration
     LIFETIME_SLOTS_LIMIT: 200,
-    
-    // Feature Flags
+
+    // Feature Flags per Tier
     FEATURES: {
         FREE: {
-            basicExtraction: true,
-            aiEnhancements: false,
-            shadcnComponents: false,
-            fullPageExtraction: false,
-            animationCapture: false
+            copyElement: true,       // Limited to FREE_SELECTION_LIMIT
+            liveEdit: false,
+            fullPageExtraction: false
         },
-        TRIAL: {
-            basicExtraction: true,
-            aiEnhancements: true,
-            shadcnComponents: true,
-            fullPageExtraction: true,
-            animationCapture: true
+        LAUNCH_OFFER: {
+            copyElement: true,
+            liveEdit: true,
+            fullPageExtraction: true
         },
         PRO: {
-            basicExtraction: true,
-            aiEnhancements: true,
-            shadcnComponents: true,
-            fullPageExtraction: true,
-            animationCapture: false
-        },
-        PRO_PLUS: {
-            basicExtraction: true,
-            aiEnhancements: true,
-            shadcnComponents: true,
-            fullPageExtraction: true,
-            animationCapture: true
+            copyElement: true,
+            liveEdit: true,
+            fullPageExtraction: true
         },
         LIFETIME: {
-            basicExtraction: true,
-            aiEnhancements: true,
-            shadcnComponents: true,
-            fullPageExtraction: true,
-            animationCapture: true
+            copyElement: true,
+            liveEdit: true,
+            fullPageExtraction: true
         }
     },
-    
+
     // App Info
     APP_NAME: 'ExactAI',
     APP_VERSION: '1.0.0',
-    
+
     // URLs
     SUPPORT_EMAIL: 'support@exactai.app',
     WEBSITE_URL: 'https://exactai.app',

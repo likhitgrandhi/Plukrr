@@ -5,37 +5,39 @@
   <title>Plukrr - Captured Design</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400&display=swap" rel="stylesheet">
   <link href="https://fonts.googleapis.com/css2?family=Nanum+Pen+Script&display=swap" rel="stylesheet">
   <style>
     * {
       box-sizing: border-box;
+      font-weight: 400;
     }
 
     :root {
-      --bg: #f7f5f2;
+      --bg: #ffffff;
       --card: #ffffff;
-      --line: #e6e1d9;
+      --line: #efefef;
       --text: #1f1f1f;
       --muted: #6b6b6b;
-      --accent: #ff5b7f;
-      --accent-soft: #fff1f5;
-      --accent-strong: #b0314f;
-      --shadow: 0 8px 20px rgba(30, 20, 10, 0.08);
+      --accent: #FC0FC0;
+      --accent-soft: #ffe6f6;
+      --accent-strong: #a1007a;
+      --shadow: 0 12px 30px rgba(20, 20, 20, 0.08);
     }
     
     body {
-      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, sans-serif;
+      font-family: "Google Sans", "Segoe UI", Arial, sans-serif;
       margin: 0;
       padding: 0;
-      background: var(--bg);
+      background: #ffffff;
       color: var(--text);
       min-height: 100vh;
     }
     
     .container {
-      max-width: 1200px;
+      max-width: 1240px;
       margin: 0 auto;
-      padding: 32px 24px;
+      padding: 28px 24px 40px;
     }
     
     /* Header */
@@ -48,14 +50,14 @@
     
     .header h1 {
       font-size: 34px;
-      font-weight: 700;
+      font-weight: 400;
       margin: 0;
-      color: var(--accent);
-      font-family: "Nanum Pen Script", "SF Pro Display", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      color: #FC0FC0;
+      font-family: "Nanum Pen Script", "Google Sans", "Segoe UI", Arial, sans-serif;
     }
 
     .header-title-muted {
-      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, sans-serif;
+      font-family: "Google Sans", "Segoe UI", Arial, sans-serif;
       font-size: 16px;
       font-weight: 400;
       color: var(--muted);
@@ -73,6 +75,19 @@
       grid-template-columns: 1fr 1fr;
       gap: 24px;
     }
+
+    .left-column {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      height: 100%;
+    }
+
+    .screenshot-card {
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+    }
     
     @media (max-width: 900px) {
       .main-grid {
@@ -83,45 +98,46 @@
     /* Cards */
     .card {
       background: var(--card);
-      border-radius: 16px;
-      padding: 20px;
+      border-radius: 24px;
+      padding: 28px;
       border: 1px solid var(--line);
       box-shadow: none;
-      transition: box-shadow 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
-    }
-
-    .card:hover {
-      box-shadow: var(--shadow);
-      border-color: #d6cec2;
-      transform: translateY(-1px);
     }
     
     .card-header {
       font-size: 14px;
-      font-weight: 600;
+      font-weight: 400;
       color: var(--muted);
       margin-bottom: 16px;
       display: flex;
       align-items: center;
       justify-content: space-between;
     }
+
+    .card-section {
+      margin-top: 20px;
+      padding-top: 20px;
+      border-top: 1px solid var(--line);
+    }
     
     /* Screenshot */
     .screenshot-container {
-      background: #fdfbf7;
-      border-radius: 12px;
+      background: #fafafa;
+      border-radius: 18px;
       border: 1px solid var(--line);
       overflow: hidden;
       display: flex;
       align-items: center;
       justify-content: center;
-      min-height: 200px;
+      min-height: 320px;
+      flex: 1;
     }
     
     .screenshot-container img {
       max-width: 100%;
-      max-height: 400px;
+      max-height: 600px;
       object-fit: contain;
+      image-rendering: -webkit-optimize-contrast;
     }
     
     .no-screenshot {
@@ -136,13 +152,13 @@
     
     textarea {
       width: 100%;
-      height: 500px;
-      padding: 16px;
-      font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas, monospace;
+      height: 520px;
+      padding: 18px;
+      font-family: "Google Sans", "Segoe UI", Arial, sans-serif;
       font-size: 12px;
-      line-height: 1.6;
+      line-height: 1.7;
       border: 1px solid var(--line);
-      border-radius: 12px;
+      border-radius: 16px;
       resize: vertical;
       background: #ffffff;
       color: var(--text);
@@ -150,54 +166,52 @@
     
     textarea:focus {
       outline: none;
-      box-shadow: 0 0 0 3px rgba(255, 91, 127, 0.12);
+      box-shadow: 0 0 0 3px rgba(252, 15, 192, 0.18);
     }
     
     /* Intent selector */
     .intent-selector {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
+      display: flex;
+      flex-wrap: wrap;
       gap: 10px;
-      margin-bottom: 16px;
+      margin-bottom: 20px;
     }
     
     .intent-option {
-      background: #ffffff;
-      border: 1px solid var(--line);
-      padding: 12px 14px;
-      border-radius: 10px;
+      background: #f6f6f6;
+      border: 1px solid #e4e4e4;
+      padding: 8px 14px;
+      border-radius: 999px;
       cursor: pointer;
       text-align: left;
       transition: all 0.15s ease;
+      white-space: nowrap;
+      flex: 0 0 auto;
     }
-    
+
     .intent-option:hover {
-      border-color: #d6cec2;
+      border-color: #d6d6d6;
+      background: #f1f1f1;
     }
-    
+
     .intent-option.active {
       background: var(--accent-soft);
       border-color: var(--accent);
     }
-    
+
     .intent-label {
       font-size: 13px;
-      font-weight: 600;
+      font-weight: 400;
       color: var(--text);
-      margin-bottom: 2px;
+      margin-bottom: 0;
     }
-    
+
     .intent-desc {
-      font-size: 11px;
-      color: var(--muted);
+      display: none;
     }
-    
+
     .intent-option.active .intent-label {
       color: var(--accent-strong);
-    }
-    
-    .intent-option.active .intent-desc {
-      color: var(--accent);
     }
     
     /* Buttons */
@@ -212,7 +226,7 @@
       border-radius: 999px;
       cursor: pointer;
       font-size: 14px;
-      font-weight: 500;
+      font-weight: 400;
       transition: all 0.2s ease;
       border: none;
       display: flex;
@@ -236,7 +250,7 @@
     }
     
     .btn-secondary:hover {
-      background: #c4d9c7;
+      background: #f2f2f2;
     }
     
     /* Toast */
@@ -250,7 +264,7 @@
       padding: 12px 24px;
       border-radius: 10px;
       font-size: 14px;
-      font-weight: 500;
+      font-weight: 400;
       opacity: 0;
       transition: all 0.3s ease;
       z-index: 1000;
@@ -284,14 +298,14 @@
     
     /* Quick stats */
     .quick-stats {
-      display: flex;
+      display: none;
       gap: 16px;
       flex-wrap: wrap;
-      margin-bottom: 16px;
+      margin: 16px 0;
     }
     
     .stat {
-      background: #fafaf8;
+      background: #f7f7f7;
       padding: 10px 14px;
       border-radius: 8px;
       font-size: 12px;
@@ -304,7 +318,7 @@
     
     .stat-value {
       color: #3d3d3d;
-      font-weight: 600;
+      font-weight: 400;
     }
     
     /* Animation Info */
@@ -329,7 +343,7 @@
     
     .animation-title {
       font-size: 13px;
-      font-weight: 600;
+      font-weight: 400;
       color: #5a5a5a;
     }
     
@@ -337,7 +351,7 @@
       padding: 3px 10px;
       border-radius: 12px;
       font-size: 10px;
-      font-weight: 600;
+      font-weight: 400;
       text-transform: uppercase;
     }
     
@@ -372,7 +386,7 @@
       border: 1px solid #e0e0e0;
       border-radius: 16px;
       font-size: 11px;
-      font-weight: 500;
+      font-weight: 400;
       color: #5a5a5a;
     }
     
@@ -419,7 +433,7 @@
       border: none;
       border-radius: 8px;
       font-size: 12px;
-      font-weight: 500;
+      font-weight: 400;
       cursor: pointer;
       transition: all 0.15s ease;
     }
@@ -439,7 +453,7 @@
     
     .animation-code-section pre {
       margin: 0;
-      font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas, monospace;
+      font-family: "Google Sans", "Segoe UI", Arial, sans-serif;
       font-size: 11px;
       line-height: 1.5;
       color: #d4d4d4;
@@ -459,7 +473,7 @@
       border: none;
       border-radius: 6px;
       font-size: 11px;
-      font-weight: 500;
+      font-weight: 400;
       color: #9a9a9a;
       cursor: pointer;
       transition: all 0.15s ease;
@@ -492,7 +506,7 @@
       display: none;
       margin-bottom: 16px;
       padding: 16px;
-      background: #fafaf8;
+      background: #f7f7f7;
       border-radius: 12px;
     }
     
@@ -502,7 +516,7 @@
     
     .css-merge-header {
       font-size: 13px;
-      font-weight: 600;
+      font-weight: 400;
       color: #5a5a5a;
       margin-bottom: 12px;
     }
@@ -542,7 +556,7 @@
     
     .css-option-label {
       font-size: 13px;
-      font-weight: 500;
+      font-weight: 400;
       color: #3d3d3d;
     }
     
@@ -564,7 +578,7 @@
       width: 100%;
       height: 150px;
       padding: 12px;
-      font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas, monospace;
+      font-family: "Google Sans", "Segoe UI", Arial, sans-serif;
       font-size: 12px;
       line-height: 1.5;
       border: 1px solid #e0e0e0;
@@ -595,7 +609,7 @@
       border-radius: 8px;
       cursor: pointer;
       font-size: 13px;
-      font-weight: 500;
+      font-weight: 400;
       transition: all 0.15s ease;
     }
     
@@ -665,7 +679,7 @@
     
     .adapt-header-text h3 {
       font-size: 15px;
-      font-weight: 600;
+      font-weight: 400;
       color: #2d2d2d;
       margin: 0 0 2px 0;
     }
@@ -693,7 +707,7 @@
       border-radius: 8px;
       cursor: pointer;
       font-size: 13px;
-      font-weight: 500;
+      font-weight: 400;
       color: #6b6b6b;
       transition: all 0.2s ease;
     }
@@ -714,7 +728,7 @@
     .adapt-input-label {
       display: block;
       font-size: 12px;
-      font-weight: 600;
+      font-weight: 400;
       color: #5a5a5a;
       margin-bottom: 8px;
     }
@@ -723,7 +737,7 @@
       width: 100%;
       height: 140px;
       padding: 12px;
-      font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas, monospace;
+      font-family: "Google Sans", "Segoe UI", Arial, sans-serif;
       font-size: 12px;
       line-height: 1.5;
       border: 1px solid #d0d5d1;
@@ -755,7 +769,7 @@
       border-radius: 10px;
       cursor: pointer;
       font-size: 13px;
-      font-weight: 600;
+      font-weight: 400;
       transition: all 0.2s ease;
       border: none;
       display: flex;
@@ -848,7 +862,7 @@
     
     .mapping-preview-header {
       font-size: 12px;
-      font-weight: 600;
+      font-weight: 400;
       color: #5a5a5a;
       margin-bottom: 10px;
       display: flex;
@@ -872,20 +886,20 @@
     
     .mapping-from {
       color: #9a9a9a;
-      font-family: ui-monospace, SFMono-Regular, monospace;
+      font-family: "Google Sans", "Segoe UI", Arial, sans-serif;
       flex: 1;
     }
     
     .mapping-arrow {
       color: var(--accent);
       margin: 0 10px;
-      font-weight: bold;
+      font-weight: 400;
     }
     
     .mapping-to {
       color: var(--accent-strong);
-      font-family: ui-monospace, SFMono-Regular, monospace;
-      font-weight: 600;
+      font-family: "Google Sans", "Segoe UI", Arial, sans-serif;
+      font-weight: 400;
       flex: 1;
       text-align: right;
     }
@@ -899,7 +913,7 @@
       color: white;
       border-radius: 20px;
       font-size: 11px;
-      font-weight: 600;
+      font-weight: 400;
     }
     
     .preview-badge::before {
@@ -926,7 +940,7 @@
       border-radius: 10px;
       cursor: pointer;
       font-size: 13px;
-      font-weight: 500;
+      font-weight: 400;
       color: #5a5a5a;
       transition: all 0.15s ease;
     }
@@ -973,7 +987,7 @@
     
     .smart-mode-header {
       font-size: 12px;
-      font-weight: 600;
+      font-weight: 400;
       color: #5a5a5a;
       margin-bottom: 10px;
     }
@@ -995,7 +1009,7 @@
       border-radius: 10px;
       cursor: pointer;
       font-size: 13px;
-      font-weight: 600;
+      font-weight: 400;
       color: var(--text);
       transition: all 0.15s ease;
       text-align: left;
@@ -1046,7 +1060,7 @@
       align-items: center;
       gap: 8px;
       font-size: 14px;
-      font-weight: 600;
+      font-weight: 400;
       color: var(--text);
     }
     
@@ -1060,7 +1074,7 @@
       border-radius: 10px;
       background: #f1f1f1;
       color: #6b6b6b;
-      font-weight: 600;
+      font-weight: 400;
     }
     
     .ai-badge.active {
@@ -1134,7 +1148,7 @@
       border: 1px solid var(--line);
       border-radius: 8px;
       font-size: 12px;
-      font-weight: 500;
+      font-weight: 400;
       color: var(--text);
       cursor: pointer;
       transition: all 0.15s ease;
@@ -1200,68 +1214,50 @@
     
     /* Shadcn Intent Styling */
     .intent-option.shadcn-intent {
-      background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
-      border: 2px solid #334155;
+      background: #f6f6f6;
+      border: 1px solid #e4e4e4;
     }
     
     .intent-option.shadcn-intent .intent-label {
-      color: #f8fafc;
-    }
-    
-    .intent-option.shadcn-intent .intent-desc {
-      color: #94a3b8;
+      color: var(--text);
     }
     
     .intent-option.shadcn-intent:hover {
-      background: linear-gradient(135deg, #1e293b 0%, #334155 100%);
-      border-color: #475569;
+      background: #f1f1f1;
+      border-color: #d6d6d6;
     }
     
     .intent-option.shadcn-intent.active {
-      background: linear-gradient(135deg, #1e293b 0%, #334155 100%);
-      border-color: #6366f1;
-      box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
+      background: var(--accent-soft);
+      border-color: var(--accent);
+      box-shadow: none;
     }
     
     /* Animation Intent Styling */
     .intent-option.animation-intent {
-      background: linear-gradient(135deg, #fff8f0 0%, #f0f8ff 100%);
-      border: 2px solid #ffd8a8;
+      background: #f6f6f6;
+      border: 1px solid #e4e4e4;
     }
     
     .intent-option.animation-intent .intent-label {
-      color: #c2410c;
-    }
-    
-    .intent-option.animation-intent .intent-desc {
-      color: #ea580c;
+      color: var(--text);
     }
     
     .intent-option.animation-intent:hover {
-      background: linear-gradient(135deg, #ffedd5 0%, #e0f2fe 100%);
-      border-color: #fb923c;
+      background: #f1f1f1;
+      border-color: #d6d6d6;
     }
     
     .intent-option.animation-intent.active {
-      background: linear-gradient(135deg, #fed7aa 0%, #bae6fd 100%);
-      border-color: #f97316;
-      box-shadow: 0 0 0 3px rgba(249, 115, 22, 0.2);
+      background: var(--accent-soft);
+      border-color: var(--accent);
+      box-shadow: none;
     }
     
     /* 5-column grid when animations are detected */
     .intent-selector.has-animations {
-      grid-template-columns: 1fr 1fr 1fr;
-    }
-    
-    .intent-selector.has-animations .intent-option:nth-child(4),
-    .intent-selector.has-animations .intent-option:nth-child(5) {
-      grid-column: span 1;
-    }
-    
-    @media (max-width: 600px) {
-      .intent-selector.has-animations {
-        grid-template-columns: 1fr 1fr;
-      }
+      display: flex;
+      flex-wrap: wrap;
     }
     
     /* Shadcn Output Section */
@@ -1289,7 +1285,7 @@
       border: none;
       border-radius: 8px;
       font-size: 13px;
-      font-weight: 500;
+      font-weight: 400;
       color: var(--muted);
       cursor: pointer;
       transition: all 0.15s ease;
@@ -1318,7 +1314,7 @@
       width: 100%;
       height: 400px;
       padding: 16px;
-      font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas, monospace;
+      font-family: "Google Sans", "Segoe UI", Arial, sans-serif;
       font-size: 12px;
       line-height: 1.6;
       border: 1px solid var(--line);
@@ -1338,7 +1334,7 @@
     
     .shadcn-detected-label {
       font-size: 11px;
-      font-weight: 600;
+      font-weight: 400;
       color: #5a5a5a;
       margin-bottom: 8px;
     }
@@ -1354,7 +1350,7 @@
       background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
       color: white;
       font-size: 11px;
-      font-weight: 500;
+      font-weight: 400;
       border-radius: 12px;
     }
     
@@ -1364,7 +1360,7 @@
       background: #1e293b;
       color: #e2e8f0;
       border-radius: 10px;
-      font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas, monospace;
+      font-family: "Google Sans", "Segoe UI", Arial, sans-serif;
       font-size: 12px;
       word-break: break-all;
       line-height: 1.5;
@@ -1396,7 +1392,7 @@
     .shadcn-building-text {
       font-size: 14px;
       color: #5a5a5a;
-      font-weight: 500;
+      font-weight: 400;
     }
     
     .shadcn-building-step {
@@ -1413,7 +1409,7 @@
     }
     
     .shadcn-error-title {
-      font-weight: 600;
+      font-weight: 400;
       margin-bottom: 8px;
     }
     
@@ -1468,7 +1464,7 @@
     
     .modal-header h2 {
       font-size: 18px;
-      font-weight: 600;
+      font-weight: 400;
       margin: 0;
       color: #2d2d2d;
     }
@@ -1493,7 +1489,7 @@
     .form-label {
       display: block;
       font-size: 13px;
-      font-weight: 600;
+      font-weight: 400;
       color: #5a5a5a;
       margin-bottom: 8px;
     }
@@ -1560,7 +1556,7 @@
       left: 0;
       right: 0;
       bottom: 0;
-      background: rgba(245, 245, 240, 0.97);
+      background: rgba(255, 255, 255, 0.97);
       z-index: 9999;
       display: none;
       flex-direction: column;
@@ -1602,7 +1598,7 @@
     
     .extraction-title {
       font-size: 20px;
-      font-weight: 600;
+      font-weight: 400;
       color: #2d2d2d;
       margin-bottom: 8px;
     }
@@ -1614,7 +1610,7 @@
     }
     
     .extraction-progress-container {
-      background: #f0f0eb;
+      background: #f0f0f0;
       border-radius: 8px;
       height: 8px;
       overflow: hidden;
@@ -1656,7 +1652,7 @@
     .extraction-element-count {
       margin-top: 16px;
       padding: 10px 16px;
-      background: #f8f8f5;
+      background: #f7f7f7;
       border-radius: 8px;
       font-size: 12px;
       color: #6b6b6b;
@@ -1704,18 +1700,14 @@
     <div class="main-grid">
       <!-- Left: Screenshot & Info -->
       <div>
-        <div class="card">
-          <div class="card-header">Visual Reference</div>
-          <div class="screenshot-container" id="screenshotContainer">
-            <span class="no-screenshot">No screenshot</span>
+        <div class="left-column">
+          <div class="card screenshot-card">
+            <div class="screenshot-container" id="screenshotContainer">
+              <span class="no-screenshot">No screenshot</span>
+            </div>
+            <div class="quick-stats" id="quickStats"></div>
+            <div id="colorSwatches"></div>
           </div>
-        </div>
-        
-        <div class="card" style="margin-top: 16px;">
-          <div class="card-header">Quick Reference</div>
-          <div class="quick-stats" id="quickStats"></div>
-          <div id="colorSwatches"></div>
-          <div id="animationInfo" style="display: none;"></div>
         </div>
       </div>
       

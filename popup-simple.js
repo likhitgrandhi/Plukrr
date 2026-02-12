@@ -65,19 +65,6 @@ async function checkAuthAndSubscription() {
     // Update UI based on subscription
     updateSubscriptionUI(currentSubscription);
 
-    // If no trial started yet, start one
-    if (typeof TrialService !== 'undefined') {
-        const trialStatus = await TrialService.getTrialStatus();
-        if (!trialStatus.hasTrialStarted && (!currentSubscription || !currentSubscription.isActive)) {
-            await TrialService.startTrial();
-            if (typeof SubscriptionService.clearCache === 'function') {
-                await SubscriptionService.clearCache();
-            }
-            currentSubscription = await SubscriptionService.getSubscriptionStatus();
-            updateSubscriptionUI(currentSubscription);
-        }
-    }
-
     return true;
 }
 
@@ -85,7 +72,6 @@ function updateSubscriptionUI(subscription) {
     const subBadge = document.getElementById('subBadge');
     const trialBanner = document.getElementById('trialBanner');
     const trialDays = document.getElementById('trialDays');
-    const extractGlobalBtn = document.getElementById('extractGlobalBtn');
 
     if (!subscription) return;
 
@@ -94,23 +80,18 @@ function updateSubscriptionUI(subscription) {
     subBadge.className = 'sub-badge';
 
     switch (subscription.tier) {
-        case 'trial':
-            subBadge.textContent = 'TRIAL';
-            subBadge.classList.add('trial');
-            // Show trial banner
-            if (subscription.trialExtractionsRemaining !== undefined) {
+        case 'launch_offer':
+            subBadge.textContent = 'LAUNCH OFFER';
+            subBadge.classList.add('launch');
+            // Show days remaining banner
+            if (subscription.trialDaysRemaining !== undefined) {
                 trialBanner.classList.add('active');
-                trialDays.textContent = subscription.trialExtractionsRemaining;
+                trialDays.textContent = subscription.trialDaysRemaining + ' days left';
             }
             break;
         case 'pro':
-            subBadge.textContent = 'PRO';
+            subBadge.textContent = 'MONTHLY';
             subBadge.classList.add('pro');
-            trialBanner.classList.remove('active');
-            break;
-        case 'pro-plus':
-            subBadge.textContent = 'PRO+';
-            subBadge.classList.add('pro-plus');
             trialBanner.classList.remove('active');
             break;
         case 'lifetime':
@@ -120,14 +101,15 @@ function updateSubscriptionUI(subscription) {
             break;
         case 'free':
         default:
-            if (subscription.status === 'expired') {
-                subBadge.textContent = 'EXPIRED';
-                subBadge.classList.add('expired');
-                trialBanner.classList.add('active');
-                trialDays.textContent = '0';
-            } else {
-                subBadge.textContent = 'FREE';
-                subBadge.classList.add('expired');
+            subBadge.textContent = 'FREE';
+            subBadge.classList.add('free');
+            // Show usage remaining for free users
+            if (typeof UsageTracker !== 'undefined') {
+                UsageTracker.getSelectionsRemaining().then(remaining => {
+                    const limit = (typeof CONFIG !== 'undefined' && CONFIG.FREE_SELECTION_LIMIT) || 10;
+                    trialBanner.classList.add('active');
+                    trialDays.textContent = `${remaining}/${limit} selections`;
+                });
             }
             break;
     }
@@ -138,17 +120,29 @@ function updateSubscriptionUI(subscription) {
 
 function updateFeatureAvailability(subscription) {
     const extractGlobalBtn = document.getElementById('extractGlobalBtn');
+    const liveEditBtn = document.getElementById('liveEditBtn');
+    const isFreeTier = subscription.tier === 'free';
 
-    // Check if full page extraction is available
-    const hasFullPageAccess = subscription.isActive &&
-        ['trial', 'pro', 'pro-plus', 'lifetime'].includes(subscription.tier);
-
-    if (!hasFullPageAccess) {
+    // Free tier: Lock Live Edit and Full Page Extraction
+    if (isFreeTier) {
+        // Lock Full Page Extraction
         extractGlobalBtn.classList.add('locked');
-        extractGlobalBtn.title = 'Upgrade to Pro to unlock full page extraction';
+        extractGlobalBtn.title = 'Upgrade to unlock full page extraction';
+
+        // Lock Live Edit
+        if (liveEditBtn) {
+            liveEditBtn.classList.add('locked');
+            liveEditBtn.title = 'Upgrade to unlock Live Edit';
+        }
     } else {
+        // Paid/trial tiers: unlock everything
         extractGlobalBtn.classList.remove('locked');
         extractGlobalBtn.title = '';
+
+        if (liveEditBtn) {
+            liveEditBtn.classList.remove('locked');
+            liveEditBtn.title = '';
+        }
     }
 }
 
@@ -165,22 +159,6 @@ function setupEventListeners() {
 
     // Live Edit button
     document.getElementById('liveEditBtn').addEventListener('click', handleLiveEdit);
-
-    // AI Toggle - COMMENTED OUT (elements removed from HTML)
-    // const aiToggle = document.getElementById('aiToggle');
-    // if (aiToggle) aiToggle.addEventListener('change', handleAIToggle);
-
-    // Settings - COMMENTED OUT (elements removed from HTML)
-    // const settingsBtn = document.getElementById('settingsBtn');
-    // if (settingsBtn) settingsBtn.addEventListener('click', openSettings);
-    // const closeSettingsBtn = document.getElementById('closeSettingsBtn');
-    // if (closeSettingsBtn) closeSettingsBtn.addEventListener('click', closeSettings);
-    // const saveApiKeyBtn = document.getElementById('saveApiKeyBtn');
-    // if (saveApiKeyBtn) saveApiKeyBtn.addEventListener('click', saveApiKey);
-    // const settingsModal = document.getElementById('settingsModal');
-    // if (settingsModal) settingsModal.addEventListener('click', (e) => {
-    //     if (e.target.id === 'settingsModal') closeSettings();
-    // });
 
     // Account button - go to dashboard if logged in, auth if not
     document.getElementById('accountBtn').addEventListener('click', async () => {
@@ -222,15 +200,28 @@ function setupAuthPrompt() {
 // ============================================
 
 async function handleSelectElement() {
-    if (currentSubscription && !currentSubscription.isActive) {
-        document.getElementById('status').innerHTML = '<span style="color: #e57373;">You have used all free extractions. Please upgrade to continue.</span>';
-        return;
+    // Free tier: check selection limit
+    if (currentSubscription && currentSubscription.tier === 'free') {
+        if (typeof UsageTracker !== 'undefined') {
+            const reachedLimit = await UsageTracker.hasReachedLimit();
+            if (reachedLimit) {
+                document.getElementById('status').innerHTML = '<span style="color: #e57373;">You\'ve used all 10 free selections. <a href="#" id="upgradeInlineLink" style="color: #ff5b7f; text-decoration: underline;">Upgrade</a> to continue.</span>';
+                const upgradeLink = document.getElementById('upgradeInlineLink');
+                if (upgradeLink) {
+                    upgradeLink.addEventListener('click', (e) => {
+                        e.preventDefault();
+                        chrome.tabs.create({ url: chrome.runtime.getURL('dashboard.html') });
+                    });
+                }
+                return;
+            }
+        }
     }
 
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     if (!tab) return;
 
-    // Check for blocked URLs - only block known system pages, allow unknown/empty URLs to try
+    // Check for blocked URLs - only block known system pages
     const url = tab.url || '';
     const isSystemPage = url.startsWith('chrome://') || url.startsWith('chrome-extension://') || url.startsWith('comet-extension://') || url.startsWith('about:') || url.startsWith('edge://');
     if (isSystemPage) {
@@ -255,6 +246,10 @@ async function handleSelectElement() {
                 console.error('Error:', chrome.runtime.lastError.message);
                 document.getElementById('status').innerText = 'Error: Please refresh the page and try again.';
             } else {
+                // Record selection for Free tier tracking
+                if (currentSubscription && currentSubscription.tier === 'free' && typeof UsageTracker !== 'undefined') {
+                    UsageTracker.recordSelection();
+                }
                 window.close();
             }
         });
@@ -265,8 +260,16 @@ async function handleSelectElement() {
 }
 
 async function handleLiveEdit() {
-    if (currentSubscription && !currentSubscription.isActive) {
-        document.getElementById('status').innerHTML = '<span style="color: #e57373;">You have used all free extractions. Please upgrade to continue.</span>';
+    // Block for Free tier
+    if (currentSubscription && currentSubscription.tier === 'free') {
+        document.getElementById('status').innerHTML = '<span style="color: #e57373;">Live Edit is a premium feature. <a href="#" id="upgradeInlineLink" style="color: #ff5b7f; text-decoration: underline;">Upgrade</a> to unlock.</span>';
+        const upgradeLink = document.getElementById('upgradeInlineLink');
+        if (upgradeLink) {
+            upgradeLink.addEventListener('click', (e) => {
+                e.preventDefault();
+                chrome.tabs.create({ url: chrome.runtime.getURL('dashboard.html') });
+            });
+        }
         return;
     }
 
@@ -301,9 +304,16 @@ async function handleLiveEdit() {
 }
 
 async function handleExtractFullPage() {
-    // Check feature access
-    if (currentSubscription && !currentSubscription.isActive) {
-        document.getElementById('status').innerHTML = '<span style="color: #e57373;">You have used all free extractions. Please upgrade to continue.</span>';
+    // Block for Free tier
+    if (currentSubscription && currentSubscription.tier === 'free') {
+        document.getElementById('status').innerHTML = '<span style="color: #e57373;">Full page extraction is a premium feature. <a href="#" id="upgradeInlineLink" style="color: #ff5b7f; text-decoration: underline;">Upgrade</a> to unlock.</span>';
+        const upgradeLink = document.getElementById('upgradeInlineLink');
+        if (upgradeLink) {
+            upgradeLink.addEventListener('click', (e) => {
+                e.preventDefault();
+                chrome.tabs.create({ url: chrome.runtime.getURL('dashboard.html') });
+            });
+        }
         return;
     }
 
@@ -367,7 +377,6 @@ async function handleExtractFullPage() {
 // ============================================
 
 async function initializeAIStatus() {
-    // AI Toggle elements are commented out - just track state internally
     const aiToggle = document.getElementById('aiToggle');
     const aiStatus = document.getElementById('aiStatus');
 
@@ -455,7 +464,6 @@ async function saveApiKey() {
     saveBtn.disabled = true;
 
     try {
-        // Simple validation - try to call the API
         const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${key}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -466,7 +474,6 @@ async function saveApiKey() {
         });
 
         if (response.ok || response.status === 429) {
-            // Save the key
             chrome.storage.local.set({ geminiApiKey: key, aiEnabled: true });
 
             statusEl.className = 'api-status valid';

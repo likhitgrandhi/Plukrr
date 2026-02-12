@@ -1,222 +1,105 @@
 // ============================================
-// ExactAI - Trial Service
-// Manages free trial usage for new users
+// ExactAI - Free Tier Usage Tracker
+// Tracks selection count for Free users via chrome.storage.local
 // ============================================
 
-const TrialService = {
-    STORAGE_KEY: 'exactai_trial',
-    
+const UsageTracker = {
+    STORAGE_KEY: 'exactai_usage',
+
     /**
-     * Initialize trial for a new user
-     * Only starts trial if one hasn't been started before
+     * Get current usage data from storage
      */
-    async startTrial() {
-        const existing = await this.getTrialData();
-        
-        if (existing && existing.startDate) {
-            console.log('[TrialService] Trial already exists');
-            return existing;
-        }
-        
-        const trialData = {
-            startDate: new Date().toISOString(),
-            extractionsTotal: CONFIG.TRIAL_EXTRACTIONS || 9999,
-            extractionsUsed: 0,
-            active: true
-        };
-        
-        await chrome.storage.local.set({ [this.STORAGE_KEY]: trialData });
-        console.log('[TrialService] Trial started:', trialData);
-        
-        return trialData;
-    },
-    
-    /**
-     * Get raw trial data from storage
-     */
-    async getTrialData() {
+    async getUsageData() {
         const result = await chrome.storage.local.get([this.STORAGE_KEY]);
-        return result[this.STORAGE_KEY] || null;
-    },
-    
-    /**
-     * Get comprehensive trial status
-     */
-    async getTrialStatus() {
-        const trialData = await this.getTrialData();
-        
-        if (!trialData || !trialData.startDate) {
-            return {
-                hasTrialStarted: false,
-                isActive: false,
-                extractionsRemaining: 0,
-                extractionsUsed: 0,
-                totalExtractions: CONFIG.TRIAL_EXTRACTIONS || 9999,
-                startDate: null,
-                endDate: null,
-                expired: false
-            };
-        }
-        
-        const startDate = new Date(trialData.startDate);
-        const configuredTotal = CONFIG.TRIAL_EXTRACTIONS || 9999;
-        const storedTotal = trialData.extractionsTotal ?? trialData.totalExtractions ?? 0;
-        const totalExtractions = Math.max(storedTotal, configuredTotal);
-        const extractionsUsed = trialData.extractionsUsed ?? 0;
-        const extractionsRemaining = Math.max(0, totalExtractions - extractionsUsed);
-        const isActive = extractionsRemaining > 0;
-        const expired = extractionsRemaining === 0;
-
-        // Normalize stored trial data when migrating from older formats
-        if (trialData.extractionsTotal !== totalExtractions || trialData.extractionsUsed !== extractionsUsed) {
-            await chrome.storage.local.set({
-                [this.STORAGE_KEY]: {
-                    ...trialData,
-                    extractionsTotal: totalExtractions,
-                    extractionsUsed: extractionsUsed
-                }
-            });
-        }
-        
-        return {
-            hasTrialStarted: true,
-            isActive,
-            extractionsRemaining,
-            extractionsUsed,
-            totalExtractions,
-            startDate: startDate.toISOString(),
-            endDate: null,
-            expired
-        };
-    },
-    
-    /**
-     * Check if trial is currently active
-     */
-    async isTrialActive() {
-        const status = await this.getTrialStatus();
-        return status.isActive;
-    },
-    
-    /**
-     * Get extractions remaining in trial
-     */
-    async getTrialExtractionsRemaining() {
-        const status = await this.getTrialStatus();
-        return status.extractionsRemaining;
-    },
-    
-    /**
-     * Check if trial has been used (even if expired)
-     */
-    async hasTrialBeenUsed() {
-        const status = await this.getTrialStatus();
-        return status.hasTrialStarted;
-    },
-    
-    /**
-     * Check if trial is running low (within specified extractions)
-     */
-    async isTrialExpiringSoon(withinExtractions = 3) {
-        const status = await this.getTrialStatus();
-        return status.isActive && status.extractionsRemaining <= withinExtractions;
-    },
-    
-    /**
-     * Get a human-readable trial status message
-     */
-    async getTrialMessage() {
-        const status = await this.getTrialStatus();
-        
-        if (!status.hasTrialStarted) {
-            return {
-                type: 'info',
-                message: 'Start your free trial to access all features',
-                shortMessage: 'Start Trial'
-            };
-        }
-        
-        if (status.expired) {
-            return {
-                type: 'expired',
-                message: 'Your trial has ended. Upgrade to continue using all features.',
-                shortMessage: 'Trial Ended'
-            };
-        }
-        
-        if (status.extractionsRemaining === 1) {
-            return {
-                type: 'warning',
-                message: 'Only 1 extraction left. Upgrade now to keep access.',
-                shortMessage: '1 left'
-            };
-        }
-        
-        if (status.extractionsRemaining <= 3) {
-            return {
-                type: 'warning',
-                message: `Only ${status.extractionsRemaining} extractions left. Upgrade to continue.`,
-                shortMessage: `${status.extractionsRemaining} left`
-            };
-        }
-        
-        return {
-            type: 'active',
-            message: `${status.extractionsRemaining} free extractions remaining`,
-            shortMessage: `${status.extractionsRemaining} left`
-        };
+        return result[this.STORAGE_KEY] || { selectionsUsed: 0 };
     },
 
     /**
-     * Record a successful extraction against the trial limit
+     * Get number of selections remaining for Free users
      */
-    async recordExtraction() {
-        const trialData = await this.getTrialData();
-        if (!trialData || !trialData.startDate) {
-            return null;
-        }
+    async getSelectionsRemaining() {
+        const data = await this.getUsageData();
+        const limit = (typeof CONFIG !== 'undefined' && CONFIG.FREE_SELECTION_LIMIT) || 10;
+        return Math.max(0, limit - (data.selectionsUsed || 0));
+    },
 
-        const totalExtractions = Math.max(trialData.extractionsTotal ?? 0, CONFIG.TRIAL_EXTRACTIONS || 9999);
-        const extractionsUsed = Math.min(totalExtractions, (trialData.extractionsUsed || 0) + 1);
+    /**
+     * Get total selections used
+     */
+    async getSelectionsUsed() {
+        const data = await this.getUsageData();
+        return data.selectionsUsed || 0;
+    },
 
+    /**
+     * Check if Free user has reached their selection limit
+     */
+    async hasReachedLimit() {
+        const remaining = await this.getSelectionsRemaining();
+        return remaining <= 0;
+    },
+
+    /**
+     * Record a selection (for Free tier users)
+     */
+    async recordSelection() {
+        const data = await this.getUsageData();
         const updated = {
-            ...trialData,
-            extractionsTotal: totalExtractions,
-            extractionsUsed
+            ...data,
+            selectionsUsed: (data.selectionsUsed || 0) + 1,
+            lastSelectionAt: new Date().toISOString()
         };
-
         await chrome.storage.local.set({ [this.STORAGE_KEY]: updated });
+        console.log('[UsageTracker] Selection recorded:', updated.selectionsUsed);
         return updated;
     },
-    
+
     /**
-     * Reset trial (for testing purposes only)
+     * Get a human-readable usage message for Free users
      */
-    async resetTrial() {
-        await chrome.storage.local.remove([this.STORAGE_KEY]);
-        console.log('[TrialService] Trial reset');
-    },
-    
-    /**
-     * Extend trial by specified number of extractions (for promotions, etc.)
-     */
-    async extendTrial(additionalExtractions) {
-        const trialData = await this.getTrialData();
-        
-        if (!trialData) {
-            console.log('[TrialService] No trial to extend');
-            return null;
+    async getUsageMessage() {
+        const data = await this.getUsageData();
+        const limit = (typeof CONFIG !== 'undefined' && CONFIG.FREE_SELECTION_LIMIT) || 10;
+        const used = data.selectionsUsed || 0;
+        const remaining = Math.max(0, limit - used);
+
+        if (remaining === 0) {
+            return {
+                type: 'limit_reached',
+                message: 'You\'ve used all 10 free selections. Upgrade to continue.',
+                shortMessage: 'Limit reached'
+            };
         }
-        
-        trialData.extractionsTotal = (trialData.extractionsTotal || CONFIG.TRIAL_EXTRACTIONS || 9999) + additionalExtractions;
-        await chrome.storage.local.set({ [this.STORAGE_KEY]: trialData });
-        
-        console.log('[TrialService] Trial extended by', additionalExtractions, 'extractions');
-        return trialData;
+
+        if (remaining <= 3) {
+            return {
+                type: 'warning',
+                message: `Only ${remaining} free selection${remaining === 1 ? '' : 's'} left. Upgrade for unlimited access.`,
+                shortMessage: `${remaining} left`
+            };
+        }
+
+        return {
+            type: 'active',
+            message: `${remaining} of ${limit} free selections remaining`,
+            shortMessage: `${remaining} left`
+        };
+    },
+
+    /**
+     * Reset usage data (for testing)
+     */
+    async resetUsage() {
+        await chrome.storage.local.remove([this.STORAGE_KEY]);
+        console.log('[UsageTracker] Usage reset');
     }
 };
 
+// Keep TrialService as alias for backward compatibility
+const TrialService = UsageTracker;
+
 // Make available globally
 if (typeof window !== 'undefined') {
+    window.UsageTracker = UsageTracker;
     window.TrialService = TrialService;
 }

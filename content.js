@@ -537,7 +537,18 @@
 
         console.log(`[Design Copier] Starting extraction: ~${estimatedElements} elements, complex=${isComplexElement}, veryComplex=${isVeryComplex}`);
 
-        // Show extraction loader for complex elements
+        // IMPORTANT: Capture screenshot BEFORE showing any overlays/loaders
+        // so that captureVisibleTab gets a clean view of the page
+        let screenshot = null;
+        try {
+            // Small delay to let the selection overlay fade out
+            await new Promise(resolve => setTimeout(resolve, 80));
+            screenshot = await captureElementScreenshot(el);
+        } catch (err) {
+            console.error('[Design Copier] Screenshot capture failed:', err);
+        }
+
+        // Now show extraction loader for complex elements (after screenshot is captured)
         if (isComplexElement) {
             createLoader();
             updateLoaderProgress('Extracting design...', `Found ~${estimatedElements} elements to process`);
@@ -552,31 +563,21 @@
         });
 
         try {
-            let screenshot = null;
-            try {
-                if (isComplexElement) {
-                    updateLoaderProgress('Capturing screenshot...', 'Step 1 of 4');
-                }
-                screenshot = await captureElementScreenshot(el);
-
-                // Compress screenshot for very complex elements to save storage space
-                if (isVeryComplex && screenshot && screenshot.length > 500000) {
-                    console.log(`[Design Copier] Screenshot is ${Math.round(screenshot.length / 1024)}KB, compressing...`);
-                    screenshot = await compressScreenshot(screenshot, 0.7, 1000);
-                    console.log(`[Design Copier] Compressed to ${Math.round(screenshot.length / 1024)}KB`);
-                } else if (screenshot && screenshot.length > 1000000) {
-                    // Also compress regular large screenshots (>1MB)
-                    console.log(`[Design Copier] Screenshot is ${Math.round(screenshot.length / 1024)}KB, light compression...`);
-                    screenshot = await compressScreenshot(screenshot, 0.8, 1400);
-                    console.log(`[Design Copier] Compressed to ${Math.round(screenshot.length / 1024)}KB`);
-                }
-            } catch (err) {
-                console.error('[Design Copier] Screenshot capture failed:', err);
+            // Compress screenshot if needed (screenshot was already captured before the loader)
+            if (isVeryComplex && screenshot && screenshot.length > 500000) {
+                console.log(`[Design Copier] Screenshot is ${Math.round(screenshot.length / 1024)}KB, compressing...`);
+                screenshot = await compressScreenshot(screenshot, 0.8, 1400);
+                console.log(`[Design Copier] Compressed to ${Math.round(screenshot.length / 1024)}KB`);
+            } else if (screenshot && screenshot.length > 2000000) {
+                // Compress only if very large (>2MB)
+                console.log(`[Design Copier] Screenshot is ${Math.round(screenshot.length / 1024)}KB, light compression...`);
+                screenshot = await compressScreenshot(screenshot, 0.85, 1800);
+                console.log(`[Design Copier] Compressed to ${Math.round(screenshot.length / 1024)}KB`);
             }
 
             // Get parent element for context
             if (isComplexElement) {
-                updateLoaderProgress('Analyzing parent context...', 'Step 2 of 4');
+                updateLoaderProgress('Analyzing parent context...', 'Step 1 of 3');
                 await new Promise(resolve => setTimeout(resolve, 10)); // Allow UI to update
             }
 
@@ -598,7 +599,7 @@
             }
 
             if (isComplexElement) {
-                updateLoaderProgress('Building element tree...', `Step 3 of 4 — Processing ${estimatedElements} elements`);
+                updateLoaderProgress('Building element tree...', `Step 2 of 3 — Processing ${estimatedElements} elements`);
                 await new Promise(resolve => setTimeout(resolve, 10)); // Allow UI to update
             }
 
@@ -614,7 +615,7 @@
             console.log(`[Design Copier] Built tree with ${elementCount} elements (maxDepth=${maxDepth})`);
 
             if (isComplexElement) {
-                updateLoaderProgress('Extracting styles...', 'Step 4 of 5');
+                updateLoaderProgress('Extracting styles...', 'Step 3 of 3');
                 await new Promise(resolve => setTimeout(resolve, 10)); // Allow UI to update
             }
 
@@ -627,7 +628,7 @@
             let animationData = null;
             try {
                 if (isComplexElement) {
-                    updateLoaderProgress('Detecting animations...', 'Step 5 of 5');
+                    updateLoaderProgress('Detecting animations...', 'Finishing up...');
                     await new Promise(resolve => setTimeout(resolve, 10));
                 }
                 animationData = await captureAnimationData(el);
@@ -674,45 +675,77 @@
             };
 
             // Estimate data size
-            let dataSize = JSON.stringify(captureData).length;
-            console.log(`[Design Copier] Capture data size: ${Math.round(dataSize / 1024)}KB`);
+            const treeDataSize = JSON.stringify({ ...captureData, screenshot: null }).length;
+            const totalDataSize = JSON.stringify(captureData).length;
+            console.log(`[Design Copier] Data size: tree=${Math.round(treeDataSize / 1024)}KB, total=${Math.round(totalDataSize / 1024)}KB`);
 
-            // If data is too large, try to reduce screenshot size first
-            if (dataSize > 3 * 1024 * 1024 && captureData.screenshot) {
-                console.log('[Design Copier] Data large, compressing screenshot further...');
-                captureData.screenshot = await compressScreenshot(captureData.screenshot, 0.5, 800);
-                dataSize = JSON.stringify(captureData).length;
-                console.log(`[Design Copier] After compression: ${Math.round(dataSize / 1024)}KB`);
-            }
-
-            // If still too large (>5MB), try even more compression
-            if (dataSize > 5 * 1024 * 1024 && captureData.screenshot) {
-                console.log('[Design Copier] Still large, compressing to thumbnail...');
-                captureData.screenshot = await compressScreenshot(captureData.screenshot, 0.4, 500);
+            // Only compress screenshot if total data is very large (we have unlimitedStorage)
+            if (totalDataSize > 10 * 1024 * 1024 && captureData.screenshot) {
+                console.log('[Design Copier] Data very large, compressing screenshot...');
+                captureData.screenshot = await compressScreenshot(captureData.screenshot, 0.75, 1200);
                 captureData._screenshotCompressed = true;
-                dataSize = JSON.stringify(captureData).length;
-                console.log(`[Design Copier] After thumbnail: ${Math.round(dataSize / 1024)}KB`);
+                console.log(`[Design Copier] After compression: ${Math.round(JSON.stringify(captureData).length / 1024)}KB`);
             }
 
-            // Only remove screenshot as last resort (>8MB)
-            if (dataSize > 8 * 1024 * 1024) {
-                console.warn('[Design Copier] Data extremely large, removing screenshot as last resort');
+            if (JSON.stringify(captureData).length > 20 * 1024 * 1024 && captureData.screenshot) {
+                console.log('[Design Copier] Still very large, compressing more...');
+                captureData.screenshot = await compressScreenshot(captureData.screenshot, 0.6, 900);
+                captureData._screenshotCompressed = true;
+            }
+
+            // Save data directly to chrome.storage.local from content script
+            // This avoids Chrome message size limits for large elements
+            const dataWithTimestamp = {
+                ...captureData,
+                _selectionTimestamp: Date.now()
+            };
+
+            try {
+                await new Promise((resolve, reject) => {
+                    chrome.storage.local.set({
+                        lastSelection: dataWithTimestamp,
+                        extractionState: { inProgress: false, complete: true }
+                    }, () => {
+                        if (chrome.runtime.lastError) {
+                            reject(new Error(chrome.runtime.lastError.message));
+                        } else {
+                            resolve();
+                        }
+                    });
+                });
+
+                console.log('[Design Copier] Data saved to storage successfully');
+
+                // Create a small thumbnail for history (if screenshot exists)
+                let historyThumbnail = null;
                 if (captureData.screenshot) {
-                    captureData.screenshot = null;
-                    captureData._screenshotRemoved = true;
+                    try {
+                        historyThumbnail = await compressScreenshot(captureData.screenshot, 0.5, 300);
+                    } catch (e) {
+                        historyThumbnail = null;
+                    }
                 }
-            }
 
-            // Send message to background
-            chrome.runtime.sendMessage({
-                type: 'ELEMENT_SELECTED',
-                data: captureData
-            }, (response) => {
-                if (chrome.runtime.lastError) {
-                    console.error('[Design Copier] Failed to send message:', chrome.runtime.lastError);
-                    showToast('Error: Failed to save data. Try selecting a smaller element.');
-                }
-            });
+                // Send lightweight message to background to open the results tab
+                chrome.runtime.sendMessage({
+                    type: 'ELEMENT_SELECTED',
+                    data: {
+                        // Only send minimal data for history/tab management — NOT the full payload
+                        pageTitle: captureData.pageTitle,
+                        pageUrl: captureData.pageUrl,
+                        elementCount: captureData.elementCount,
+                        tree: { tag: captureData.tree?.tag, role: captureData.tree?.role },
+                        screenshot: historyThumbnail,
+                        timestamp: captureData.timestamp,
+                        _alreadySaved: true
+                    }
+                });
+            } catch (storageError) {
+                console.error('[Design Copier] Storage save failed:', storageError);
+                showToast('Error: Failed to save data. Try selecting a smaller element.');
+                hideLoader();
+                return;
+            }
 
             // Hide loader
             hideLoader();
@@ -1887,6 +1920,8 @@
                         height: Math.round(rect.height),
                         viewportX: Math.round(rect.left),
                         viewportY: Math.round(rect.top),
+                        viewportWidth: Math.round(window.innerWidth),
+                        viewportHeight: Math.round(window.innerHeight),
                         scrollX: window.scrollX,
                         scrollY: window.scrollY,
                         devicePixelRatio: window.devicePixelRatio || 1

@@ -16,10 +16,7 @@
     "<all_urls>",
     "https://generativelanguage.googleapis.com/*",
     "https://ui.shadcn.com/*",
-    "https://*.supabase.co/*",
-    "https://checkout.stripe.com/*",
-    "https://api.stripe.com/*",
-    "https://buy.stripe.com/*"
+    "https://*.supabase.co/*"
   ],
   "action": {
     "default_popup": "popup.html"
