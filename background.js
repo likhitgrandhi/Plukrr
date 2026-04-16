@@ -15,6 +15,9 @@ const SYNC_INTERVAL = 5 * 60 * 1000;
 // INITIALIZATION
 // ============================================
 
+// Open side panel when toolbar icon is clicked
+chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(console.error);
+
 // Initialize on install
 chrome.runtime.onInstalled.addListener(async (details) => {
     console.log('[Background] Extension installed/updated:', details.reason);
@@ -83,6 +86,18 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.type === 'CHECK_FEATURE_ACCESS') {
         handleCheckFeatureAccess(request.feature).then(sendResponse);
         return true;
+    }
+
+    // Screenshot capture for component preview
+    if (request.action === 'CAPTURE_TAB') {
+        chrome.tabs.captureVisibleTab(null, { format: 'jpeg', quality: 85 }, (dataUrl) => {
+            if (chrome.runtime.lastError) {
+                sendResponse({ dataUrl: null });
+            } else {
+                sendResponse({ dataUrl: dataUrl || null });
+            }
+        });
+        return true; // async sendResponse
     }
 
     // Clear old selection when starting a new selection

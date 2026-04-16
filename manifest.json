@@ -9,7 +9,8 @@
     "scripting",
     "storage",
     "unlimitedStorage",
-    "alarms"
+    "alarms",
+    "sidePanel"
   ],
   "externally_connectable": {
     "matches": [
@@ -24,7 +25,10 @@
     "https://*.supabase.co/*"
   ],
   "action": {
-    "default_popup": "popup.html"
+    "default_title": "Plukrr"
+  },
+  "side_panel": {
+    "default_path": "sidebar.html"
   },
   "background": {
     "service_worker": "background.js"
