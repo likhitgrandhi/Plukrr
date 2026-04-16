@@ -171,6 +171,7 @@
         if (el === overlay || el.id === 'ai-design-copier-overlay' || el.id === 'ai-design-copier-toast') return;
         if (elementPickerPanel && elementPickerPanel.contains(el)) return;
         if (el.closest('#element-picker-panel')) return;
+        if (el.closest('#plukrr-ds-builder-panel')) return;
 
         currentHoveredElement = el;
         updateOverlay(el);
@@ -4173,6 +4174,450 @@
     }
 
     // ============================================
+    // GUIDED DS BUILDER
+    // ============================================
+
+    const DS_BUILDER_STEP_DEFINITIONS = [
+        { index: 0,  stepKey: 'primaryButton',   label: 'Primary Button',        prompt: 'Click a <strong>Primary Button</strong>',          sub: 'The main CTA or submit button',             auto: false, skippable: false },
+        { index: 1,  stepKey: 'secondaryButton',  label: 'Secondary Button',       prompt: 'Click a <strong>Secondary Button</strong>',         sub: 'Outlined or ghost button variant',           auto: false, skippable: true  },
+        { index: 2,  stepKey: 'input',            label: 'Input Field',            prompt: 'Click an <strong>Input Field</strong>',             sub: 'Any text input or search box',               auto: false, skippable: false },
+        { index: 3,  stepKey: 'pageBackground',   label: 'Page Background',        prompt: 'Reading <strong>page background</strong>…',        sub: 'Auto-detected from document body',           auto: true,  skippable: false },
+        { index: 4,  stepKey: 'card',             label: 'Card / Surface',         prompt: 'Click a <strong>Card or Surface</strong>',          sub: 'A raised or bordered content area',          auto: false, skippable: true  },
+        { index: 5,  stepKey: 'muted',            label: 'Muted Surface',          prompt: 'Click a <strong>Muted / Secondary Surface</strong>', sub: 'A subtle background or secondary panel',    auto: false, skippable: true  },
+        { index: 6,  stepKey: 'navigation',       label: 'Navigation',             prompt: 'Click the <strong>Navigation Bar or Sidebar</strong>', sub: 'The main nav or side menu',              auto: false, skippable: true  },
+        { index: 7,  stepKey: 'badge',            label: 'Badge / Tag',            prompt: 'Click a <strong>Badge or Tag</strong>',             sub: 'A small label or status chip',               auto: false, skippable: true  },
+        { index: 8,  stepKey: 'heading',          label: 'Heading',                prompt: 'Click a <strong>Heading</strong>',                  sub: 'An h1, h2, or page title',                   auto: false, skippable: false },
+        { index: 9,  stepKey: 'bodyText',         label: 'Body Text',              prompt: 'Click a <strong>Paragraph or Body Text</strong>',   sub: 'Normal content text',                        auto: false, skippable: false },
+        { index: 10, stepKey: 'destructive',      label: 'Danger Button',          prompt: 'Click a <strong>Delete / Danger Button</strong>',   sub: 'Red or warning action button',               auto: false, skippable: true  },
+        { index: 11, stepKey: 'accent',           label: 'Link / Accent',          prompt: 'Click a <strong>Link or Accent Element</strong>',   sub: 'An inline link or highlighted text',         auto: false, skippable: true  },
+    ];
+
+    let _dsGuidedClickHandler = null;
+    let _dsPausedStep = null;    // stepDef stored while paused
+    let _dsPausedIndex = null;   // stepIndex stored while paused
+
+    // ---- Panel HTML ----
+
+    function _dsBuildPanelHTML(stepDef, stepIndex, paused) {
+        const total = DS_BUILDER_STEP_DEFINITIONS.length;
+        const pct = Math.round((stepIndex / total) * 100);
+
+        if (paused) {
+            return `
+                <div class="plkr-ds-header">
+                    <span class="plkr-ds-brand">Plukrr</span>
+                    <span class="plkr-ds-status-pill paused">⏸ Paused</span>
+                    <span class="plkr-ds-counter">${stepIndex + 1}/${total}</span>
+                </div>
+                <div class="plkr-ds-progress-track"><div class="plkr-ds-progress-fill" style="width:${pct}%"></div></div>
+                <div class="plkr-ds-body">
+                    <div class="plkr-ds-prompt paused">${stepDef.label}</div>
+                    <div class="plkr-ds-sub">Navigate freely, then tap <strong>Resume</strong> when you find the right element.</div>
+                </div>
+                <div class="plkr-ds-actions">
+                    <button class="plkr-ds-btn plkr-ds-resume" id="plkrDsResume">▶ Resume</button>
+                    <button class="plkr-ds-btn plkr-ds-cancel" id="plkrDsCancel">✕</button>
+                </div>`;
+        }
+
+        const skipBtn = stepDef.skippable
+            ? `<button class="plkr-ds-btn plkr-ds-skip" id="plkrDsSkip">Skip</button>`
+            : '';
+        return `
+            <div class="plkr-ds-header">
+                <span class="plkr-ds-brand">Plukrr</span>
+                <span class="plkr-ds-status-pill selecting">● Selecting</span>
+                <span class="plkr-ds-counter">${stepIndex + 1}/${total}</span>
+            </div>
+            <div class="plkr-ds-progress-track"><div class="plkr-ds-progress-fill" style="width:${pct}%"></div></div>
+            <div class="plkr-ds-body">
+                <div class="plkr-ds-prompt">${stepDef.prompt}</div>
+                <div class="plkr-ds-sub">${stepDef.sub}</div>
+            </div>
+            <div class="plkr-ds-actions">
+                ${skipBtn}
+                <button class="plkr-ds-btn plkr-ds-pause" id="plkrDsPause">⏸ Pause</button>
+                <button class="plkr-ds-btn plkr-ds-cancel" id="plkrDsCancel">✕</button>
+            </div>`;
+    }
+
+    function createDsBuilderPanel(stepDef, stepIndex, paused) {
+        removeDsBuilderPanel();
+
+        const style = document.createElement('style');
+        style.id = 'plkr-ds-builder-style';
+        style.textContent = `
+            #plukrr-ds-builder-panel {
+                position: fixed !important; bottom: 20px !important; right: 20px !important;
+                width: 272px !important; z-index: 2147483646 !important;
+                background: #ffffff !important; border: 1px solid #e5e7eb !important;
+                border-radius: 12px !important; box-shadow: 0 8px 32px rgba(0,0,0,0.18) !important;
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
+                font-size: 13px !important; color: #111827 !important; padding: 14px !important;
+                box-sizing: border-box !important;
+            }
+            .plkr-ds-header { display:flex !important; justify-content:space-between !important; align-items:center !important; gap:6px !important; margin-bottom:8px !important; }
+            .plkr-ds-brand { font-weight:700 !important; font-size:13px !important; color:#10b981 !important; flex-shrink:0 !important; }
+            .plkr-ds-status-pill { font-size:10px !important; font-weight:600 !important; border-radius:20px !important; padding:2px 8px !important; flex-grow:1 !important; }
+            .plkr-ds-status-pill.selecting { background:#dcfce7 !important; color:#16a34a !important; }
+            .plkr-ds-status-pill.paused { background:#fef9c3 !important; color:#92400e !important; }
+            .plkr-ds-counter { font-size:11px !important; color:#6b7280 !important; flex-shrink:0 !important; }
+            .plkr-ds-progress-track { background:#e5e7eb !important; border-radius:4px !important; height:4px !important; margin-bottom:12px !important; }
+            .plkr-ds-progress-fill { background:#10b981 !important; height:4px !important; border-radius:4px !important; transition:width 0.3s !important; }
+            .plkr-ds-body { margin-bottom:12px !important; }
+            .plkr-ds-prompt { font-weight:600 !important; font-size:14px !important; margin-bottom:4px !important; line-height:1.4 !important; }
+            .plkr-ds-prompt.paused { font-weight:500 !important; color:#374151 !important; }
+            .plkr-ds-sub { font-size:12px !important; color:#6b7280 !important; line-height:1.4 !important; }
+            .plkr-ds-actions { display:flex !important; align-items:center !important; gap:6px !important; }
+            .plkr-ds-btn { border:none !important; border-radius:6px !important; padding:6px 10px !important; font-size:12px !important; cursor:pointer !important; font-weight:500 !important; line-height:1 !important; }
+            .plkr-ds-resume { background:#10b981 !important; color:#fff !important; flex-grow:1 !important; }
+            .plkr-ds-resume:hover { background:#059669 !important; }
+            .plkr-ds-pause { background:#f3f4f6 !important; color:#374151 !important; }
+            .plkr-ds-pause:hover { background:#e5e7eb !important; }
+            .plkr-ds-skip { background:#f3f4f6 !important; color:#374151 !important; }
+            .plkr-ds-skip:hover { background:#e5e7eb !important; }
+            .plkr-ds-cancel { background:transparent !important; color:#9ca3af !important; padding:6px 8px !important; }
+            .plkr-ds-cancel:hover { color:#dc2626 !important; }
+        `;
+        document.head.appendChild(style);
+
+        const panel = document.createElement('div');
+        panel.id = 'plukrr-ds-builder-panel';
+        panel.innerHTML = _dsBuildPanelHTML(stepDef, stepIndex, paused);
+        document.body.appendChild(panel);
+
+        _dsAttachPanelEvents(stepDef, stepIndex, paused);
+    }
+
+    function updateDsBuilderPanel(stepDef, stepIndex, paused) {
+        const panel = document.getElementById('plukrr-ds-builder-panel');
+        if (!panel) { createDsBuilderPanel(stepDef, stepIndex, paused); return; }
+        panel.innerHTML = _dsBuildPanelHTML(stepDef, stepIndex, paused);
+        _dsAttachPanelEvents(stepDef, stepIndex, paused);
+    }
+
+    function _dsAttachPanelEvents(stepDef, stepIndex, paused) {
+        document.getElementById('plkrDsCancel')?.addEventListener('click', () => {
+            removeDsBuilderPanel();
+            if (overlay) overlay.style.display = 'none';
+            _dsRemoveGuidedClickHandler();
+            chrome.runtime.sendMessage({ type: 'DS_BUILDER_CANCELLED' });
+        });
+
+        if (paused) {
+            document.getElementById('plkrDsResume')?.addEventListener('click', () => {
+                _dsPausedStep = null; _dsPausedIndex = null;
+                updateDsBuilderPanel(stepDef, stepIndex, false);
+                startGuidedStep(stepDef, stepIndex);
+            });
+        } else {
+            document.getElementById('plkrDsPause')?.addEventListener('click', () => {
+                pauseGuidedStep(stepDef, stepIndex);
+            });
+            document.getElementById('plkrDsSkip')?.addEventListener('click', () => {
+                _dsRemoveGuidedClickHandler();
+                if (overlay) overlay.style.display = 'none';
+                chrome.runtime.sendMessage({ type: 'DS_STEP_COMPLETED', stepKey: stepDef.stepKey, styles: null, stepIndex });
+            });
+        }
+    }
+
+    function pauseGuidedStep(stepDef, stepIndex) {
+        _dsPausedStep = stepDef;
+        _dsPausedIndex = stepIndex;
+        _dsRemoveGuidedClickHandler();
+        if (overlay) overlay.style.display = 'none';
+        updateDsBuilderPanel(stepDef, stepIndex, true);
+        chrome.runtime.sendMessage({ type: 'DS_BUILDER_PAUSED' });
+    }
+
+    function removeDsBuilderPanel() {
+        document.getElementById('plukrr-ds-builder-panel')?.remove();
+        document.getElementById('plkr-ds-builder-style')?.remove();
+        _dsRemoveGuidedClickHandler();
+        _dsPausedStep = null;
+        _dsPausedIndex = null;
+    }
+
+    function _dsRemoveGuidedClickHandler() {
+        if (_dsGuidedClickHandler) {
+            document.removeEventListener('click', _dsGuidedClickHandler, true);
+            document.removeEventListener('mousemove', handleMouseMove);
+            _dsGuidedClickHandler = null;
+        }
+    }
+
+    function _dsToHex(rgb) {
+        if (!rgb || rgb === 'transparent') return null;
+        // Reject transparent/near-transparent rgba before extracting channels
+        const alpha = (rgb.match(/rgba\(\d+,\s*\d+,\s*\d+,\s*([\d.]+)\)/) || [])[1];
+        if (alpha !== undefined && parseFloat(alpha) < 0.05) return null;
+        const m = rgb.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+        if (!m) return null;
+        return '#' + [m[1], m[2], m[3]].map(n => parseInt(n).toString(16).padStart(2, '0').toUpperCase()).join('');
+    }
+    function _dsIsTransparent(rgb) {
+        if (!rgb || rgb === 'transparent') return true;
+        const a = (rgb.match(/rgba\(\d+,\s*\d+,\s*\d+,\s*([\d.]+)\)/) || [])[1];
+        if (a !== undefined && parseFloat(a) < 0.05) return true;
+        return rgb === 'rgba(0, 0, 0, 0)';
+    }
+
+    function extractGuidedStyles(el, stepDef) {
+        const s = window.getComputedStyle(el);
+        const key = stepDef.stepKey;
+
+        function resolveBackground(element) {
+            let cur = element;
+            while (cur && cur !== document.documentElement) {
+                const bg = window.getComputedStyle(cur).backgroundColor;
+                if (!_dsIsTransparent(bg)) return bg;
+                cur = cur.parentElement;
+            }
+            return window.getComputedStyle(document.body).backgroundColor;
+        }
+
+        function toH(rgb) { return _dsToHex(rgb) || null; }
+
+        function nonNone(v) { return v && v !== 'none' && v !== 'normal' ? v : null; }
+        // For buttons: try direct background, then first opaque child (for layered button UIs).
+        // Ghost buttons legitimately return null — that's correct.
+        function btnBg(el) {
+            const direct = toH(s.backgroundColor);
+            if (direct) return direct;
+            // Some buttons render color on an inner span/div — scan immediate children
+            for (const child of el.children) {
+                const childBg = toH(window.getComputedStyle(child).backgroundColor);
+                if (childBg) return childBg;
+            }
+            return null;
+        }
+        function surfaceBg(el) { return toH(s.backgroundColor) || toH(resolveBackground(el)); }
+
+        if (key === 'primaryButton') {
+            const bg = btnBg(el);
+            return {
+                primary: bg,
+                primaryForeground: toH(s.color),
+                primaryBorderRadius: s.borderRadius,
+                primaryHeight: (s.height !== 'auto' && s.height !== '0px') ? s.height : (el.offsetHeight > 0 ? `${el.offsetHeight}px` : null),
+                primaryPaddingTop: s.paddingTop !== '0px' ? s.paddingTop : null,
+                primaryPaddingRight: s.paddingRight !== '0px' ? s.paddingRight : null,
+                primaryBorderWidth: s.borderTopWidth !== '0px' ? s.borderTopWidth : null,
+                primaryBorderColor: s.borderTopWidth !== '0px' ? toH(s.borderTopColor) : null,
+                primaryBoxShadow: nonNone(s.boxShadow),
+                primaryFontFamily: s.fontFamily,
+                primaryFontSize: s.fontSize,
+                primaryFontWeight: s.fontWeight,
+                primaryLetterSpacing: nonNone(s.letterSpacing),
+                primaryTextTransform: nonNone(s.textTransform),
+            };
+        }
+        if (key === 'secondaryButton') {
+            const bg = btnBg(el);
+            return {
+                secondary: bg,
+                secondaryForeground: toH(s.color),
+                secondaryBorderColor: toH(s.borderTopColor),
+                secondaryBorderWidth: s.borderTopWidth !== '0px' ? s.borderTopWidth : null,
+                secondaryBorderRadius: s.borderRadius,
+                secondaryHeight: (s.height !== 'auto' && s.height !== '0px') ? s.height : (el.offsetHeight > 0 ? `${el.offsetHeight}px` : null),
+                secondaryPaddingTop: s.paddingTop !== '0px' ? s.paddingTop : null,
+                secondaryPaddingRight: s.paddingRight !== '0px' ? s.paddingRight : null,
+                secondaryBoxShadow: nonNone(s.boxShadow),
+            };
+        }
+        if (key === 'input') {
+            const bg = surfaceBg(el);
+            return {
+                border: toH(s.borderTopColor),
+                inputBg: bg,
+                inputHeight: s.height,
+                inputBorderRadius: s.borderRadius,
+                inputBorderWidth: s.borderTopWidth,
+                inputPaddingTop: s.paddingTop,
+                inputPaddingRight: s.paddingRight,
+                inputFontSize: s.fontSize,
+                inputFontFamily: s.fontFamily,
+            };
+        }
+        if (key === 'card') {
+            const bg = surfaceBg(el);
+            return {
+                card: bg,
+                cardForeground: toH(s.color),
+                cardBorderRadius: s.borderRadius,
+                cardBorderColor: toH(s.borderTopColor),
+                cardBorderWidth: s.borderTopWidth !== '0px' ? s.borderTopWidth : null,
+                cardPaddingTop: s.paddingTop,
+                cardPaddingRight: s.paddingRight,
+                cardBoxShadow: nonNone(s.boxShadow),
+                cardGap: nonNone(s.gap),
+            };
+        }
+        if (key === 'muted') {
+            const bg = surfaceBg(el);
+            return {
+                muted: bg,
+                mutedForeground: toH(s.color),
+                mutedBorderRadius: s.borderRadius,
+                mutedPaddingTop: s.paddingTop,
+                mutedPaddingRight: s.paddingRight,
+            };
+        }
+        if (key === 'navigation') {
+            const bg = surfaceBg(el);
+            return {
+                sidebar: bg,
+                sidebarForeground: toH(s.color),
+                navigationHeight: s.height !== 'auto' ? s.height : null,
+                navigationPaddingTop: s.paddingTop,
+                navigationPaddingRight: s.paddingRight,
+                navigationBorderColor: toH(s.borderBottomColor),
+                navigationBorderWidth: s.borderBottomWidth !== '0px' ? s.borderBottomWidth : null,
+            };
+        }
+        if (key === 'badge') {
+            const bg = surfaceBg(el);
+            return {
+                badgeBackground: bg,
+                badgeForeground: toH(s.color),
+                badgeBorderRadius: s.borderRadius,
+                badgeBorderColor: s.borderTopWidth !== '0px' ? toH(s.borderTopColor) : null,
+                badgeFontSize: s.fontSize,
+                badgeFontWeight: s.fontWeight,
+                badgePaddingTop: s.paddingTop,
+                badgePaddingRight: s.paddingRight,
+            };
+        }
+        if (key === 'heading') {
+            return {
+                headingFontFamily: s.fontFamily,
+                h1FontSize: s.fontSize,
+                h1FontWeight: s.fontWeight,
+                h1LineHeight: s.lineHeight,
+                h1LetterSpacing: nonNone(s.letterSpacing),
+                h1TextTransform: nonNone(s.textTransform),
+                h1Color: toH(s.color),
+            };
+        }
+        if (key === 'bodyText') {
+            return {
+                bodyFontFamily: s.fontFamily,
+                bodyFontSize: s.fontSize,
+                bodyLineHeight: s.lineHeight,
+                bodyLetterSpacing: nonNone(s.letterSpacing),
+                bodyColor: toH(s.color),
+            };
+        }
+        if (key === 'destructive') {
+            const bg = btnBg(el);
+            return {
+                destructive: bg,
+                destructiveForeground: toH(s.color),
+                destructiveBorderRadius: s.borderRadius,
+                destructiveHeight: (s.height !== 'auto' && s.height !== '0px') ? s.height : (el.offsetHeight > 0 ? `${el.offsetHeight}px` : null),
+                destructivePaddingTop: s.paddingTop !== '0px' ? s.paddingTop : null,
+                destructivePaddingRight: s.paddingRight !== '0px' ? s.paddingRight : null,
+                destructiveFontSize: s.fontSize,
+                destructiveFontWeight: s.fontWeight,
+                destructiveBoxShadow: nonNone(s.boxShadow),
+            };
+        }
+        if (key === 'accent') {
+            return {
+                accent: toH(s.color),
+                accentTextDecoration: nonNone(s.textDecoration),
+                accentFontWeight: nonNone(s.fontWeight),
+                ring: toH(s.color),
+            };
+        }
+        return {};
+    }
+
+    // Walk up the DOM to find the most appropriate element for each DS Builder step.
+    // Users frequently click text nodes, icons, or inner spans — this ensures we read
+    // styles from the actual interactive/container element, not its children.
+    function _dsResolveElement(el, stepKey) {
+        const isBtn = stepKey === 'primaryButton' || stepKey === 'secondaryButton' || stepKey === 'destructive';
+        const isInput = stepKey === 'input';
+        const isSurface = stepKey === 'card' || stepKey === 'muted' || stepKey === 'navigation';
+        const isBadge = stepKey === 'badge';
+
+        if (isBtn) {
+            // Walk up to the nearest button/link/role=button
+            let cur = el;
+            while (cur && cur !== document.body) {
+                const tag = cur.tagName?.toLowerCase();
+                if (tag === 'button' || cur.getAttribute('role') === 'button' ||
+                    (tag === 'a' && cur.getAttribute('href'))) return cur;
+                cur = cur.parentElement;
+            }
+        }
+
+        if (isInput) {
+            // Walk up to the nearest form control or its wrapper
+            let cur = el;
+            while (cur && cur !== document.body) {
+                const tag = cur.tagName?.toLowerCase();
+                if (tag === 'input' || tag === 'select' || tag === 'textarea') return cur;
+                // Stop at a wrapper that has a border (likely the styled input container)
+                const s = window.getComputedStyle(cur);
+                if (s.borderTopWidth && s.borderTopWidth !== '0px' && cur !== el) return cur;
+                cur = cur.parentElement;
+            }
+        }
+
+        if (isSurface || isBadge) {
+            // Walk up to the nearest element with a non-transparent background
+            let cur = el;
+            while (cur && cur !== document.body) {
+                const bg = window.getComputedStyle(cur).backgroundColor;
+                if (!_dsIsTransparent(bg)) return cur;
+                cur = cur.parentElement;
+            }
+        }
+
+        return el;
+    }
+
+    function startGuidedStep(stepDef, stepIndex) {
+        createOverlay();
+        document.addEventListener('mousemove', handleMouseMove);
+
+        _dsGuidedClickHandler = function(e) {
+            const raw = e.target;
+            if (raw.closest('#plukrr-ds-builder-panel')) return;
+            e.preventDefault();
+            e.stopPropagation();
+
+            _dsRemoveGuidedClickHandler();
+            if (overlay) overlay.style.display = 'none';
+
+            // Resolve to the correct semantic element for this step type.
+            // Users often click text/icon children — walk up to the interactive container.
+            const el = _dsResolveElement(raw, stepDef.stepKey);
+            const styles = extractGuidedStyles(el, stepDef);
+            chrome.runtime.sendMessage({ type: 'DS_STEP_COMPLETED', stepKey: stepDef.stepKey, styles, stepIndex });
+        };
+        document.addEventListener('click', _dsGuidedClickHandler, true);
+    }
+
+    function autoCaptureBodyStep(stepDef, stepIndex) {
+        const bodyS = window.getComputedStyle(document.body);
+        const htmlS = window.getComputedStyle(document.documentElement);
+        const bg = !_dsIsTransparent(bodyS.backgroundColor) ? bodyS.backgroundColor
+                 : (!_dsIsTransparent(htmlS.backgroundColor) ? htmlS.backgroundColor : null);
+        const fg = !_dsIsTransparent(bodyS.color) ? bodyS.color : null;
+        const styles = {
+            background: _dsToHex(bg) || null,
+            foreground: _dsToHex(fg) || null,
+        };
+        _dsBuilderCompletedSteps.push(stepDef.label);
+        chrome.runtime.sendMessage({ type: 'DS_STEP_COMPLETED', stepKey: stepDef.stepKey, styles, stepIndex });
+    }
+
+    // ============================================
     // MESSAGE LISTENER
     // ============================================
 
@@ -4263,6 +4708,2609 @@
             return true;
         }
 
+        if (request.action === 'CANCEL_SELECTION') {
+            cancelSelection();
+            sendResponse({ status: 'cancelled' });
+            return true;
+        }
+
+        if (request.action === 'START_DS_BUILDER') {
+            const stepDef = DS_BUILDER_STEP_DEFINITIONS[request.stepIndex];
+            if (!stepDef) { sendResponse({ status: 'done' }); return true; }
+            const startPaused = !!request.paused;
+            if (request.stepIndex === 0 || request.fresh) {
+                createDsBuilderPanel(stepDef, request.stepIndex, startPaused);
+            } else {
+                updateDsBuilderPanel(stepDef, request.stepIndex, startPaused);
+            }
+            if (!startPaused) {
+                if (stepDef.auto) autoCaptureBodyStep(stepDef, request.stepIndex);
+                else startGuidedStep(stepDef, request.stepIndex);
+            }
+            sendResponse({ status: 'started' });
+            return true;
+        }
+
+        if (request.action === 'CANCEL_DS_BUILDER') {
+            removeDsBuilderPanel();
+            cancelSelection();
+            sendResponse({ status: 'cancelled' });
+            return true;
+        }
+
+        if (request.action === 'GET_SCROLL_Y') {
+            sendResponse({ scrollY: Math.round(window.scrollY) });
+            return;
+        }
+
+        if (request.action === 'AUTO_SCAN_PAGE') {
+            performQuickScan()
+                .then(data  => sendResponse({ status: 'ok', data }))
+                .catch(e    => sendResponse({ status: 'error', message: e.message }));
+            return true;
+        }
+
         return true;
     });
+
+    // ============================================
+    // QUICK PAGE SCAN (for sidebar overview)
+    // ============================================
+
+    async function performQuickScan() {
+        // ─── HELPERS ───────────────────────────────────────
+        function cleanFamily(ff) {
+            return (ff || '').split(',')[0].trim().replace(/["']/g, '') || 'System UI';
+        }
+        function toHex(rgb) {
+            const m = (rgb || '').match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+            if (!m) return null;
+            return '#' + [m[1], m[2], m[3]].map(n => parseInt(n).toString(16).padStart(2, '0').toUpperCase()).join('');
+        }
+        function isTransparent(rgb) {
+            if (!rgb || rgb === 'transparent') return true;
+            const a = (rgb.match(/rgba\(\d+,\s*\d+,\s*\d+,\s*([\d.]+)\)/) || [])[1];
+            if (a !== undefined && parseFloat(a) < 0.05) return true;
+            return rgb === 'rgba(0, 0, 0, 0)';
+        }
+        function hexLuminance(hex) {
+            if (!hex || hex.length < 7) return 0.5;
+            const r = parseInt(hex.slice(1, 3), 16);
+            const g = parseInt(hex.slice(3, 5), 16);
+            const b = parseInt(hex.slice(5, 7), 16);
+            return (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+        }
+
+        // ─── TYPOGRAPHY ───────────────────────────────────────
+        const typography = [];
+
+        // Heading levels H1–H6
+        for (let i = 1; i <= 6; i++) {
+            const el = document.querySelector(`h${i}`);
+            if (!el) continue;
+            const s = getComputedStyle(el);
+            typography.push({
+                id: `h${i}`, label: `Heading ${i}`, category: 'heading',
+                preview: el.textContent?.trim().replace(/\s+/g, ' ').slice(0, 60) || `Heading ${i}`,
+                family: cleanFamily(s.fontFamily), weight: s.fontWeight, size: s.fontSize,
+                lineHeight: s.lineHeight, letterSpacing: s.letterSpacing, color: toHex(s.color) || s.color,
+                textTransform: s.textTransform !== 'none' ? s.textTransform : null,
+                fontStyle: s.fontStyle !== 'normal' ? s.fontStyle : null
+            });
+        }
+
+        // Body text — deduplicate by style signature
+        const bodyStyleMap = new Map();
+        for (const el of Array.from(document.querySelectorAll('p, li, td')).slice(0, 40)) {
+            const s = getComputedStyle(el);
+            const key = `${s.fontSize}_${s.fontWeight}_${cleanFamily(s.fontFamily)}`;
+            if (!bodyStyleMap.has(key)) {
+                bodyStyleMap.set(key, {
+                    family: cleanFamily(s.fontFamily), weight: s.fontWeight, size: s.fontSize,
+                    lineHeight: s.lineHeight, letterSpacing: s.letterSpacing,
+                    color: toHex(s.color) || s.color,
+                    textTransform: s.textTransform !== 'none' ? s.textTransform : null,
+                    preview: el.textContent?.trim().replace(/\s+/g, ' ').slice(0, 80) || '',
+                    count: 1
+                });
+            } else { bodyStyleMap.get(key).count++; }
+        }
+        const bodySorted = [...bodyStyleMap.values()].sort((a, b) => b.count - a.count).slice(0, 3);
+        if (bodySorted.length === 0) {
+            const s = getComputedStyle(document.body);
+            bodySorted.push({ family: cleanFamily(s.fontFamily), weight: s.fontWeight, size: s.fontSize, lineHeight: s.lineHeight, letterSpacing: s.letterSpacing, color: toHex(s.color) || s.color, preview: '' });
+        }
+        const bodyVariantLabels = ['Body', 'Body Small', 'Body Large'];
+        bodySorted.forEach((item, i) => typography.push({ id: `body_${i}`, label: bodyVariantLabels[i] || `Body Variant ${i + 1}`, category: 'body', ...item }));
+
+        // Labels & captions
+        const labelEl = document.querySelector('label, figcaption, small, caption, [class*="caption"], [class*="label"]');
+        if (labelEl) {
+            const s = getComputedStyle(labelEl);
+            typography.push({ id: 'label', label: 'Label / Caption', category: 'label', preview: labelEl.textContent?.trim().slice(0, 40) || '', family: cleanFamily(s.fontFamily), weight: s.fontWeight, size: s.fontSize, lineHeight: s.lineHeight, letterSpacing: s.letterSpacing, color: toHex(s.color) || s.color, textTransform: s.textTransform !== 'none' ? s.textTransform : null });
+        }
+
+        // Monospace / code
+        const monoEl = document.querySelector('code, pre, kbd');
+        if (monoEl) {
+            const s = getComputedStyle(monoEl);
+            typography.push({ id: 'mono', label: 'Code / Monospace', category: 'mono', preview: monoEl.textContent?.trim().slice(0, 40) || 'const x = "code";', family: cleanFamily(s.fontFamily), weight: s.fontWeight, size: s.fontSize, lineHeight: s.lineHeight, letterSpacing: s.letterSpacing, color: toHex(s.color) || s.color });
+        }
+
+        // Button / UI text
+        const uiBtnEl = document.querySelector('button, [role="button"], .btn, [class*="button"]');
+        if (uiBtnEl) {
+            const s = getComputedStyle(uiBtnEl);
+            const fam = cleanFamily(s.fontFamily);
+            if (!typography.some(t => t.family === fam && t.size === s.fontSize)) {
+                typography.push({ id: 'ui-text', label: 'Button / UI Text', category: 'ui', preview: uiBtnEl.textContent?.trim().slice(0, 30) || 'Button', family: fam, weight: s.fontWeight, size: s.fontSize, lineHeight: s.lineHeight, letterSpacing: s.letterSpacing, color: toHex(s.color) || s.color, textTransform: s.textTransform !== 'none' ? s.textTransform : null });
+            }
+        }
+
+        // Navigation link text
+        const navLinkEl = document.querySelector('nav a, header a, [role="navigation"] a');
+        if (navLinkEl) {
+            const s = getComputedStyle(navLinkEl);
+            const fam = cleanFamily(s.fontFamily);
+            if (!typography.some(t => t.family === fam && t.size === s.fontSize && t.weight === s.fontWeight)) {
+                typography.push({ id: 'nav-link', label: 'Nav Link', category: 'ui', preview: navLinkEl.textContent?.trim().slice(0, 30) || 'Home', family: fam, weight: s.fontWeight, size: s.fontSize, lineHeight: s.lineHeight, letterSpacing: s.letterSpacing, color: toHex(s.color) || s.color });
+            }
+        }
+
+        // ─── COLORS ───────────────────────────────────────
+        const bgMap = new Map(), textMap = new Map(), borderMap = new Map(), accentMap = new Map();
+
+        // Anchor body/html backgrounds with high weight so the canvas color wins
+        // over repeated white form elements or card backgrounds.
+        for (const root of [document.documentElement, document.body]) {
+            const bg = getComputedStyle(root).backgroundColor;
+            if (!isTransparent(bg)) {
+                const hex = toHex(bg);
+                if (hex) bgMap.set(hex, 60);
+            }
+            const col = getComputedStyle(root).color;
+            if (!isTransparent(col)) {
+                const hex = toHex(col);
+                if (hex) textMap.set(hex, 60);
+            }
+        }
+
+        let ci = 0;
+        for (const el of document.querySelectorAll('*')) {
+            if (++ci > 700) break;
+            const s = getComputedStyle(el);
+            const tag = el.tagName.toLowerCase();
+            const isInteractive = tag === 'button' || tag === 'a' || el.getAttribute('role') === 'button';
+            const bg = s.backgroundColor;
+            if (!isTransparent(bg)) {
+                const hex = toHex(bg);
+                if (hex) { isInteractive ? accentMap.set(hex, (accentMap.get(hex) || 0) + 1) : bgMap.set(hex, (bgMap.get(hex) || 0) + 1); }
+            }
+            const col = s.color;
+            if (!isTransparent(col)) { const hex = toHex(col); if (hex) textMap.set(hex, (textMap.get(hex) || 0) + 1); }
+            if (s.borderTopWidth && s.borderTopWidth !== '0px') {
+                const hex = toHex(s.borderTopColor);
+                if (hex && !isTransparent(s.borderTopColor)) borderMap.set(hex, (borderMap.get(hex) || 0) + 1);
+            }
+        }
+        const topN = (map, n) => [...map.entries()].sort((a, b) => b[1] - a[1]).slice(0, n).map(([hex, count]) => ({ hex, count }));
+        const colors = { backgrounds: topN(bgMap, 20), text: topN(textMap, 12), borders: topN(borderMap, 8), interactive: topN(accentMap, 12) };
+
+        // ─── COMPONENTS (Two-phase: Stylesheet Discovery + Visual Fallback) ──────
+
+        // ── Phase 1: Stylesheet scan ──────────────────────────────────────────
+        // Read all accessible CSS rules to discover component class names and
+        // their interactive states. Works regardless of class naming conventions.
+        // Catches components not currently rendered (modals, drawers, etc.).
+        const CSS_TYPE_RULES = [
+            { type: 'button',     re: /\b(btn|button)\b/i },
+            { type: 'input',      re: /\b(input|field|form-control|textfield|search-bar)\b/i },
+            { type: 'card',       re: /\b(card|panel|tile|surface|widget)\b/i },
+            { type: 'badge',      re: /\b(badge|tag|chip|pill|status)\b/i },
+            { type: 'modal',      re: /\b(modal|dialog|drawer|sheet|lightbox)\b/i },
+            { type: 'alert',      re: /\b(alert|toast|notification|banner|callout|snackbar)\b/i },
+            { type: 'navigation', re: /\b(nav(?:bar)?|navigation|menu(?:bar)?|breadcrumb)\b/i },
+            { type: 'tooltip',    re: /\b(tooltip|popover|flyout|hint)\b/i },
+            { type: 'tab',        re: /\b(tab(?:s|-list|-panel|-item|-bar)?)\b/i },
+            { type: 'toggle',     re: /\b(toggle|switch)\b/i },
+            { type: 'avatar',     re: /\b(avatar|profile-?pic|user-?pic|initials)\b/i },
+            { type: 'progress',   re: /\b(progress(?:bar)?|loader|spinner)\b/i },
+        ];
+
+        // cssClassInfo: className → { type, states: Set<'hover'|'focus'|'disabled'|'active'> }
+        const cssClassInfo = new Map();
+
+        (function walkStylesheets(rules) {
+            if (!rules) return;
+            for (const rule of rules) {
+                try {
+                    if (rule.type === CSSRule.STYLE_RULE) {
+                        for (const rawSel of (rule.selectorText || '').split(',')) {
+                            const sel = rawSel.trim();
+                            // extract class names from this selector segment
+                            for (const cm of (sel.match(/\.(-?[a-zA-Z_][a-zA-Z0-9_-]*)/g) || [])) {
+                                const cn = cm.slice(1);
+                                for (const { type, re } of CSS_TYPE_RULES) {
+                                    if (!re.test(cn)) continue;
+                                    if (!cssClassInfo.has(cn)) cssClassInfo.set(cn, { type, states: new Set() });
+                                    const entry = cssClassInfo.get(cn);
+                                    if (/:hover/.test(sel)) entry.states.add('hover');
+                                    if (/:focus/.test(sel)) entry.states.add('focus');
+                                    if (/:disabled|\\[disabled\\]/.test(sel)) entry.states.add('disabled');
+                                    if (/:active/.test(sel)) entry.states.add('active');
+                                    break;
+                                }
+                            }
+                        }
+                    } else if (rule.cssRules) {
+                        walkStylesheets(rule.cssRules);
+                    }
+                } catch (_) {}
+            }
+        }((() => {
+            const all = [];
+            for (const sheet of document.styleSheets) {
+                try { for (const r of sheet.cssRules) all.push(r); } catch (_) {}
+            }
+            return all;
+        })()));
+
+        // Helper: get states for an element based on its classes
+        function statesForEl(el) {
+            const states = new Set();
+            for (const cls of el.classList) {
+                const info = cssClassInfo.get(cls);
+                if (info) info.states.forEach(s => states.add(s));
+            }
+            return states;
+        }
+
+        // Helper: build state properties object
+        function stateProps(states) {
+            const p = {};
+            if (states.has('hover')) p['Hover State'] = 'Defined in CSS';
+            if (states.has('focus')) p['Focus State'] = 'Defined in CSS';
+            if (states.has('disabled')) p['Disabled State'] = 'Defined in CSS';
+            if (states.has('active')) p['Active State'] = 'Defined in CSS';
+            return p;
+        }
+
+        // Helper: build an extended selector combining semantic query + CSS-discovered class names
+        function extendedSelector(semanticSel, type) {
+            const classes = [...cssClassInfo.entries()]
+                .filter(([, v]) => v.type === type)
+                .map(([cn]) => { try { return `.${CSS.escape(cn)}`; } catch(_) { return null; } })
+                .filter(Boolean);
+            return [semanticSel, ...classes].filter(Boolean).join(', ');
+        }
+
+        // Helper: is element visible and not part of extension UI
+        function isEligible(el) {
+            if (el.closest('#plukrr-sidebar, #plukrr-picker, #dc-overlay, .le-action-bar')) return false;
+            const r = el.getBoundingClientRect();
+            if (r.width === 0 || r.height === 0) return false;
+            const s = getComputedStyle(el);
+            return s.display !== 'none' && s.visibility !== 'hidden' && parseFloat(s.opacity) >= 0.1;
+        }
+
+        // ── Additional helpers ────────────────────────────────────────────────
+
+        // Safe background: only returns a hex value when the element truly has a fill.
+        // Fixes the #000000 bug — toHex('rgba(0,0,0,0)') = '#000000' but it's transparent.
+        function safeBg(s) {
+            if (isTransparent(s.backgroundColor)) return null;
+            return toHex(s.backgroundColor) || null;
+        }
+
+        // Bucket a hex color to the nearest step so similar shades share a fingerprint.
+        function colorBucket(hex) {
+            if (!hex || hex.length < 7) return 'x';
+            const r = parseInt(hex.slice(1,3),16), g = parseInt(hex.slice(3,5),16), b = parseInt(hex.slice(5,7),16);
+            return `${Math.round(r/48)}_${Math.round(g/48)}_${Math.round(b/48)}`;
+        }
+
+        // Structural fingerprint: tag + sorted direct-child tags + visual buckets.
+        // Groups elements that look and feel the same regardless of class names.
+        function elFingerprint(el, s, rect) {
+            const tag = el.tagName.toLowerCase();
+            const bg = safeBg(s);
+            const hasBorder = s.borderTopWidth !== '0px';
+            const hasShadow = s.boxShadow !== 'none';
+            const r = parseFloat(s.borderRadius) || 0;
+            const isPtr = s.cursor === 'pointer';
+            // Skip elements with no visual identity (plain wrappers)
+            if (!bg && !hasBorder && !hasShadow && !isPtr &&
+                !['button','a','input','li','img','svg'].includes(tag)) return null;
+            if (rect.width < 16 || rect.height < 8) return null;
+            const bgB = bg ? colorBucket(bg) : 'none';
+            const rB = r === 0 ? 'sq' : r >= 100 ? 'full' : r >= 16 ? 'lg' : r >= 6 ? 'md' : 'sm';
+            // Sorted child tags make the fingerprint order-independent
+            const childSig = Array.from(el.children).slice(0, 6)
+                .map(c => c.tagName.toLowerCase()).sort().join('_');
+            const flags = (hasBorder?'b':'') + (hasShadow?'s':'') + (isPtr?'p':'');
+            return `${tag}:${childSig}:${bgB}:${rB}:${flags}`;
+        }
+
+        // Classify a representative element into a component type using visual properties.
+        function classifyElType(el, s, rect) {
+            const tag = el.tagName.toLowerCase();
+            const bg = safeBg(s);
+            const isPtr = s.cursor === 'pointer';
+            const { height: h, width: w } = rect;
+            const text = el.textContent?.trim() || '';
+            const role = el.getAttribute('role') || '';
+            const childCount = el.children.length;
+            const r = parseFloat(s.borderRadius) || 0;
+            const vw = window.innerWidth || document.documentElement.clientWidth;
+            const hasBorder = s.borderTopWidth !== '0px';
+            const hasShadow = s.boxShadow !== 'none';
+            const hasDashedBorder = s.borderTopStyle === 'dashed' || s.borderTopStyle === 'dotted';
+
+            // "Own visual identity" — element has its own visual signal, not just inherited cursor.
+            // A div inside a clickable card inherits cursor:pointer from the card but has no bg/border.
+            // Without this guard, every text div inside a card becomes a false-positive button/list-item.
+            const hasOwnVisual = !!(bg || hasBorder || hasShadow || hasDashedBorder);
+
+            // Semantic tags are definitive — no visual check needed
+            if (tag === 'button' || role === 'button') return 'button';
+            if (['input','textarea','select'].includes(tag)) return 'input';
+
+            // Nav item: being inside a nav container is strong enough on its own
+            if (isPtr && text.length > 0 && h >= 24 && h <= 80 &&
+                el.closest('nav,[role="navigation"],header,[class*="sidebar"],[class*="sidenav"],[class*="menu"]')) return 'nav-item';
+
+            // Button: cursor+size heuristic MUST be backed by own visual identity or semantic anchor.
+            // Prevents text nodes inside clickable cards from being classified as buttons.
+            if (isPtr && h >= 22 && h <= 64 && w >= 36 && text.length > 0 && text.length <= 60 &&
+                (hasOwnVisual || tag === 'a')) return 'button';
+
+            // Anchor with fill = button (tag check is own identity)
+            if (tag === 'a' && bg && h >= 22 && h <= 64) return 'button';
+
+            // Badge: already requires bg so false positives are already low
+            if (h <= 32 && bg && text.length > 0 && text.length <= 30 && childCount <= 2 && r >= 3) return 'badge';
+
+            // Card: narrower than 72% viewport + own visual identity
+            if (w / vw < 0.72 && childCount >= 1 && h >= 48 && w >= 48 && hasOwnVisual) return 'card';
+
+            // List item: li is semantic (no own-visual needed); div rows require own visual identity
+            if (tag === 'li') return 'list-item';
+            if (childCount >= 2 && h >= 32 && h <= 120 && isPtr && hasOwnVisual) return 'list-item';
+
+            return null;
+        }
+
+        // Build button properties object from a computed style + rect
+        function btnProps(s, rect, bg, states) {
+            const hasBorder = s.borderTopWidth !== '0px';
+            const hasShadow = s.boxShadow !== 'none';
+            return {
+                'Background': bg || 'transparent',
+                'Text Color': toHex(s.color) || s.color,
+                'Font Family': cleanFamily(s.fontFamily), 'Font Size': s.fontSize, 'Font Weight': s.fontWeight,
+                'Letter Spacing': s.letterSpacing !== 'normal' ? s.letterSpacing : '—',
+                'Text Transform': s.textTransform !== 'none' ? s.textTransform : '—',
+                'Border Radius': s.borderRadius,
+                'Border': hasBorder ? `${s.borderTopWidth} ${s.borderTopStyle} ${toHex(s.borderTopColor) || s.borderTopColor}` : '—',
+                'Padding': `${s.paddingTop} ${s.paddingRight} ${s.paddingBottom} ${s.paddingLeft}`,
+                'Height': rect.height > 0 ? `${Math.round(rect.height)}px` : '—',
+                'Min Width': s.minWidth !== 'auto' && s.minWidth !== '0px' ? s.minWidth : '—',
+                'Box Shadow': hasShadow ? s.boxShadow : '—',
+                'Transition': s.transition !== 'none' && s.transition !== 'all 0s ease 0s' ? s.transition : '—',
+                'Cursor': s.cursor, ...stateProps(states)
+            };
+        }
+
+        function btnLabel(bg, hasBorder) {
+            if (!bg) return hasBorder ? 'Outline Button' : 'Ghost Button';
+            const lum = hexLuminance(bg);
+            return lum < 0.35 ? 'Primary Button' : lum > 0.85 ? 'Light Button' : 'Secondary Button';
+        }
+
+        // Snapshot element position relative to viewport + document scroll at scan time.
+        // Used by the screenshot pipeline to crop the right region of a tab capture.
+        function makeRect(r) {
+            return { top: Math.round(r.top), left: Math.round(r.left), width: Math.round(r.width), height: Math.round(r.height), scrollY: Math.round(window.scrollY) };
+        }
+
+        function uniqueLabel(base, existing) {
+            let label = base, n = 1;
+            while (existing.some(c => c.label === label)) label = `${base} ${++n}`;
+            return label;
+        }
+
+        // Extract typed sub-components from inside a composite component container.
+        // Pass 1: classifyElType on every descendant — surfaces buttons, inputs, badges, etc.
+        // Pass 2: direct children that didn't classify — headings, images, media areas.
+        // Rule: backgrounds always via safeBg(). Never toHex(s.backgroundColor) directly.
+        function extractAnatomy(containerEl) {
+            const subComponents = [];
+            const usedEls = new Set();
+            const sigMap = new Map(); // vSig → subComponent entry for dedup
+
+            // Collect visible descendants (up to 150)
+            const descendants = [];
+            for (const el of containerEl.querySelectorAll('*')) {
+                if (descendants.length >= 150) break;
+                if (el.closest('#plukrr-sidebar,#plukrr-picker,#dc-overlay,.le-action-bar')) continue;
+                const rect = el.getBoundingClientRect();
+                if (!rect.width || !rect.height) continue;
+                const s = getComputedStyle(el);
+                if (s.display === 'none' || s.visibility === 'hidden' || parseFloat(s.opacity) < 0.1) continue;
+                descendants.push({ el, s, rect });
+            }
+
+            // Pass 1: typed sub-components via classifyElType
+            for (const { el, s, rect } of descendants) {
+                if (usedEls.has(el) || el === containerEl) continue;
+                const type = classifyElType(el, s, rect);
+                // skip null and nested cards (don't recurse into cards-within-cards)
+                if (!type || type === 'card') continue;
+
+                const bg = safeBg(s); // ONLY safe path for backgrounds
+                const hasBorder = s.borderTopWidth !== '0px';
+                const hasShadow = s.boxShadow !== 'none';
+
+                // Dedup visual signature per type
+                let vSig;
+                if      (type === 'button')    vSig = `btn:${bg}:${s.borderRadius}:${s.fontSize}:${s.fontWeight}:${hasBorder}`;
+                else if (type === 'input')     vSig = `input:${bg}:${s.borderRadius}:${toHex(s.borderTopColor)}:${s.fontSize}`;
+                else if (type === 'badge')     vSig = `badge:${bg}:${s.borderRadius}:${s.fontSize}`;
+                else if (type === 'nav-item')  vSig = `nav-item:${bg}:${s.fontSize}:${s.fontWeight}`;
+                else if (type === 'list-item') vSig = `list-item:${Math.round(rect.height / 8)}:${bg}`;
+                else                           vSig = `${type}:${bg}:${s.borderRadius}`;
+
+                if (sigMap.has(vSig)) {
+                    sigMap.get(vSig).count++;
+                    usedEls.add(el);
+                    continue;
+                }
+
+                // Build props — only include keys with real values (null = omit)
+                let props = {};
+                if (type === 'button') {
+                    props = {
+                        'Background':    bg,                                                               // null if transparent — safeBg
+                        'Text Color':    toHex(s.color) || null,                                          // text always opaque
+                        'Font Size':     s.fontSize,
+                        'Font Weight':   s.fontWeight,
+                        'Border Radius': s.borderRadius !== '0px' ? s.borderRadius : null,
+                        'Border':        hasBorder ? `${s.borderTopWidth} ${s.borderTopStyle} ${toHex(s.borderTopColor) || s.borderTopColor}` : null,
+                        'Padding':       `${s.paddingTop} ${s.paddingRight} ${s.paddingBottom} ${s.paddingLeft}`,
+                        'Height':        `${Math.round(rect.height)}px`,
+                        'Box Shadow':    hasShadow ? s.boxShadow : null,
+                        '_label':        el.textContent?.trim().slice(0, 30) || el.value || null
+                    };
+                } else if (type === 'input') {
+                    const inputEl = el.tagName.toLowerCase() === 'input' ? el : el.querySelector('input,textarea,select');
+                    props = {
+                        'Background':    bg,                                                               // null if transparent
+                        'Border':        hasBorder ? `${s.borderTopWidth} ${s.borderTopStyle} ${toHex(s.borderTopColor) || s.borderTopColor}` : null,
+                        'Border Radius': s.borderRadius !== '0px' ? s.borderRadius : null,
+                        'Font Size':     s.fontSize,
+                        'Text Color':    toHex(s.color) || null,
+                        'Padding':       `${s.paddingTop} ${s.paddingRight} ${s.paddingBottom} ${s.paddingLeft}`,
+                        'Placeholder':   inputEl?.getAttribute('placeholder') || null,
+                        'Type':          inputEl?.getAttribute('type') || null
+                    };
+                } else if (type === 'badge') {
+                    props = {
+                        'Background':    bg,
+                        'Text Color':    toHex(s.color) || null,
+                        'Font Size':     s.fontSize,
+                        'Border Radius': s.borderRadius !== '0px' ? s.borderRadius : null,
+                        'Padding':       `${s.paddingTop} ${s.paddingRight} ${s.paddingBottom} ${s.paddingLeft}`,
+                        '_label':        el.textContent?.trim().slice(0, 20) || null
+                    };
+                } else if (type === 'nav-item') {
+                    props = {
+                        'Text Color':    toHex(s.color) || null,
+                        'Background':    bg,
+                        'Font Size':     s.fontSize,
+                        'Font Weight':   s.fontWeight,
+                        'Border Radius': s.borderRadius !== '0px' ? s.borderRadius : null,
+                        'Padding':       `${s.paddingTop} ${s.paddingRight} ${s.paddingBottom} ${s.paddingLeft}`,
+                        '_label':        el.textContent?.trim().slice(0, 20) || null
+                    };
+                } else if (type === 'list-item') {
+                    props = {
+                        'Background':    bg,
+                        'Height':        `${Math.round(rect.height)}px`,
+                        'Border Radius': s.borderRadius !== '0px' ? s.borderRadius : null,
+                        'Border Bottom': s.borderBottomWidth !== '0px' ? `${s.borderBottomWidth} ${s.borderBottomStyle} ${toHex(s.borderBottomColor) || s.borderBottomColor}` : null,
+                        'Padding':       `${s.paddingTop} ${s.paddingRight} ${s.paddingBottom} ${s.paddingLeft}`,
+                        'Gap':           s.gap !== 'normal' && s.gap !== '0px' ? s.gap : null,
+                        'Display':       s.display
+                    };
+                }
+
+                const entry = { type, count: 1, props };
+                sigMap.set(vSig, entry);
+                subComponents.push(entry);
+                usedEls.add(el);
+            }
+
+            // Pass 2: notable direct children that didn't get typed above
+            for (const child of Array.from(containerEl.children)) {
+                if (usedEls.has(child)) continue;
+                const rect = child.getBoundingClientRect();
+                if (!rect.width || !rect.height) continue;
+                const s = getComputedStyle(child);
+                if (s.display === 'none' || s.visibility === 'hidden') continue;
+
+                const tag = child.tagName.toLowerCase();
+                const text = child.textContent?.trim().slice(0, 60) || '';
+                const fw = parseInt(s.fontWeight) || 400;
+                const fs = parseFloat(s.fontSize) || 14;
+
+                if (['h1','h2','h3','h4','h5','h6'].includes(tag) || (fw >= 600 && fs >= 15 && text && child.children.length === 0)) {
+                    subComponents.push({ type: 'heading', count: 1, props: {
+                        'Font Size':   s.fontSize,
+                        'Font Weight': s.fontWeight,
+                        'Color':       toHex(s.color) || null,   // text color — toHex fine for opaque text
+                        '_label':      text
+                    }});
+                    usedEls.add(child);
+                } else if (tag === 'svg' || tag === 'canvas' || tag === 'img' || child.querySelector('svg,canvas')) {
+                    subComponents.push({ type: 'media', count: 1, props: {
+                        'Width':  `${Math.round(rect.width)}px`,
+                        'Height': `${Math.round(rect.height)}px`
+                    }});
+                    usedEls.add(child);
+                }
+            }
+
+            return subComponents;
+        }
+
+        // ── Phase 2: Single DOM traversal — collect + fingerprint ─────────────
+        // One pass over 2500 elements. Collects every visible element with its
+        // computed style, groups them by structural fingerprint.
+        // Repetition (2+ identical fingerprints) = component found in the wild.
+        const fpGroups = new Map();   // fingerprint → [{el, s, rect}]
+        const allVisible  = [];       // all eligible {el, s, rect} for supplemental pass
+        let domCount = 0;
+
+        for (const el of document.querySelectorAll('*')) {
+            if (++domCount > 2500) break;
+            if (el.closest('#plukrr-sidebar,#plukrr-picker,#dc-overlay,.le-action-bar')) continue;
+            const rect = el.getBoundingClientRect();
+            if (rect.width === 0 || rect.height === 0) continue;
+            const s = getComputedStyle(el);
+            if (s.display === 'none' || s.visibility === 'hidden' || parseFloat(s.opacity) < 0.1) continue;
+
+            allVisible.push({ el, s, rect });
+
+            const fp = elFingerprint(el, s, rect);
+            if (!fp) continue;
+            if (!fpGroups.has(fp)) fpGroups.set(fp, []);
+            fpGroups.get(fp).push({ el, s, rect });
+        }
+
+        const coveredElements = new Set();
+        const components = [];
+        const usedVisualSigs = new Map(); // visual sig → component (cross-group dedup)
+
+        // ── Phase 3: Extract repeated-pattern components ──────────────────────
+        // Groups with 2+ members are real components. Sort by count descending
+        // so high-frequency components (product cards × 24) appear first.
+        const repeatedGroups = [...fpGroups.values()]
+            .filter(g => g.length >= 2)
+            .sort((a, b) => b.length - a.length);
+
+        for (const group of repeatedGroups) {
+            const { el: rep, s, rect } = group[0];
+            const type = classifyElType(rep, s, rect);
+            if (!type || type === 'input') continue;
+
+            const bg = safeBg(s);
+            const hasBorder = s.borderTopWidth !== '0px';
+            const hasShadow  = s.boxShadow !== 'none';
+            const count = group.length;
+
+            // Visual dedup key — prevents two fingerprint groups that are visually
+            // identical (e.g. same button in two DOM locations) from appearing twice.
+            let vSig;
+            if      (type === 'button')    vSig = `btn:${bg}:${s.borderRadius}:${s.fontSize}:${s.fontWeight}:${hasBorder}`;
+            else if (type === 'card')      vSig = `card:${bg}:${s.borderRadius}:${s.boxShadow?.slice(0,24)}`;
+            else if (type === 'badge')     vSig = `badge:${bg}:${s.borderRadius}:${s.fontSize}`;
+            else if (type === 'nav-item')  vSig = `nav-item:${bg}:${s.borderRadius}:${s.fontSize}:${s.fontWeight}`;
+            else if (type === 'list-item') vSig = `list-item:${bg}:${s.borderRadius}:${Math.round(parseFloat(s.height || 0)/8)}`;
+            else                           vSig = `${type}:${bg}:${s.borderRadius}`;
+
+            if (usedVisualSigs.has(vSig)) {
+                usedVisualSigs.get(vSig).count += count;
+                group.forEach(({ el }) => coveredElements.add(el));
+                continue;
+            }
+
+            const states = statesForEl(rep);
+            let item = null;
+
+            if (type === 'button') {
+                const base = btnLabel(bg, hasBorder);
+                item = {
+                    id: `btn_${components.length}`,
+                    label: uniqueLabel(base, components),
+                    category: 'button', count,
+                    preview: { bg: bg || 'transparent', textColor: toHex(s.color), label: rep.textContent?.trim().slice(0,20) || rep.value || 'Button' },
+                    properties: btnProps(s, rect, bg, states)
+                };
+            } else if (type === 'card') {
+                item = {
+                    id: `card_${components.length}`,
+                    label: uniqueLabel('Card', components),
+                    category: 'card', count,
+                    preview: { bg: bg || '#fff', borderRadius: s.borderRadius, hasShadow },
+                    properties: {
+                        'Background': bg || 'transparent', 'Border Radius': s.borderRadius,
+                        'Border': hasBorder ? `${s.borderTopWidth} ${s.borderTopStyle} ${toHex(s.borderTopColor)||s.borderTopColor}` : '—',
+                        'Box Shadow': hasShadow ? s.boxShadow : '—',
+                        'Padding': `${s.paddingTop} ${s.paddingRight} ${s.paddingBottom} ${s.paddingLeft}`,
+                        'Width': `${Math.round(rect.width)}px`,
+                        'Max Width': s.maxWidth !== 'none' ? s.maxWidth : '—',
+                        'Overflow': s.overflow !== 'visible' ? s.overflow : '—',
+                        'Gap': s.gap !== 'normal' && s.gap !== '0px' ? s.gap : '—'
+                    }
+                };
+            } else if (type === 'badge') {
+                item = {
+                    id: `badge_${components.length}`,
+                    label: uniqueLabel('Badge', components),
+                    category: 'badge', count,
+                    preview: { bg, textColor: toHex(s.color) || s.color, text: rep.textContent?.trim().slice(0,15) || 'Badge' },
+                    properties: {
+                        'Background': bg, 'Text Color': toHex(s.color) || s.color,
+                        'Font Size': s.fontSize, 'Font Weight': s.fontWeight,
+                        'Border Radius': s.borderRadius,
+                        'Padding': `${s.paddingTop} ${s.paddingRight} ${s.paddingBottom} ${s.paddingLeft}`,
+                        'Border': hasBorder ? `${s.borderTopWidth} ${s.borderTopStyle} ${toHex(s.borderTopColor)||s.borderTopColor}` : '—',
+                        'Text Transform': s.textTransform !== 'none' ? s.textTransform : '—',
+                        'Letter Spacing': s.letterSpacing !== 'normal' ? s.letterSpacing : '—'
+                    }
+                };
+            } else if (type === 'nav-item') {
+                item = {
+                    id: `nav_item_${components.length}`,
+                    label: uniqueLabel('Nav Item', components),
+                    category: 'nav-item', count,
+                    preview: {
+                        bg, textColor: toHex(s.color) || s.color,
+                        label: rep.textContent?.trim().slice(0, 20) || 'Nav Item',
+                        active: safeBg(s) !== null
+                    },
+                    properties: {
+                        'Text Color': toHex(s.color) || s.color,
+                        'Background': bg || '—',
+                        'Font Size': s.fontSize, 'Font Weight': s.fontWeight,
+                        'Border Radius': s.borderRadius !== '0px' ? s.borderRadius : '—',
+                        'Padding': `${s.paddingTop} ${s.paddingRight} ${s.paddingBottom} ${s.paddingLeft}`,
+                        'Height': `${Math.round(rect.height)}px`,
+                        'Active State Background': safeBg(s) || '—'
+                    }
+                };
+            } else if (type === 'list-item') {
+                item = {
+                    id: `list_item_${components.length}`,
+                    label: uniqueLabel('List Item', components),
+                    category: 'list-item', count,
+                    preview: {
+                        bg: bg || 'transparent',
+                        height: `${Math.round(rect.height)}px`,
+                        label: rep.textContent?.trim().slice(0, 24) || 'Row'
+                    },
+                    properties: {
+                        'Background': bg || 'transparent',
+                        'Height': `${Math.round(rect.height)}px`,
+                        'Width': `${Math.round(rect.width)}px`,
+                        'Border Radius': s.borderRadius !== '0px' ? s.borderRadius : '—',
+                        'Border Bottom': s.borderBottomWidth !== '0px' ? `${s.borderBottomWidth} ${s.borderBottomStyle} ${toHex(s.borderBottomColor)||s.borderBottomColor}` : '—',
+                        'Padding': `${s.paddingTop} ${s.paddingRight} ${s.paddingBottom} ${s.paddingLeft}`,
+                        'Gap': s.gap !== 'normal' && s.gap !== '0px' ? s.gap : '—',
+                        'Display': s.display
+                    }
+                };
+            }
+
+            if (item) {
+                if (type === 'card' || type === 'list-item') item.anatomy = extractAnatomy(rep);
+                item.scanRect = makeRect(rect);
+                components.push(item);
+                usedVisualSigs.set(vSig, item);
+                group.forEach(({ el }) => coveredElements.add(el));
+            }
+        }
+
+        // ── Phase 4: Supplemental pass for single-occurrence interactive elements ──
+        // Fingerprinting only catches repeats. A one-off hero CTA or unique button
+        // is still important — catch it here via visual classification.
+        {
+            const btnSigMap = new Map();
+            for (const { el, s, rect } of allVisible) {
+                if (coveredElements.has(el)) continue;
+                if (classifyElType(el, s, rect) !== 'button') continue;
+                const bg = safeBg(s);
+                const hasBorder = s.borderTopWidth !== '0px';
+                const vSig = `btn:${bg}:${s.borderRadius}:${s.fontSize}:${s.fontWeight}:${hasBorder}`;
+                if (usedVisualSigs.has(vSig)) { usedVisualSigs.get(vSig).count++; coveredElements.add(el); continue; }
+                if (btnSigMap.has(vSig)) { btnSigMap.get(vSig).count++; coveredElements.add(el); continue; }
+                const base = btnLabel(bg, hasBorder);
+                const states = statesForEl(el);
+                const item = {
+                    id: `btn_s_${btnSigMap.size}`,
+                    label: uniqueLabel(base, [...components, ...btnSigMap.values()]),
+                    category: 'button', count: 1,
+                    preview: { bg: bg || 'transparent', textColor: toHex(s.color), label: el.textContent?.trim().slice(0,20) || el.value || 'Button' },
+                    properties: btnProps(s, rect, bg, states),
+                    scanRect: makeRect(rect)
+                };
+                btnSigMap.set(vSig, item);
+                usedVisualSigs.set(vSig, item);
+                coveredElements.add(el);
+            }
+            components.push(...btnSigMap.values());
+        }
+
+        // ── Phase 4b: Single-occurrence cards and list-items ─────────────────
+        // Fingerprinting misses elements that appear only once on the page.
+        // This pass catches them via direct visual classification.
+        {
+            const cardSigMap = new Map();
+            for (const { el, s, rect } of allVisible) {
+                if (coveredElements.has(el)) continue;
+                const type = classifyElType(el, s, rect);
+                if (type !== 'card' && type !== 'list-item') continue;
+                const bg = safeBg(s);
+                const hasBorder = s.borderTopWidth !== '0px';
+                const hasShadow = s.boxShadow !== 'none';
+                // Coarse visual sig — groups near-identical singletons together
+                const wBucket = Math.round(rect.width / 24);
+                const hBucket = Math.round(rect.height / 24);
+                const vSig = `${type}:${bg}:${s.borderRadius}:${wBucket}:${hBucket}`;
+                if (usedVisualSigs.has(vSig)) { usedVisualSigs.get(vSig).count++; coveredElements.add(el); continue; }
+                if (cardSigMap.has(vSig)) { cardSigMap.get(vSig).count++; coveredElements.add(el); continue; }
+                let item;
+                if (type === 'card') {
+                    item = {
+                        id: `card_s_${cardSigMap.size}`,
+                        label: uniqueLabel('Card', [...components, ...cardSigMap.values()]),
+                        category: 'card', count: 1,
+                        preview: { bg: bg || '#fff', borderRadius: s.borderRadius, hasShadow },
+                        properties: {
+                            'Background': bg || 'transparent', 'Border Radius': s.borderRadius,
+                            'Border': hasBorder ? `${s.borderTopWidth} ${s.borderTopStyle} ${toHex(s.borderTopColor)||s.borderTopColor}` : '—',
+                            'Box Shadow': hasShadow ? s.boxShadow : '—',
+                            'Padding': `${s.paddingTop} ${s.paddingRight} ${s.paddingBottom} ${s.paddingLeft}`,
+                            'Width': `${Math.round(rect.width)}px`,
+                            'Max Width': s.maxWidth !== 'none' ? s.maxWidth : '—',
+                            'Gap': s.gap !== 'normal' && s.gap !== '0px' ? s.gap : '—',
+                            'Overflow': s.overflow !== 'visible' ? s.overflow : '—'
+                        }
+                    };
+                    item.anatomy = extractAnatomy(el);
+                } else {
+                    item = {
+                        id: `list_item_s_${cardSigMap.size}`,
+                        label: uniqueLabel('List Item', [...components, ...cardSigMap.values()]),
+                        category: 'list-item', count: 1,
+                        preview: { bg: bg || 'transparent', height: `${Math.round(rect.height)}px` },
+                        properties: {
+                            'Background': bg || 'transparent',
+                            'Height': `${Math.round(rect.height)}px`,
+                            'Border Radius': s.borderRadius !== '0px' ? s.borderRadius : '—',
+                            'Border Bottom': s.borderBottomWidth !== '0px' ? `${s.borderBottomWidth} ${s.borderBottomStyle} ${toHex(s.borderBottomColor)||s.borderBottomColor}` : '—',
+                            'Padding': `${s.paddingTop} ${s.paddingRight} ${s.paddingBottom} ${s.paddingLeft}`,
+                            'Gap': s.gap !== 'normal' && s.gap !== '0px' ? s.gap : '—',
+                            'Display': s.display
+                        }
+                    };
+                    item.anatomy = extractAnatomy(el);
+                }
+                item.scanRect = makeRect(rect);
+                cardSigMap.set(vSig, item);
+                usedVisualSigs.set(vSig, item);
+                coveredElements.add(el);
+            }
+            components.push(...cardSigMap.values());
+        }
+
+        // ── Phase 5: Semantic extraction for reliable singleton types ─────────
+        // These don't benefit from fingerprinting (appear once, or need targeted props).
+
+        // Inputs
+        {
+            const sigMap = new Map();
+            const sel = extendedSelector(
+                'input:not([type="hidden"]):not([type="submit"]):not([type="button"]):not([type="checkbox"]):not([type="radio"]):not([type="color"]),textarea,select',
+                'input'
+            );
+            for (const el of Array.from(document.querySelectorAll(sel)).filter(el => {
+                if (el.closest('#plukrr-sidebar,#plukrr-picker,#dc-overlay,.le-action-bar')) return false;
+                const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0;
+            }).slice(0, 20)) {
+                const s = getComputedStyle(el);
+                const tag = el.tagName.toLowerCase();
+                const type = el.getAttribute('type') || tag;
+                const sig = `${s.borderRadius}:${s.fontSize}:${toHex(s.borderTopColor)}:${type}`;
+                if (sigMap.has(sig)) continue;
+                const rect = el.getBoundingClientRect();
+                const bg = safeBg(s);
+                const typeLabels = { text:'Text Input', email:'Email Input', password:'Password Input', search:'Search Input', number:'Number Input', textarea:'Textarea', select:'Select Dropdown' };
+                sigMap.set(sig, {
+                    id: `input_${sigMap.size}`, label: typeLabels[type] || 'Input Field', category: 'input', count: 1,
+                    preview: { bg: bg || '#fff', textColor: toHex(s.color) || '#000', borderColor: toHex(s.borderTopColor), placeholder: el.getAttribute('placeholder') || 'Input…' },
+                    properties: {
+                        'Background': bg || 'transparent', 'Text Color': toHex(s.color) || s.color,
+                        'Border': `${s.borderTopWidth} ${s.borderTopStyle} ${toHex(s.borderTopColor)||s.borderTopColor}`,
+                        'Border Radius': s.borderRadius, 'Font Family': cleanFamily(s.fontFamily),
+                        'Font Size': s.fontSize, 'Font Weight': s.fontWeight,
+                        'Height': rect.height > 0 ? `${Math.round(rect.height)}px` : '—',
+                        'Padding': `${s.paddingTop} ${s.paddingRight} ${s.paddingBottom} ${s.paddingLeft}`,
+                        'Box Shadow': s.boxShadow !== 'none' ? s.boxShadow : '—',
+                        'Outline': s.outline !== 'none' ? s.outline : '—', ...stateProps(statesForEl(el))
+                    }
+                });
+            }
+            components.push(...sigMap.values());
+            // Checkbox & Radio
+            for (const [itype, ilabel, iid] of [['checkbox','Checkbox','checkbox_0'],['radio','Radio Button','radio_0']]) {
+                const el = Array.from(document.querySelectorAll(`input[type="${itype}"]`))
+                    .find(e => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0; });
+                if (!el) continue;
+                const s = getComputedStyle(el); const rect = el.getBoundingClientRect();
+                components.push({ id: iid, label: ilabel, category: 'input', count: 1, preview: { type: itype },
+                    properties: { 'Accent Color': s.accentColor !== 'auto' ? s.accentColor : '—', 'Width': `${Math.round(rect.width)}px`, 'Height': `${Math.round(rect.height)}px`, 'Cursor': s.cursor } });
+            }
+        }
+
+        // Navigation
+        {
+            const sel = extendedSelector('nav,header,[role="navigation"]', 'navigation');
+            const navEl = Array.from(document.querySelectorAll(sel)).find(el => {
+                if (el.closest('#plukrr-sidebar,#plukrr-picker')) return false;
+                const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0;
+            });
+            if (navEl) {
+                const s = getComputedStyle(navEl); const rect = navEl.getBoundingClientRect();
+                const firstLink = navEl.querySelector('a'); const ls = firstLink ? getComputedStyle(firstLink) : null;
+                const bg = safeBg(s);
+                const navItem = {
+                    id: 'nav_0', label: 'Navigation Bar', category: 'navigation', count: 1,
+                    preview: { bg: bg || '#fff', height: `${Math.round(rect.height)}px` },
+                    properties: {
+                        'Background': bg || 'transparent',
+                        'Height': `${Math.round(rect.height)}px`,
+                        'Padding': `${s.paddingTop} ${s.paddingRight} ${s.paddingBottom} ${s.paddingLeft}`,
+                        'Border Bottom': s.borderBottomWidth !== '0px' ? `${s.borderBottomWidth} ${s.borderBottomStyle} ${toHex(s.borderBottomColor)||s.borderBottomColor}` : '—',
+                        'Box Shadow': s.boxShadow !== 'none' ? s.boxShadow : '—', 'Position': s.position,
+                        ...(ls ? { 'Link Color': toHex(ls.color)||ls.color, 'Link Font Size': ls.fontSize, 'Link Font Weight': ls.fontWeight } : {})
+                    },
+                    anatomy: extractAnatomy(navEl)
+                };
+                components.push(navItem);
+            }
+        }
+
+        // Modal / Dialog
+        {
+            const sel = extendedSelector('dialog,[role="dialog"]', 'modal');
+            const modalEl = document.querySelector(sel);
+            if (modalEl) {
+                const s = getComputedStyle(modalEl); const rect = modalEl.getBoundingClientRect();
+                const bg = safeBg(s);
+                components.push({
+                    id: 'modal_0', label: 'Modal / Dialog', category: 'modal', count: 1,
+                    preview: { bg: bg || '#fff', borderRadius: s.borderRadius },
+                    properties: {
+                        'Background': bg || 'transparent', 'Border Radius': s.borderRadius,
+                        'Box Shadow': s.boxShadow !== 'none' ? s.boxShadow : '—',
+                        'Padding': `${s.paddingTop} ${s.paddingRight} ${s.paddingBottom} ${s.paddingLeft}`,
+                        'Max Width': s.maxWidth !== 'none' ? s.maxWidth : '—', 'Z-Index': s.zIndex !== 'auto' ? s.zIndex : '—'
+                    }
+                });
+            }
+        }
+
+        // Tooltip
+        {
+            const sel = extendedSelector('[role="tooltip"]', 'tooltip');
+            const el = document.querySelector(sel);
+            if (el) {
+                const s = getComputedStyle(el); const bg = safeBg(s);
+                components.push({
+                    id: 'tooltip_0', label: 'Tooltip', category: 'tooltip', count: 1,
+                    preview: { bg: bg || '#000', textColor: toHex(s.color) },
+                    properties: {
+                        'Background': bg || 'transparent', 'Text Color': toHex(s.color)||s.color,
+                        'Border Radius': s.borderRadius, 'Font Size': s.fontSize,
+                        'Padding': `${s.paddingTop} ${s.paddingRight} ${s.paddingBottom} ${s.paddingLeft}`,
+                        'Z-Index': s.zIndex !== 'auto' ? s.zIndex : '—'
+                    }
+                });
+            }
+        }
+
+        // Alert / Toast
+        {
+            const sel = extendedSelector('[role="alert"],[role="status"]', 'alert');
+            if (sel) {
+                const sigMap = new Map();
+                for (const el of Array.from(document.querySelectorAll(sel)).slice(0, 8)) {
+                    const r = el.getBoundingClientRect(); if (!r.width || !r.height) continue;
+                    const s = getComputedStyle(el); const bg = safeBg(s);
+                    if (!bg) continue;
+                    const sig = `${bg}:${s.borderRadius}:${s.borderTopWidth}`;
+                    if (sigMap.has(sig)) continue;
+                    sigMap.set(sig, {
+                        id: `alert_${sigMap.size}`, label: uniqueLabel('Alert', [...components, ...sigMap.values()]), category: 'alert', count: 1,
+                        preview: { bg, textColor: toHex(s.color)||s.color, text: el.textContent?.trim().slice(0,30)||'Alert' },
+                        properties: {
+                            'Background': bg, 'Text Color': toHex(s.color)||s.color,
+                            'Border': s.borderTopWidth !== '0px' ? `${s.borderTopWidth} ${s.borderTopStyle} ${toHex(s.borderTopColor)||s.borderTopColor}` : '—',
+                            'Border Radius': s.borderRadius, 'Font Size': s.fontSize,
+                            'Padding': `${s.paddingTop} ${s.paddingRight} ${s.paddingBottom} ${s.paddingLeft}`,
+                            'Box Shadow': s.boxShadow !== 'none' ? s.boxShadow : '—'
+                        }
+                    });
+                }
+                components.push(...sigMap.values());
+            }
+        }
+
+        // Tabs
+        {
+            const sel = extendedSelector('[role="tablist"],[role="tab"]', 'tab');
+            if (sel) {
+                const tabEl = Array.from(document.querySelectorAll(sel)).find(el => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0; });
+                if (tabEl) {
+                    const s = getComputedStyle(tabEl); const bg = safeBg(s);
+                    const activeTab = tabEl.querySelector('[aria-selected="true"],[class*="active"],[class*="selected"]');
+                    const as = activeTab ? getComputedStyle(activeTab) : null;
+                    components.push({
+                        id: 'tab_0', label: 'Tabs', category: 'tab', count: 1,
+                        preview: { bg: bg || 'transparent', textColor: toHex(s.color) },
+                        properties: {
+                            'Background': bg || 'transparent',
+                            'Border Bottom': s.borderBottomWidth !== '0px' ? `${s.borderBottomWidth} ${s.borderBottomStyle} ${toHex(s.borderBottomColor)||s.borderBottomColor}` : '—',
+                            'Gap': s.gap !== 'normal' && s.gap !== '0px' ? s.gap : '—',
+                            ...(as ? { 'Active Color': toHex(as.color)||as.color, 'Active Background': safeBg(as)||'transparent' } : {})
+                        }
+                    });
+                }
+            }
+        }
+
+        // Toggle / Avatar / Progress (CSS-class driven only, no visual heuristic)
+        for (const [semSel, cssType, id, label, category, buildProps] of [
+            ['[role="switch"]', 'toggle', 'toggle_0', 'Toggle / Switch', 'toggle', (s, r, bg) => ({ 'Background (Off)': bg||'transparent', 'Width': `${Math.round(r.width)}px`, 'Height': `${Math.round(r.height)}px`, 'Border Radius': s.borderRadius, 'Cursor': s.cursor })],
+            ['', 'avatar', 'avatar_0', 'Avatar', 'avatar', (s, r, bg) => ({ 'Width': `${Math.round(r.width)}px`, 'Height': `${Math.round(r.height)}px`, 'Background': bg||'transparent', 'Border Radius': s.borderRadius, 'Border': s.borderTopWidth !== '0px' ? `${s.borderTopWidth} ${s.borderTopStyle} ${toHex(s.borderTopColor)||s.borderTopColor}` : '—', 'Font Size': s.fontSize, 'Color': toHex(s.color)||s.color })],
+            ['[role="progressbar"]', 'progress', 'progress_0', 'Progress Bar', 'progress', (s, r, bg) => ({ 'Background': bg||'transparent', 'Height': `${Math.round(r.height)}px`, 'Border Radius': s.borderRadius })],
+        ]) {
+            const sel = extendedSelector(semSel, cssType);
+            if (!sel) continue;
+            const el = Array.from(document.querySelectorAll(sel)).find(e => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0; });
+            if (!el) continue;
+            const s = getComputedStyle(el); const rect = el.getBoundingClientRect(); const bg = safeBg(s);
+            components.push({ id, label, category, count: 1, preview: { bg: bg||'transparent', borderRadius: s.borderRadius }, properties: buildProps(s, rect, bg) });
+        }
+
+        // ─── SPACING SCALE ───────────────────────────────────────
+        const spacingValues = new Set();
+        let sc = 0;
+        for (const el of document.querySelectorAll('*')) {
+            if (++sc > 400) break;
+            const s = getComputedStyle(el);
+            for (const v of [s.paddingTop, s.paddingRight, s.paddingBottom, s.paddingLeft, s.marginTop, s.marginBottom, s.gap, s.rowGap, s.columnGap]) {
+                if (v && v !== '0px' && v !== 'auto' && v !== 'normal' && v.endsWith('px')) {
+                    const n = parseFloat(v);
+                    if (n > 0 && n <= 120) spacingValues.add(n);
+                }
+            }
+        }
+        const spacingArr = [...spacingValues].sort((a, b) => a - b);
+        const gcd = (a, b) => b === 0 ? a : gcd(b, a % b);
+        let baseUnit = 4;
+        if (spacingArr.length >= 2) {
+            let g = spacingArr[0];
+            for (const v of spacingArr.slice(1, 8)) g = gcd(Math.round(g), Math.round(v));
+            if (g >= 2 && g <= 8) baseUnit = g;
+        }
+        const spacing = { scale: spacingArr.slice(0, 16), baseUnit };
+
+        // ─── BORDER RADII ───────────────────────────────────────
+        const radiiSet = new Set();
+        let rc = 0;
+        for (const el of document.querySelectorAll('*')) {
+            if (++rc > 400) break;
+            const r = getComputedStyle(el).borderRadius;
+            if (r && r !== '0px' && !r.includes(' ')) radiiSet.add(r);
+        }
+        const radiiArr = [...radiiSet].sort((a, b) => parseFloat(a) - parseFloat(b));
+        const radiiLabels = ['XS', 'SM', 'MD', 'LG', 'XL', '2XL'];
+        const radii = radiiArr.slice(0, 8).map((v, i) => {
+            const n = parseFloat(v);
+            const label = (n >= 999 || v.includes('50%')) ? 'Full / Pill' : (radiiLabels[i] || `R${i + 1}`);
+            return { id: `r${i}`, value: v, label };
+        });
+
+        // ─── SHADOWS ───────────────────────────────────────
+        const shadowSet = new Set();
+        let shc = 0;
+        for (const el of document.querySelectorAll('*')) {
+            if (++shc > 400) break;
+            const s = getComputedStyle(el).boxShadow;
+            if (s && s !== 'none') shadowSet.add(s);
+        }
+        const shadowLabels = ['Subtle', 'Low', 'Medium', 'High', 'Elevated', 'Floating'];
+        const shadows = [...shadowSet].slice(0, 8).map((v, i) => {
+            const blurMatch = v.match(/\d+px\s+(\d+)px\s+\d+px\s+rgba?/);
+            const blur = blurMatch ? parseInt(blurMatch[1]) : 0;
+            const level = blur > 20 ? 3 : blur > 8 ? 2 : 1;
+            return { id: `s${i}`, value: v, label: shadowLabels[Math.min(i, shadowLabels.length - 1)], level };
+        });
+
+        // ─── CSS VARIABLES ───────────────────────────────────────
+        const cssVariables = { colors: {}, sizes: {}, fonts: {}, other: {} };
+        for (const sheet of document.styleSheets) {
+            try {
+                const rules = sheet.cssRules || sheet.rules;
+                if (!rules) continue;
+                for (const rule of rules) {
+                    if (rule.selectorText !== ':root' && rule.selectorText !== 'html') continue;
+                    const style = rule.style;
+                    for (let i = 0; i < style.length; i++) {
+                        const prop = style[i];
+                        if (!prop.startsWith('--')) continue;
+                        const val = style.getPropertyValue(prop).trim();
+                        const name = prop.toLowerCase();
+                        if (/color|bg|background|foreground|primary|secondary|accent|muted|border|ring|destructive|success|warning|error/.test(name)) cssVariables.colors[prop] = val;
+                        else if (/font|family|weight/.test(name)) cssVariables.fonts[prop] = val;
+                        else if (/size|spacing|radius|gap|padding|margin|height|width/.test(name)) cssVariables.sizes[prop] = val;
+                        else cssVariables.other[prop] = val;
+                    }
+                }
+            } catch (e) { continue; }
+        }
+
+        // ─── LAYOUT ───────────────────────────────────────
+        const layout = { maxWidth: null, containerPadding: null, breakpoints: [], gridColumns: null, gridGap: null, flexLayouts: 0, gridLayouts: 0 };
+        let flexCount = 0, gridCount = 0, lc2 = 0;
+        for (const el of document.querySelectorAll('*')) {
+            if (++lc2 > 400) break;
+            const s = getComputedStyle(el);
+            if (s.display === 'flex') flexCount++;
+            if (s.display === 'grid') {
+                gridCount++;
+                if (!layout.gridColumns && s.gridTemplateColumns && s.gridTemplateColumns !== 'none') {
+                    const cols = s.gridTemplateColumns.trim().split(/\s+/).length;
+                    if (cols > 1) { layout.gridColumns = cols; layout.gridGap = s.gap || s.columnGap || null; }
+                }
+            }
+            if (!layout.maxWidth && s.maxWidth && s.maxWidth !== 'none' && s.maxWidth !== '100%') {
+                const tag = el.tagName.toLowerCase();
+                if (['main', 'section', 'article', 'div'].includes(tag) || el.className.toString().match(/container|wrapper|layout|content/)) {
+                    layout.maxWidth = s.maxWidth;
+                    layout.containerPadding = s.paddingLeft || s.paddingRight;
+                }
+            }
+        }
+        layout.flexLayouts = flexCount;
+        layout.gridLayouts = gridCount;
+        // Breakpoints from media queries
+        const bpSet = new Set();
+        for (const sheet of document.styleSheets) {
+            try {
+                for (const rule of sheet.cssRules || []) {
+                    if (rule.type === CSSRule.MEDIA_RULE) {
+                        const m = (rule.conditionText || rule.media?.mediaText || '').match(/(\d+)px/g);
+                        if (m) m.forEach(v => { const n = parseInt(v); if (n >= 320 && n <= 2560) bpSet.add(n); });
+                    }
+                }
+            } catch (e) { continue; }
+        }
+        layout.breakpoints = [...bpSet].sort((a, b) => a - b);
+
+        // ─── SEMANTIC TOKEN EXTRACTION ──────────────────────────────────────────────
+        // Role-anchored extraction: for each shadcn semantic slot, find the specific
+        // element that represents that role and read directly from it.
+        // This eliminates frequency-based guessing.
+        function extractSemanticTokens() {
+            const st = {};
+
+            function safeBgHex(el) {
+                let cur = el;
+                while (cur && cur !== document.documentElement) {
+                    const bg = getComputedStyle(cur).backgroundColor;
+                    if (!isTransparent(bg)) return toHex(bg);
+                    cur = cur.parentElement;
+                }
+                const rootBg = getComputedStyle(document.documentElement).backgroundColor;
+                return isTransparent(rootBg) ? null : toHex(rootBg);
+            }
+
+            function firstVisible(...selectors) {
+                for (const sel of selectors) {
+                    try {
+                        for (const el of document.querySelectorAll(sel)) {
+                            if (el.closest('#plukrr-sidebar,#plukrr-picker,#dc-overlay')) continue;
+                            const r = el.getBoundingClientRect();
+                            if (r.width > 0 && r.height > 0) return el;
+                        }
+                    } catch (_) {}
+                }
+                return null;
+            }
+
+            function read(el, label) {
+                if (!el) return null;
+                const s = getComputedStyle(el);
+                const r = el.getBoundingClientRect();
+                const bg = safeBgHex(el);
+                const hasBorder = s.borderTopWidth !== '0px';
+                return {
+                    source: label,
+                    bg,
+                    color: toHex(s.color) || null,
+                    borderColor: hasBorder ? (toHex(s.borderTopColor) || null) : null,
+                    borderWidth: hasBorder ? s.borderTopWidth : null,
+                    borderStyle: hasBorder ? s.borderTopStyle : null,
+                    borderRadius: (s.borderRadius && s.borderRadius !== '0px') ? s.borderRadius : null,
+                    fontSize: s.fontSize,
+                    fontWeight: s.fontWeight,
+                    fontFamily: cleanFamily(s.fontFamily),
+                    letterSpacing: s.letterSpacing !== 'normal' ? s.letterSpacing : null,
+                    lineHeight: s.lineHeight,
+                    textTransform: s.textTransform !== 'none' ? s.textTransform : null,
+                    paddingTop: s.paddingTop, paddingRight: s.paddingRight,
+                    paddingBottom: s.paddingBottom, paddingLeft: s.paddingLeft,
+                    boxShadow: s.boxShadow !== 'none' ? s.boxShadow : null,
+                    outlineColor: s.outlineWidth !== '0px' ? (toHex(s.outlineColor) || null) : null,
+                    width: Math.round(r.width),
+                    height: Math.round(r.height),
+                    gap: (s.gap && s.gap !== 'normal') ? s.gap : null,
+                };
+            }
+
+            function set(key, value, source) {
+                if (value != null && value !== '' && value !== '0px') st[key] = { value, source };
+            }
+
+            // Visual-property-based element finder — used when class-name heuristics fail
+            // (CSS modules, Tailwind utility classes, CSS-in-JS all produce unhelpful class names)
+            function visualFind(test, tagStr = 'div,section,article,li,span', limit = 400) {
+                try {
+                    const els = document.querySelectorAll(tagStr);
+                    for (const el of els) {
+                        if (el.closest('#plukrr-sidebar,#plukrr-picker,#dc-overlay,#plukrr-ds-builder-panel')) continue;
+                        if (test(el)) return el;
+                        if (--limit <= 0) break;
+                    }
+                } catch (_) {}
+                return null;
+            }
+
+            // ── 1. Global canvas ─────────────────────────────────────────────────────
+            const bodyS = getComputedStyle(document.body);
+            const htmlS = getComputedStyle(document.documentElement);
+            const canvasBg = !isTransparent(bodyS.backgroundColor)
+                ? toHex(bodyS.backgroundColor)
+                : (!isTransparent(htmlS.backgroundColor) ? toHex(htmlS.backgroundColor) : null);
+            set('background', canvasBg, 'body');
+            set('foreground', toHex(bodyS.color), 'body');
+
+            // ── 2. Primary button ────────────────────────────────────────────────────
+            // Find highest-saturation button (most "primary" looking)
+            const allBtns = Array.from(document.querySelectorAll(
+                'button, [role="button"], input[type="submit"], a[class*="btn"], a[class*="button"]'
+            )).filter(el => {
+                if (el.closest('#plukrr-sidebar,#plukrr-picker,#dc-overlay')) return false;
+                const r = el.getBoundingClientRect();
+                return r.width > 24 && r.height > 20 && r.height < 120;
+            }).slice(0, 60);
+
+            let primaryBtn = null, primaryBtnSat = -1;
+            for (const btn of allBtns) {
+                const bg = safeBgHex(btn);
+                if (!bg) continue;
+                const rv = parseInt(bg.slice(1,3),16), gv = parseInt(bg.slice(3,5),16), bv = parseInt(bg.slice(5,7),16);
+                const mx = Math.max(rv,gv,bv), mn = Math.min(rv,gv,bv);
+                const sat = mx === 0 ? 0 : (mx - mn) / mx;
+                if (sat > primaryBtnSat) { primaryBtnSat = sat; primaryBtn = btn; }
+            }
+
+            if (primaryBtn) {
+                const p = read(primaryBtn, primaryBtn.tagName.toLowerCase() + (primaryBtn.className ? '.' + String(primaryBtn.className).trim().split(/\s+/)[0] : ''));
+                set('primary', p.bg, p.source);
+                set('primaryForeground', p.color, p.source);
+                set('primaryBorderRadius', p.borderRadius, p.source);
+                set('primaryPaddingTop', p.paddingTop, p.source);
+                set('primaryPaddingRight', p.paddingRight, p.source);
+                set('primaryPaddingBottom', p.paddingBottom, p.source);
+                set('primaryPaddingLeft', p.paddingLeft, p.source);
+                set('primaryFontSize', p.fontSize, p.source);
+                set('primaryFontWeight', p.fontWeight, p.source);
+                set('primaryFontFamily', p.fontFamily, p.source);
+                set('primaryLetterSpacing', p.letterSpacing, p.source);
+                set('primaryTextTransform', p.textTransform, p.source);
+                set('primaryHeight', p.height > 0 ? `${p.height}px` : null, p.source);
+                set('primaryBoxShadow', p.boxShadow, p.source);
+            }
+
+            // Secondary button: has border but low/no fill, or ghost/outline style
+            const secondaryBtn = allBtns.find(btn => {
+                if (btn === primaryBtn) return false;
+                const s = getComputedStyle(btn);
+                const bg = safeBgHex(btn);
+                if (!bg) return false;
+                const hasBorder = s.borderTopWidth !== '0px';
+                const rv = parseInt(bg.slice(1,3),16), gv = parseInt(bg.slice(3,5),16), bv = parseInt(bg.slice(5,7),16);
+                const mx = Math.max(rv,gv,bv), mn = Math.min(rv,gv,bv);
+                const sat = mx === 0 ? 0 : (mx - mn) / mx;
+                return (hasBorder && sat < 0.15) || sat < primaryBtnSat * 0.4;
+            });
+            if (secondaryBtn) {
+                const p = read(secondaryBtn, 'secondary-button');
+                set('secondary', p.bg, p.source);
+                set('secondaryForeground', p.color, p.source);
+                set('secondaryBorderColor', p.borderColor, p.source);
+                set('secondaryBorderRadius', p.borderRadius, p.source);
+            }
+
+            // Destructive button
+            const destructiveBtn = firstVisible(
+                'button[class*="danger"]', 'button[class*="destructive"]',
+                'button[class*="delete"]', 'button[class*="error"]',
+                '[class*="btn-danger"]', '[class*="btn-destructive"]', '[class*="btn-delete"]'
+            );
+            if (destructiveBtn) {
+                const p = read(destructiveBtn, 'destructive-button');
+                set('destructive', p.bg, p.source);
+                set('destructiveForeground', p.color, p.source);
+            }
+
+            // ── 3. Input ─────────────────────────────────────────────────────────────
+            const inputEl = firstVisible(
+                'input[type="text"]', 'input[type="email"]', 'input[type="search"]',
+                'input[type="password"]', 'input[type="url"]', 'input[type="tel"]',
+                'input:not([type="hidden"]):not([type="submit"]):not([type="button"]):not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="color"]):not([type="range"])'
+            );
+            if (inputEl) {
+                const p = read(inputEl, 'input');
+                set('inputBg', p.bg, p.source);
+                set('inputForeground', p.color, p.source);
+                set('border', p.borderColor, 'input border');
+                set('borderWidth', p.borderWidth, 'input border');
+                set('inputBorderRadius', p.borderRadius, p.source);
+                set('inputPaddingTop', p.paddingTop, p.source);
+                set('inputPaddingRight', p.paddingRight, p.source);
+                set('inputHeight', p.height > 0 ? `${p.height}px` : null, p.source);
+                set('inputFontSize', p.fontSize, p.source);
+            }
+
+            // Textarea
+            const textareaEl = firstVisible('textarea');
+            if (textareaEl) {
+                const p = read(textareaEl, 'textarea');
+                set('textareaBg', p.bg, p.source);
+                set('textareaBorderRadius', p.borderRadius, p.source);
+                set('textareaBorderColor', p.borderColor, p.source);
+                set('textareaPadding', `${p.paddingTop} ${p.paddingRight} ${p.paddingBottom} ${p.paddingLeft}`, p.source);
+                set('textareaFontSize', p.fontSize, p.source);
+            }
+
+            // Select
+            const selectEl = firstVisible('select');
+            if (selectEl) {
+                const p = read(selectEl, 'select');
+                set('selectBg', p.bg, p.source);
+                set('selectBorderRadius', p.borderRadius, p.source);
+                set('selectBorderColor', p.borderColor, p.source);
+                set('selectHeight', p.height > 0 ? `${p.height}px` : null, p.source);
+            }
+
+            // Checkbox
+            const checkboxEl = firstVisible('input[type="checkbox"]', '[role="checkbox"]', '[class*="checkbox"]');
+            if (checkboxEl) {
+                const p = read(checkboxEl, 'checkbox');
+                set('checkboxBorderColor', p.borderColor, p.source);
+                set('checkboxBorderRadius', p.borderRadius, p.source);
+                set('checkboxSize', Math.min(p.width, p.height) > 0 ? `${Math.min(p.width, p.height)}px` : null, p.source);
+            }
+
+            // Switch / Toggle
+            const switchEl = firstVisible('[role="switch"]', '[class*="switch"]', '[class*="toggle"]');
+            if (switchEl) {
+                const p = read(switchEl, 'switch');
+                set('switchBg', p.bg, p.source);
+                set('switchBorderRadius', p.borderRadius, p.source);
+                set('switchWidth', p.width > 0 ? `${p.width}px` : null, p.source);
+                set('switchHeight', p.height > 0 ? `${p.height}px` : null, p.source);
+            }
+
+            // ── 4. Card ──────────────────────────────────────────────────────────────
+            const cardEl = firstVisible(
+                '[class*="card"]', '[class*="Card"]',
+                'article[class]', '[class*="panel"]', '[class*="Panel"]',
+                '[class*="tile"]', '[class*="surface"]', '[class*="widget"]'
+            ) || visualFind(el => {
+                // Visual fallback: element looks like a card if it has a non-page background
+                // plus at least one visual distinguisher (radius / shadow / border).
+                // Excludes full-width layout containers and tiny elements.
+                const s = getComputedStyle(el);
+                const r = el.getBoundingClientRect();
+                if (r.width < 80 || r.height < 44) return false;
+                if (r.width > window.innerWidth * 0.88) return false;
+                if (isTransparent(s.backgroundColor)) return false;
+                if (toHex(s.backgroundColor) === canvasBg) return false;
+                const hasRadius = parseFloat(s.borderRadius) > 2;
+                const hasShadow = s.boxShadow !== 'none';
+                const hasBorder = s.borderTopWidth !== '0px' && !isTransparent(s.borderTopColor);
+                return (hasRadius || hasShadow || hasBorder) && el.children.length >= 1;
+            }, 'div,article,section,li');
+            if (cardEl) {
+                const p = read(cardEl, String(cardEl.className).trim().split(/\s+/)[0] || 'card');
+                set('card', p.bg, p.source);
+                set('cardForeground', p.color, p.source);
+                set('cardBorderRadius', p.borderRadius, p.source);
+                set('cardBorderColor', p.borderColor, p.source);
+                set('cardBoxShadow', p.boxShadow, p.source);
+                set('cardPaddingTop', p.paddingTop, p.source);
+                set('cardPaddingRight', p.paddingRight, p.source);
+                set('cardGap', p.gap, p.source);
+            }
+
+            // ── 5. Badge ─────────────────────────────────────────────────────────────
+            const badgeEl = firstVisible(
+                '[class*="badge"]', '[class*="Badge"]',
+                '[class*="tag"]', '[class*="Tag"]',
+                '[class*="chip"]', '[class*="Chip"]',
+                '[class*="pill"]', '[class*="status-badge"]'
+            ) || visualFind(el => {
+                // Visual fallback: small, colored, rounded inline element with short text
+                const s = getComputedStyle(el);
+                const r = el.getBoundingClientRect();
+                if (r.width < 20 || r.width > 180 || r.height < 14 || r.height > 34) return false;
+                if (isTransparent(s.backgroundColor)) return false;
+                if (toHex(s.backgroundColor) === canvasBg) return false;
+                const radius = parseFloat(s.borderRadius);
+                const display = s.display;
+                return radius >= 3 &&
+                    (display === 'inline-flex' || display === 'inline-block' || display === 'flex') &&
+                    (el.textContent || '').trim().length < 25;
+            }, 'span,div,a');
+            if (badgeEl) {
+                const p = read(badgeEl, 'badge');
+                set('badgeBg', p.bg, p.source);
+                set('badgeForeground', p.color, p.source);
+                set('badgeBorderRadius', p.borderRadius, p.source);
+                set('badgePaddingTop', p.paddingTop, p.source);
+                set('badgePaddingRight', p.paddingRight, p.source);
+                set('badgeFontSize', p.fontSize, p.source);
+                set('badgeFontWeight', p.fontWeight, p.source);
+                set('badgeBorderColor', p.borderColor, p.source);
+            }
+
+            // ── 6. Alert / Toast ─────────────────────────────────────────────────────
+            const alertEl = firstVisible(
+                '[role="alert"]', '[role="status"]',
+                '[class*="alert"]', '[class*="Alert"]',
+                '[class*="notification"]', '[class*="callout"]', '[class*="banner"]'
+            );
+            if (alertEl) {
+                const p = read(alertEl, 'alert');
+                set('alertBg', p.bg, p.source);
+                set('alertForeground', p.color, p.source);
+                set('alertBorderColor', p.borderColor, p.source);
+                set('alertBorderRadius', p.borderRadius, p.source);
+                set('alertPaddingTop', p.paddingTop, p.source);
+                set('alertPaddingRight', p.paddingRight, p.source);
+                set('alertBoxShadow', p.boxShadow, p.source);
+            }
+
+            const toastEl = firstVisible(
+                '[class*="toast"]', '[class*="Toast"]',
+                '[class*="snackbar"]', '[aria-live="polite"]', '[aria-live="assertive"]'
+            );
+            if (toastEl && toastEl !== alertEl) {
+                const p = read(toastEl, 'toast');
+                set('toastBg', p.bg, p.source);
+                set('toastForeground', p.color, p.source);
+                set('toastBorderColor', p.borderColor, p.source);
+                set('toastBorderRadius', p.borderRadius, p.source);
+                set('toastBoxShadow', p.boxShadow, p.source);
+            }
+
+            // ── 7. Dialog / Modal ────────────────────────────────────────────────────
+            const dialogEl = firstVisible(
+                'dialog', '[role="dialog"]',
+                '[class*="modal"]', '[class*="Modal"]',
+                '[class*="dialog"]', '[class*="Dialog"]'
+            );
+            if (dialogEl) {
+                const p = read(dialogEl, 'dialog');
+                set('dialogBg', p.bg, p.source);
+                set('dialogForeground', p.color, p.source);
+                set('dialogBorderRadius', p.borderRadius, p.source);
+                set('dialogBoxShadow', p.boxShadow, p.source);
+                set('dialogPaddingTop', p.paddingTop, p.source);
+                set('dialogPaddingRight', p.paddingRight, p.source);
+            }
+
+            // ── 8. Popover ───────────────────────────────────────────────────────────
+            const popoverEl = firstVisible(
+                '[role="menu"]', '[role="listbox"]',
+                '[class*="popover"]', '[class*="Popover"]',
+                '[class*="dropdown"]', '[class*="Dropdown"]',
+                '[class*="menu-content"]', '[class*="MenuContent"]'
+            );
+            if (popoverEl && popoverEl !== dialogEl) {
+                const p = read(popoverEl, 'popover');
+                set('popover', p.bg, p.source);
+                set('popoverForeground', p.color, p.source);
+                set('popoverBorderRadius', p.borderRadius, p.source);
+                set('popoverBoxShadow', p.boxShadow, p.source);
+                set('popoverBorderColor', p.borderColor, p.source);
+            }
+
+            // ── 9. Tooltip ───────────────────────────────────────────────────────────
+            const tooltipEl = firstVisible('[role="tooltip"]', '[class*="tooltip"]', '[class*="Tooltip"]');
+            if (tooltipEl) {
+                const p = read(tooltipEl, 'tooltip');
+                set('tooltipBg', p.bg, p.source);
+                set('tooltipForeground', p.color, p.source);
+                set('tooltipBorderRadius', p.borderRadius, p.source);
+                set('tooltipFontSize', p.fontSize, p.source);
+                set('tooltipPaddingTop', p.paddingTop, p.source);
+                set('tooltipPaddingRight', p.paddingRight, p.source);
+                set('tooltipBoxShadow', p.boxShadow, p.source);
+            }
+
+            // ── 10. Navigation / Sidebar ─────────────────────────────────────────────
+            const sidebarEl = firstVisible(
+                'aside[class]', '[class*="sidebar"]', '[class*="Sidebar"]',
+                '[class*="sidenav"]', '[class*="side-nav"]',
+                '[role="complementary"]'
+            ) || visualFind(el => {
+                // Visual fallback: tall narrow panel anchored to left or right edge
+                const s = getComputedStyle(el);
+                const r = el.getBoundingClientRect();
+                if (r.width < 80 || r.width > 360) return false;
+                if (r.height < window.innerHeight * 0.5) return false;
+                const isLeft = r.left < 20;
+                const isRight = r.right > window.innerWidth - 20;
+                if (!isLeft && !isRight) return false;
+                const pos = s.position;
+                return (pos === 'fixed' || pos === 'sticky' || pos === 'relative' || pos === 'absolute') &&
+                    !isTransparent(s.backgroundColor);
+            }, 'div,nav,aside');
+            if (sidebarEl) {
+                const p = read(sidebarEl, 'sidebar');
+                set('sidebar', p.bg, p.source);
+                set('sidebarForeground', p.color, p.source);
+                set('sidebarBorderColor', p.borderColor, p.source);
+                set('sidebarWidth', p.width > 0 ? `${p.width}px` : null, p.source);
+
+                const activeItem = sidebarEl.querySelector('[aria-current],[class*="active"],[class*="selected"],[class*="current"]');
+                if (activeItem) {
+                    const ap = read(activeItem, 'sidebar-active-item');
+                    set('sidebarPrimary', ap.bg, ap.source);
+                    set('sidebarPrimaryForeground', ap.color, ap.source);
+                    set('sidebarItemBorderRadius', ap.borderRadius, ap.source);
+                    set('sidebarItemFontWeight', ap.fontWeight, ap.source);
+                }
+                const inactiveItem = sidebarEl.querySelector('a:not([aria-current]):not([class*="active"]), [class*="nav-item"]:not([aria-current])');
+                if (inactiveItem) {
+                    const ip = read(inactiveItem, 'sidebar-item');
+                    set('sidebarItemForeground', ip.color, ip.source);
+                    set('sidebarItemFontSize', ip.fontSize, ip.source);
+                    set('sidebarItemPaddingTop', ip.paddingTop, ip.source);
+                    set('sidebarItemPaddingRight', ip.paddingRight, ip.source);
+                }
+            }
+
+            // Header / TopBar
+            const headerEl = firstVisible('header', '[class*="header"]', '[class*="Header"]', '[class*="topbar"]', '[class*="navbar"]');
+            if (headerEl) {
+                const p = read(headerEl, 'header');
+                set('headerBg', p.bg, p.source);
+                set('headerBorderColor', p.borderColor, p.source);
+                set('headerHeight', p.height > 0 ? `${p.height}px` : null, p.source);
+                set('headerBoxShadow', p.boxShadow, p.source);
+            }
+
+            // ── 11. Tabs ─────────────────────────────────────────────────────────────
+            const tablistEl = firstVisible('[role="tablist"]', '[class*="tablist"]', '[class*="tab-list"]', '[class*="TabList"]')
+                || visualFind(el => {
+                    // Visual fallback: container with 2–8 direct children that are all similarly-sized
+                    // inline/flex elements with similar styles — looks like a tab row
+                    const children = Array.from(el.children);
+                    if (children.length < 2 || children.length > 10) return false;
+                    const s = getComputedStyle(el);
+                    const display = s.display;
+                    if (display !== 'flex' && display !== 'inline-flex') return false;
+                    // All children should be roughly the same height
+                    const heights = children.map(c => c.getBoundingClientRect().height).filter(h => h > 0);
+                    if (heights.length < 2) return false;
+                    const avg = heights.reduce((a, b) => a + b, 0) / heights.length;
+                    return heights.every(h => Math.abs(h - avg) < avg * 0.3) && avg > 24 && avg < 60;
+                }, 'div,nav,ul');
+            if (tablistEl) {
+                const p = read(tablistEl, 'tablist');
+                set('tabsBg', p.bg, p.source);
+                set('tabsBorderRadius', p.borderRadius, p.source);
+                set('tabsPaddingTop', p.paddingTop, p.source);
+                set('tabsGap', p.gap, p.source);
+
+                const activeTab = tablistEl.querySelector('[role="tab"][aria-selected="true"],[class*="active"],[class*="selected"]');
+                if (activeTab) {
+                    const ap = read(activeTab, 'tab-active');
+                    set('tabActiveBg', ap.bg, ap.source);
+                    set('tabActiveForeground', ap.color, ap.source);
+                    set('tabActiveBorderRadius', ap.borderRadius, ap.source);
+                    set('tabActiveFontWeight', ap.fontWeight, ap.source);
+                }
+                const inactiveTab = tablistEl.querySelector('[role="tab"]:not([aria-selected="true"]),[class*="tab"]:not([class*="active"])');
+                if (inactiveTab) {
+                    const ip = read(inactiveTab, 'tab-inactive');
+                    set('tabInactiveForeground', ip.color, ip.source);
+                }
+            }
+
+            // ── 12. Table ────────────────────────────────────────────────────────────
+            const tableEl = firstVisible('table', '[role="table"]', '[class*="table"]', '[class*="Table"]');
+            if (tableEl) {
+                const p = read(tableEl, 'table');
+                set('tableBg', p.bg, p.source);
+                set('tableBorderColor', p.borderColor, p.source);
+
+                const th = tableEl.querySelector('th,[role="columnheader"]');
+                if (th) {
+                    const tp = read(th, 'th');
+                    set('tableHeaderBg', tp.bg, tp.source);
+                    set('tableHeaderForeground', tp.color, tp.source);
+                    set('tableHeaderFontWeight', tp.fontWeight, tp.source);
+                    set('tableHeaderFontSize', tp.fontSize, tp.source);
+                    set('tableHeaderPaddingTop', tp.paddingTop, tp.source);
+                    set('tableHeaderPaddingRight', tp.paddingRight, tp.source);
+                }
+                const td = tableEl.querySelector('td,[role="cell"]');
+                if (td) {
+                    const tp = read(td, 'td');
+                    set('tableCellForeground', tp.color, tp.source);
+                    set('tableCellPaddingTop', tp.paddingTop, tp.source);
+                    set('tableCellPaddingRight', tp.paddingRight, tp.source);
+                    set('tableCellBorderColor', tp.borderColor, tp.source);
+                }
+            }
+
+            // ── 13. Avatar ───────────────────────────────────────────────────────────
+            const avatarEl = firstVisible('[class*="avatar"]', '[class*="Avatar"]', 'img[class*="profile"]', 'img[class*="user"]')
+                || visualFind(el => {
+                    // Visual fallback: small square/circle element — typical avatar dimensions + high radius
+                    const s = getComputedStyle(el);
+                    const r = el.getBoundingClientRect();
+                    const sz = Math.min(r.width, r.height);
+                    if (sz < 20 || sz > 80) return false;
+                    const ratio = r.width / (r.height || 1);
+                    if (ratio < 0.75 || ratio > 1.33) return false;
+                    const radius = parseFloat(s.borderRadius);
+                    return radius >= sz * 0.3;  // at least 30% of size = near-circular
+                }, 'div,span,img,figure');
+            if (avatarEl) {
+                const p = read(avatarEl, 'avatar');
+                set('avatarBg', p.bg, p.source);
+                set('avatarBorderRadius', p.borderRadius, p.source);
+                set('avatarSize', Math.min(p.width, p.height) > 0 ? `${Math.min(p.width, p.height)}px` : null, p.source);
+                set('avatarBorderColor', p.borderColor, p.source);
+            }
+
+            // ── 14. Progress ─────────────────────────────────────────────────────────
+            const progressEl = firstVisible('[role="progressbar"]', 'progress', '[class*="progress"]', '[class*="Progress"]');
+            if (progressEl) {
+                const p = read(progressEl, 'progress');
+                set('progressBg', p.bg, p.source);
+                set('progressBorderRadius', p.borderRadius, p.source);
+                set('progressHeight', p.height > 0 ? `${p.height}px` : null, p.source);
+                const fill = progressEl.querySelector('[class*="fill"],[class*="bar"],[class*="value"],[class*="indicator"],[class*="track"]');
+                if (fill) {
+                    const fp = read(fill, 'progress-fill');
+                    set('progressFillBg', fp.bg, fp.source);
+                }
+            }
+
+            // ── 15. Separator ────────────────────────────────────────────────────────
+            const sepEl = firstVisible('hr', '[role="separator"]', '[class*="separator"]', '[class*="divider"]');
+            if (sepEl) {
+                const p = read(sepEl, 'separator');
+                const sepColor = p.borderColor || p.bg;
+                set('separatorColor', sepColor, p.source);
+                set('separatorThickness', p.borderWidth || (p.height > 0 ? `${p.height}px` : null), p.source);
+            }
+
+            // ── 16. Accordion ────────────────────────────────────────────────────────
+            const accordionEl = firstVisible('[class*="accordion"]', '[class*="Accordion"]', 'details');
+            if (accordionEl) {
+                const p = read(accordionEl, 'accordion');
+                set('accordionBorderColor', p.borderColor, p.source);
+                set('accordionBg', p.bg, p.source);
+                const trigger = accordionEl.querySelector('summary,[class*="trigger"],[class*="header"] button,button');
+                if (trigger) {
+                    const tp = read(trigger, 'accordion-trigger');
+                    set('accordionTriggerForeground', tp.color, tp.source);
+                    set('accordionTriggerFontWeight', tp.fontWeight, tp.source);
+                    set('accordionTriggerFontSize', tp.fontSize, tp.source);
+                    set('accordionTriggerPaddingTop', tp.paddingTop, tp.source);
+                    set('accordionTriggerPaddingRight', tp.paddingRight, tp.source);
+                }
+            }
+
+            // ── 17. Breadcrumb ───────────────────────────────────────────────────────
+            const bcEl = firstVisible('[class*="breadcrumb"]', '[aria-label*="breadcrumb" i]', 'nav[aria-label*="breadcrumb" i]');
+            if (bcEl) {
+                const p = read(bcEl, 'breadcrumb');
+                set('breadcrumbForeground', p.color, p.source);
+                set('breadcrumbFontSize', p.fontSize, p.source);
+                const bcLink = bcEl.querySelector('a');
+                if (bcLink) {
+                    const lp = read(bcLink, 'breadcrumb-link');
+                    set('breadcrumbLinkColor', lp.color, lp.source);
+                }
+            }
+
+            // ── 18. Pagination ───────────────────────────────────────────────────────
+            const pagEl = firstVisible('[class*="pagination"]', '[aria-label*="pagination" i]');
+            if (pagEl) {
+                const activeItem = pagEl.querySelector('[aria-current="page"],[class*="active"],[class*="current"]');
+                if (activeItem) {
+                    const ap = read(activeItem, 'pagination-active');
+                    set('paginationActiveBg', ap.bg, ap.source);
+                    set('paginationActiveForeground', ap.color, ap.source);
+                    set('paginationItemBorderRadius', ap.borderRadius, ap.source);
+                }
+                const item = pagEl.querySelector('a,button,[class*="page-item"]');
+                if (item) {
+                    const ip = read(item, 'pagination-item');
+                    set('paginationItemForeground', ip.color, ip.source);
+                    set('paginationItemFontSize', ip.fontSize, ip.source);
+                }
+            }
+
+            // ── 19. Skeleton ─────────────────────────────────────────────────────────
+            const skelEl = firstVisible('[class*="skeleton"]', '[class*="Skeleton"]', '[class*="shimmer"]', '[class*="placeholder"]');
+            if (skelEl) {
+                const p = read(skelEl, 'skeleton');
+                set('skeletonBg', p.bg, p.source);
+                set('skeletonBorderRadius', p.borderRadius, p.source);
+            }
+
+            // ── 20. Sheet / Drawer ───────────────────────────────────────────────────
+            const sheetEl = firstVisible('[class*="sheet"]', '[class*="Sheet"]', '[class*="drawer"]', '[class*="Drawer"]', '[class*="offcanvas"]');
+            if (sheetEl) {
+                const p = read(sheetEl, 'sheet/drawer');
+                set('sheetBg', p.bg, p.source);
+                set('sheetForeground', p.color, p.source);
+                set('sheetBorderColor', p.borderColor, p.source);
+            }
+
+            // ── 21. Muted surface ────────────────────────────────────────────────────
+            const mutedEl = firstVisible(
+                'code:not(pre code)', 'pre',
+                '[class*="muted"]', '[class*="Muted"]',
+                '[class*="bg-secondary"]', '[class*="surface-secondary"]',
+                '[class*="bg-muted"]', '[class*="secondary-bg"]'
+            );
+            if (mutedEl) {
+                const p = read(mutedEl, 'muted-surface');
+                if (p.bg && p.bg !== st.background?.value) {
+                    set('muted', p.bg, p.source);
+                    set('mutedForeground', p.color, p.source);
+                }
+            }
+
+            // Small / secondary text → mutedForeground fallback
+            const smallEl = firstVisible('small', '[class*="muted-text"]', '[class*="secondary-text"]', '[class*="hint"]', '[class*="helper-text"]', '[class*="caption"]');
+            if (smallEl && !st.mutedForeground) {
+                const p = read(smallEl, 'small/caption');
+                set('mutedForeground', p.color, p.source);
+                set('smallFontSize', p.fontSize, p.source);
+            }
+
+            // ── 22. Focus ring (from stylesheet) ────────────────────────────────────
+            for (const sheet of document.styleSheets) {
+                try {
+                    for (const rule of sheet.cssRules || []) {
+                        if (!rule.selectorText) continue;
+                        if (!/:focus-visible|:focus/.test(rule.selectorText)) continue;
+                        const oc = rule.style?.outlineColor;
+                        const bs = rule.style?.boxShadow;
+                        if (oc && oc !== 'initial' && oc !== 'inherit' && oc !== 'currentcolor') {
+                            const hex = toHex(oc);
+                            if (hex) { set('ring', hex, ':focus-visible outline-color'); break; }
+                        }
+                        if (bs && bs !== 'none' && !st.ring) {
+                            const m = bs.match(/#[0-9a-f]{3,6}|rgba?\([^)]+\)/i);
+                            if (m) { const hex = toHex(m[0]); if (hex) set('ring', hex, ':focus box-shadow'); }
+                        }
+                    }
+                } catch (_) {}
+                if (st.ring) break;
+            }
+
+            // ── 23. Slider ───────────────────────────────────────────────────────────
+            const sliderEl = firstVisible('input[type="range"]', '[role="slider"]', '[class*="slider"]', '[class*="Slider"]');
+            if (sliderEl) {
+                const p = read(sliderEl, 'slider');
+                set('sliderTrackBg', p.bg, p.source);
+                set('sliderHeight', p.height > 0 ? `${p.height}px` : null, p.source);
+            }
+
+            // ── 24. Typography ───────────────────────────────────────────────────────
+            for (let i = 1; i <= 4; i++) {
+                const hEl = document.querySelector(`h${i}`);
+                if (hEl) {
+                    const p = read(hEl, `h${i}`);
+                    set(`h${i}FontSize`, p.fontSize, `h${i}`);
+                    set(`h${i}FontWeight`, p.fontWeight, `h${i}`);
+                    set(`h${i}LineHeight`, p.lineHeight, `h${i}`);
+                    set(`h${i}LetterSpacing`, p.letterSpacing, `h${i}`);
+                    set(`h${i}Color`, p.color, `h${i}`);
+                    if (i === 1) {
+                        set('headingFontFamily', p.fontFamily, `h${i}`);
+                        set('headingTextTransform', p.textTransform, `h${i}`);
+                    }
+                }
+            }
+            const bodyPEl = document.querySelector('p, main p, article p');
+            if (bodyPEl) {
+                const p = read(bodyPEl, 'p');
+                set('bodyFontFamily', p.fontFamily, 'p');
+                set('bodyFontSize', p.fontSize, 'p');
+                set('bodyLineHeight', p.lineHeight, 'p');
+                set('bodyFontWeight', p.fontWeight, 'p');
+                set('bodyLetterSpacing', p.letterSpacing, 'p');
+            }
+
+            return st;
+        }
+
+        const semanticTokens = extractSemanticTokens();
+
+        // ─── CSS CUSTOM PROPERTY TOKENS ───────────────────────────────
+        // Reads CSS variables from :root and maps them to semantic token keys.
+        // Runs after DOM scan — only fills keys the DOM scan didn't find.
+        function extractCssVariableTokens() {
+            const result = {};
+            const cs = getComputedStyle(document.documentElement);
+
+            function setTok(key, value, source) {
+                if (value && !result[key]) result[key] = { value, source };
+            }
+
+            // Resolve a CSS variable to a hex string by bouncing it through a dummy element
+            function resolveColor(varName) {
+                const raw = cs.getPropertyValue(varName).trim();
+                if (!raw) return null;
+                if (/^#[0-9a-fA-F]{3,8}$/.test(raw)) return raw.toUpperCase();
+                if (/^rgba?/.test(raw)) return toHex(raw);
+                // HSL / OKLCH / named — force browser to resolve via dummy element
+                try {
+                    const el = document.createElement('div');
+                    el.style.cssText = `color:${raw}!important;position:absolute;visibility:hidden`;
+                    document.documentElement.appendChild(el);
+                    const hex = toHex(getComputedStyle(el).color);
+                    el.remove();
+                    return hex;
+                } catch (_) { return null; }
+            }
+
+            function rawVar(varName) {
+                return cs.getPropertyValue(varName).trim() || null;
+            }
+
+            // ── shadcn/ui ────────────────────────────────────────────
+            const shadcnColors = [
+                ['primary',                 '--primary'],
+                ['primaryForeground',       '--primary-foreground'],
+                ['secondary',               '--secondary'],
+                ['secondaryForeground',     '--secondary-foreground'],
+                ['background',              '--background'],
+                ['foreground',              '--foreground'],
+                ['card',                    '--card'],
+                ['cardForeground',          '--card-foreground'],
+                ['popover',                 '--popover'],
+                ['popoverForeground',       '--popover-foreground'],
+                ['muted',                   '--muted'],
+                ['mutedForeground',         '--muted-foreground'],
+                ['accent',                  '--accent'],
+                ['accentForeground',        '--accent-foreground'],
+                ['destructive',             '--destructive'],
+                ['destructiveForeground',   '--destructive-foreground'],
+                ['border',                  '--border'],
+                ['inputBg',                 '--input'],
+                ['ring',                    '--ring'],
+                ['sidebar',                 '--sidebar'],
+                ['sidebarForeground',       '--sidebar-foreground'],
+                ['sidebarPrimary',          '--sidebar-primary'],
+                ['sidebarPrimaryForeground','--sidebar-primary-foreground'],
+                ['toastBg',                 '--toast-background', '--sonner-toast-background'],
+            ];
+            for (const [key, ...vars] of shadcnColors) {
+                for (const v of vars) {
+                    const hex = resolveColor(v);
+                    if (hex) { setTok(key, hex, `css-var:${v}`); break; }
+                }
+            }
+            // Radius — applied to all radius tokens as shared base
+            const radius = rawVar('--radius');
+            if (radius) {
+                ['primaryBorderRadius','secondaryBorderRadius','inputBorderRadius',
+                 'cardBorderRadius','popoverBorderRadius','dialogBorderRadius',
+                 'toastBorderRadius','badgeBorderRadius'].forEach(k => setTok(k, radius, 'css-var:--radius'));
+            }
+
+            // ── Bootstrap ────────────────────────────────────────────
+            const bsColors = [
+                ['primary',           '--bs-primary'],
+                ['secondary',         '--bs-secondary'],
+                ['destructive',       '--bs-danger'],
+                ['card',              '--bs-body-bg'],
+                ['foreground',        '--bs-body-color'],
+                ['border',            '--bs-border-color'],
+                ['inputBg',           '--bs-body-bg'],
+                ['badgeBackground',   '--bs-primary'],
+            ];
+            for (const [key, ...vars] of bsColors) {
+                for (const v of vars) {
+                    const hex = resolveColor(v);
+                    if (hex) { setTok(key, hex, `css-var:${v}`); break; }
+                }
+            }
+            const bsRadius = rawVar('--bs-border-radius');
+            if (bsRadius) {
+                ['primaryBorderRadius','secondaryBorderRadius','inputBorderRadius','cardBorderRadius'].forEach(k => setTok(k, bsRadius, 'css-var:--bs-border-radius'));
+            }
+
+            // ── Material UI / MUI ────────────────────────────────────
+            const muiColors = [
+                ['primary',           '--md-sys-color-primary',     '--mdc-theme-primary'],
+                ['primaryForeground', '--md-sys-color-on-primary',  '--mdc-theme-on-primary'],
+                ['secondary',         '--md-sys-color-secondary',   '--mdc-theme-secondary'],
+                ['destructive',       '--md-sys-color-error',       '--mdc-theme-error'],
+                ['background',        '--md-sys-color-background'],
+                ['foreground',        '--md-sys-color-on-background'],
+                ['card',              '--md-sys-color-surface'],
+                ['cardForeground',    '--md-sys-color-on-surface'],
+            ];
+            for (const [key, ...vars] of muiColors) {
+                for (const v of vars) {
+                    const hex = resolveColor(v);
+                    if (hex) { setTok(key, hex, `css-var:${v}`); break; }
+                }
+            }
+
+            // ── Tailwind CSS var conventions ─────────────────────────
+            const twColors = [
+                ['primary',     '--color-primary',     '--tw-color-primary'],
+                ['secondary',   '--color-secondary',   '--tw-color-secondary'],
+                ['destructive', '--color-destructive', '--color-danger'],
+                ['background',  '--color-background'],
+                ['foreground',  '--color-foreground'],
+                ['border',      '--color-border'],
+            ];
+            for (const [key, ...vars] of twColors) {
+                for (const v of vars) {
+                    const hex = resolveColor(v);
+                    if (hex) { setTok(key, hex, `css-var:${v}`); break; }
+                }
+            }
+
+            // ── Universal scan: read ALL --* variables from :root ─────
+            // Catches any design system regardless of naming convention
+            // (Linear, custom systems, etc.) by inferring meaning from variable name.
+            try {
+                for (const sheet of document.styleSheets) {
+                    let rules;
+                    try { rules = sheet.cssRules || sheet.rules; } catch (_) { continue; }
+                    if (!rules) continue;
+                    for (const rule of rules) {
+                        if (rule.type !== 1) continue;
+                        const sel = rule.selectorText || '';
+                        if (sel !== ':root' && sel !== 'html' && sel !== 'html, body' && sel !== ':root, html') continue;
+                        for (let i = 0; i < rule.style.length; i++) {
+                            const prop = rule.style[i];
+                            if (!prop.startsWith('--')) continue;
+                            const name = prop.toLowerCase();
+                            const hex = resolveColor(prop);
+                            if (!hex) {
+                                // Non-color variable (size, radius, etc.)
+                                const raw = rawVar(prop);
+                                if (!raw) continue;
+                                if (/radius/i.test(name)) {
+                                    ['primaryBorderRadius','secondaryBorderRadius','inputBorderRadius','cardBorderRadius'].forEach(k => setTok(k, raw, `css-var:${prop}`));
+                                }
+                                continue;
+                            }
+                            // Infer semantic token from variable name
+                            const n = name.replace(/^--|color[-_]?|[-_]color$|bg[-_]?|[-_]?bg$|[-_]?background$|background[-_]?/gi, '');
+                            if      (/\bprimary\b/i.test(name) && !/foreground|text|on-|fg/i.test(name))   setTok('primary', hex, `css-var:${prop}`);
+                            else if (/\bprimary[-_](fg|foreground|text|on)/i.test(name) || (/\bprimary\b/i.test(name) && /foreground|text|on-|fg/i.test(name))) setTok('primaryForeground', hex, `css-var:${prop}`);
+                            else if (/\bsecondary\b/i.test(name) && !/foreground|text|on-|fg/i.test(name)) setTok('secondary', hex, `css-var:${prop}`);
+                            else if (/\b(danger|error|destructive)\b/i.test(name) && !/foreground|text|on-|fg/i.test(name)) setTok('destructive', hex, `css-var:${prop}`);
+                            else if (/\b(bg|background|canvas|surface|page)\b/i.test(name) && !/card|modal|dialog|popover|tooltip|sidebar|header|nav|muted|secondary/i.test(name)) setTok('background', hex, `css-var:${prop}`);
+                            else if (/\b(fg|foreground|text|body-color)\b/i.test(name) && !/placeholder|muted|secondary|link|accent/i.test(name)) setTok('foreground', hex, `css-var:${prop}`);
+                            else if (/\b(card|surface|elevated)\b/i.test(name) && !/foreground|text|on-|fg/i.test(name)) setTok('card', hex, `css-var:${prop}`);
+                            else if (/\b(border|outline|divider|separator)\b/i.test(name)) setTok('border', hex, `css-var:${prop}`);
+                            else if (/\b(muted|subtle|secondary-bg)\b/i.test(name) && !/foreground|text|on-|fg/i.test(name)) setTok('muted', hex, `css-var:${prop}`);
+                            else if (/\b(accent|highlight|link)\b/i.test(name) && !/foreground|text|on-|fg/i.test(name)) setTok('accent', hex, `css-var:${prop}`);
+                            else if (/\b(input|field|form)\b/i.test(name) && !/border|ring|shadow/i.test(name)) setTok('inputBg', hex, `css-var:${prop}`);
+                            else if (/\b(sidebar|sidenav|side-nav)\b/i.test(name) && !/foreground|text|on-|fg|item|link/i.test(name)) setTok('sidebar', hex, `css-var:${prop}`);
+                            else if (/\b(popover|dropdown|menu-bg|context)\b/i.test(name) && !/foreground|text|on-|fg/i.test(name)) setTok('popover', hex, `css-var:${prop}`);
+                            else if (/\b(toast|snackbar|notification)\b/i.test(name) && !/foreground|text|on-|fg/i.test(name)) setTok('toastBg', hex, `css-var:${prop}`);
+                        }
+                    }
+                }
+            } catch (_) {}
+
+            return result;
+        }
+
+        // ─── STYLESHEET RULE TOKENS ───────────────────────────────────
+        // Scans accessible CSS rules for component class patterns.
+        // Used as the lowest-priority fallback — fills gaps not covered by
+        // DOM scan or CSS variables (e.g. Avatar when no <img> is on page).
+        function extractStylesheetTokens() {
+            const result = {};
+
+            function setTok(key, value, source) {
+                if (!value || value === 'none' || value === 'transparent' ||
+                    value === 'rgba(0, 0, 0, 0)' || value === '0px' ||
+                    value === 'auto' || value === 'normal' || result[key]) return;
+                result[key] = { value, source };
+            }
+
+            function colVal(raw) {
+                if (!raw || raw === 'transparent' || raw === 'initial' || raw === 'inherit') return null;
+                return toHex(raw) || (/^#/.test(raw) ? raw : null);
+            }
+            function szVal(raw) {
+                if (!raw || raw === 'auto' || raw === '0px' || raw === 'none' || raw === 'normal') return null;
+                return raw;
+            }
+
+            // Yield all style rules from a sheet, descending into @media/@supports
+            function* allRules(sheet) {
+                let rules;
+                try { rules = sheet.cssRules || sheet.rules; } catch (_) { return; }
+                if (!rules) return;
+                for (const rule of rules) {
+                    if (rule.type === 1) { yield rule; }
+                    else if (rule.cssRules) {
+                        for (const inner of rule.cssRules) {
+                            if (inner.type === 1) yield inner;
+                        }
+                    }
+                }
+            }
+
+            // [selectorPattern, handler(style, selectorText)]
+            const patterns = [
+                // ── Primary Button ────────────────────────────────────
+                [/\.(btn-primary|button-primary|btn--primary|primary-btn)\b/i, (s, sel) => {
+                    setTok('primary',             colVal(s.backgroundColor), `sheet:${sel}`);
+                    setTok('primaryForeground',   colVal(s.color),           `sheet:${sel}`);
+                    setTok('primaryBorderRadius', szVal(s.borderRadius),     `sheet:${sel}`);
+                    setTok('primaryBorderColor',  colVal(s.borderColor),     `sheet:${sel}`);
+                    setTok('primaryBorderWidth',  szVal(s.borderTopWidth),   `sheet:${sel}`);
+                    setTok('primaryFontSize',     szVal(s.fontSize),         `sheet:${sel}`);
+                    setTok('primaryFontWeight',   szVal(s.fontWeight),       `sheet:${sel}`);
+                    setTok('primaryPaddingTop',   szVal(s.paddingTop),       `sheet:${sel}`);
+                    setTok('primaryPaddingRight', szVal(s.paddingRight),     `sheet:${sel}`);
+                }],
+                // ── Secondary Button ──────────────────────────────────
+                [/\.(btn-secondary|button-secondary|btn--secondary|secondary-btn)\b/i, (s, sel) => {
+                    setTok('secondary',             colVal(s.backgroundColor), `sheet:${sel}`);
+                    setTok('secondaryForeground',   colVal(s.color),           `sheet:${sel}`);
+                    setTok('secondaryBorderRadius', szVal(s.borderRadius),     `sheet:${sel}`);
+                    setTok('secondaryBorderColor',  colVal(s.borderColor),     `sheet:${sel}`);
+                    setTok('secondaryBorderWidth',  szVal(s.borderTopWidth),   `sheet:${sel}`);
+                    setTok('secondaryPaddingTop',   szVal(s.paddingTop),       `sheet:${sel}`);
+                    setTok('secondaryPaddingRight', szVal(s.paddingRight),     `sheet:${sel}`);
+                }],
+                // ── Destructive / Danger Button ───────────────────────
+                [/\.(btn-danger|btn-destructive|button-danger|button--danger)\b/i, (s, sel) => {
+                    setTok('destructive',           colVal(s.backgroundColor), `sheet:${sel}`);
+                    setTok('destructiveForeground', colVal(s.color),           `sheet:${sel}`);
+                    setTok('destructiveBorderRadius', szVal(s.borderRadius),   `sheet:${sel}`);
+                    setTok('destructivePaddingTop', szVal(s.paddingTop),       `sheet:${sel}`);
+                    setTok('destructivePaddingRight', szVal(s.paddingRight),   `sheet:${sel}`);
+                }],
+                // ── Generic button (border-radius / font fallback) ────
+                [/^\.btn\b|^\.button\b/i, (s, sel) => {
+                    setTok('primaryBorderRadius', szVal(s.borderRadius), `sheet:${sel}`);
+                    setTok('primaryFontSize',     szVal(s.fontSize),     `sheet:${sel}`);
+                    setTok('primaryPaddingTop',   szVal(s.paddingTop),   `sheet:${sel}`);
+                    setTok('primaryPaddingRight', szVal(s.paddingRight), `sheet:${sel}`);
+                }],
+                // ── Avatar ────────────────────────────────────────────
+                [/\.(avatar|Avatar|user-avatar|profile-pic|profile-avatar)\b/i, (s, sel) => {
+                    setTok('avatarBg',           colVal(s.backgroundColor), `sheet:${sel}`);
+                    setTok('avatarBorderRadius', szVal(s.borderRadius),     `sheet:${sel}`);
+                    setTok('avatarBorderColor',  colVal(s.borderColor),     `sheet:${sel}`);
+                    const w = parseInt(s.width) || 0, h = parseInt(s.height) || 0;
+                    if (w > 0 && w === h) setTok('avatarSize', `${w}px`, `sheet:${sel}`);
+                }],
+                // ── Badge / Tag / Chip ────────────────────────────────
+                [/\.(badge|Badge|tag|Tag|chip|Chip|pill)\b/i, (s, sel) => {
+                    setTok('badgeBackground',   colVal(s.backgroundColor), `sheet:${sel}`);
+                    setTok('badgeForeground',   colVal(s.color),           `sheet:${sel}`);
+                    setTok('badgeBorderRadius', szVal(s.borderRadius),     `sheet:${sel}`);
+                    setTok('badgeFontSize',     szVal(s.fontSize),         `sheet:${sel}`);
+                    setTok('badgeFontWeight',   szVal(s.fontWeight),       `sheet:${sel}`);
+                    setTok('badgePaddingTop',   szVal(s.paddingTop),       `sheet:${sel}`);
+                    setTok('badgePaddingRight', szVal(s.paddingRight),     `sheet:${sel}`);
+                }],
+                // ── Card / Surface ────────────────────────────────────
+                [/\.(card|Card|surface|panel|tile)\b(?!-header|-body|-footer|-title|-text)/i, (s, sel) => {
+                    setTok('card',             colVal(s.backgroundColor), `sheet:${sel}`);
+                    setTok('cardForeground',   colVal(s.color),           `sheet:${sel}`);
+                    setTok('cardBorderRadius', szVal(s.borderRadius),     `sheet:${sel}`);
+                    setTok('cardBorderColor',  colVal(s.borderColor),     `sheet:${sel}`);
+                    setTok('cardBorderWidth',  szVal(s.borderTopWidth),   `sheet:${sel}`);
+                    setTok('cardBoxShadow',    szVal(s.boxShadow),        `sheet:${sel}`);
+                    setTok('cardPaddingTop',   szVal(s.paddingTop),       `sheet:${sel}`);
+                    setTok('cardPaddingRight', szVal(s.paddingRight),     `sheet:${sel}`);
+                }],
+                // ── Input / Form Control ──────────────────────────────
+                [/\.(input|Input|form-control|text-input|text-field|input-field)\b/i, (s, sel) => {
+                    setTok('inputBg',           colVal(s.backgroundColor), `sheet:${sel}`);
+                    setTok('border',            colVal(s.borderColor),     `sheet:${sel}`);
+                    setTok('inputBorderRadius', szVal(s.borderRadius),     `sheet:${sel}`);
+                    setTok('inputBorderWidth',  szVal(s.borderTopWidth),   `sheet:${sel}`);
+                    setTok('inputFontSize',     szVal(s.fontSize),         `sheet:${sel}`);
+                    setTok('inputPaddingTop',   szVal(s.paddingTop),       `sheet:${sel}`);
+                    setTok('inputPaddingRight', szVal(s.paddingRight),     `sheet:${sel}`);
+                    const h = szVal(s.height) || szVal(s.minHeight);
+                    setTok('inputHeight', h, `sheet:${sel}`);
+                }],
+                // ── Popover / Dropdown ────────────────────────────────
+                [/\.(popover|Popover|dropdown-menu|DropdownMenu|context-menu|floating-panel)\b/i, (s, sel) => {
+                    setTok('popover',             colVal(s.backgroundColor), `sheet:${sel}`);
+                    setTok('popoverForeground',   colVal(s.color),           `sheet:${sel}`);
+                    setTok('popoverBorderRadius', szVal(s.borderRadius),     `sheet:${sel}`);
+                    setTok('popoverBorderColor',  colVal(s.borderColor),     `sheet:${sel}`);
+                    setTok('popoverBoxShadow',    szVal(s.boxShadow),        `sheet:${sel}`);
+                }],
+                // ── Alert ─────────────────────────────────────────────
+                [/\.(alert|Alert|notification|Notification)\b(?!-dismiss|-close|-icon)/i, (s, sel) => {
+                    setTok('alertBg',           colVal(s.backgroundColor), `sheet:${sel}`);
+                    setTok('alertForeground',   colVal(s.color),           `sheet:${sel}`);
+                    setTok('alertBorderRadius', szVal(s.borderRadius),     `sheet:${sel}`);
+                    setTok('alertBorderColor',  colVal(s.borderColor),     `sheet:${sel}`);
+                    setTok('alertPaddingTop',   szVal(s.paddingTop),       `sheet:${sel}`);
+                    setTok('alertPaddingRight', szVal(s.paddingRight),     `sheet:${sel}`);
+                }],
+                // ── Toast / Snackbar ──────────────────────────────────
+                [/\.(toast|Toast|snackbar|Snackbar)\b(?!-close|-action)/i, (s, sel) => {
+                    setTok('toastBg',           colVal(s.backgroundColor), `sheet:${sel}`);
+                    setTok('toastForeground',   colVal(s.color),           `sheet:${sel}`);
+                    setTok('toastBorderRadius', szVal(s.borderRadius),     `sheet:${sel}`);
+                    setTok('toastBorderColor',  colVal(s.borderColor),     `sheet:${sel}`);
+                    setTok('toastBoxShadow',    szVal(s.boxShadow),        `sheet:${sel}`);
+                    setTok('toastPaddingTop',   szVal(s.paddingTop),       `sheet:${sel}`);
+                    setTok('toastPaddingRight', szVal(s.paddingRight),     `sheet:${sel}`);
+                }],
+                // ── Dialog / Modal ────────────────────────────────────
+                [/\.(dialog|Dialog|modal|Modal|modal-content|dialog-content|DialogContent)\b/i, (s, sel) => {
+                    setTok('dialogBg',           colVal(s.backgroundColor), `sheet:${sel}`);
+                    setTok('dialogForeground',   colVal(s.color),           `sheet:${sel}`);
+                    setTok('dialogBorderRadius', szVal(s.borderRadius),     `sheet:${sel}`);
+                    setTok('dialogBoxShadow',    szVal(s.boxShadow),        `sheet:${sel}`);
+                    setTok('dialogPaddingTop',   szVal(s.paddingTop),       `sheet:${sel}`);
+                    setTok('dialogPaddingRight', szVal(s.paddingRight),     `sheet:${sel}`);
+                }],
+                // ── Drawer / Sheet ────────────────────────────────────
+                [/\.(drawer|Drawer|sheet|Sheet|side-panel|offcanvas)\b/i, (s, sel) => {
+                    setTok('sheetBg',         colVal(s.backgroundColor), `sheet:${sel}`);
+                    setTok('sheetForeground', colVal(s.color),           `sheet:${sel}`);
+                    setTok('sheetBorderColor',colVal(s.borderColor),     `sheet:${sel}`);
+                }],
+                // ── Accordion ─────────────────────────────────────────
+                [/\.(accordion|Accordion|accordion-item|AccordionItem)\b/i, (s, sel) => {
+                    setTok('accordionBg',                  colVal(s.backgroundColor), `sheet:${sel}`);
+                    setTok('accordionBorderColor',         colVal(s.borderColor),     `sheet:${sel}`);
+                    setTok('accordionTriggerForeground',   colVal(s.color),           `sheet:${sel}`);
+                    setTok('accordionTriggerFontSize',     szVal(s.fontSize),         `sheet:${sel}`);
+                    setTok('accordionTriggerPaddingTop',   szVal(s.paddingTop),       `sheet:${sel}`);
+                    setTok('accordionTriggerPaddingRight', szVal(s.paddingRight),     `sheet:${sel}`);
+                }],
+                // ── Switch / Toggle ───────────────────────────────────
+                [/\.(switch|Switch|toggle|Toggle|switch-track|toggle-track)\b/i, (s, sel) => {
+                    setTok('switchBg',           colVal(s.backgroundColor), `sheet:${sel}`);
+                    setTok('switchBorderRadius', szVal(s.borderRadius),     `sheet:${sel}`);
+                    setTok('switchWidth',        szVal(s.width),            `sheet:${sel}`);
+                    setTok('switchHeight',       szVal(s.height),           `sheet:${sel}`);
+                }],
+                // ── Tabs list ─────────────────────────────────────────
+                [/\.(tabs|Tabs|tab-list|TabsList|nav-tabs)\b/i, (s, sel) => {
+                    setTok('tabsBg',           colVal(s.backgroundColor), `sheet:${sel}`);
+                    setTok('tabsBorderRadius', szVal(s.borderRadius),     `sheet:${sel}`);
+                    setTok('tabsPaddingTop',   szVal(s.paddingTop),       `sheet:${sel}`);
+                }],
+                // ── Active tab ────────────────────────────────────────
+                [/\.(tab--active|tab-active|active-tab|TabsTrigger\[data-state)/i, (s, sel) => {
+                    setTok('tabActiveBg',           colVal(s.backgroundColor), `sheet:${sel}`);
+                    setTok('tabActiveForeground',   colVal(s.color),           `sheet:${sel}`);
+                    setTok('tabActiveBorderRadius', szVal(s.borderRadius),     `sheet:${sel}`);
+                    setTok('tabActiveFontWeight',   szVal(s.fontWeight),       `sheet:${sel}`);
+                }],
+                // ── Sidebar / Side nav ────────────────────────────────
+                [/\.(sidebar|Sidebar|side-nav|sidenav|side-menu)\b/i, (s, sel) => {
+                    setTok('sidebar',            colVal(s.backgroundColor), `sheet:${sel}`);
+                    setTok('sidebarForeground',  colVal(s.color),           `sheet:${sel}`);
+                    setTok('sidebarBorderColor', colVal(s.borderColor),     `sheet:${sel}`);
+                    setTok('sidebarWidth',       szVal(s.width),            `sheet:${sel}`);
+                }],
+                // ── Checkbox ──────────────────────────────────────────
+                [/\.(checkbox|Checkbox|check-box|CheckBox)\b/i, (s, sel) => {
+                    setTok('checkboxBorderColor',  colVal(s.borderColor), `sheet:${sel}`);
+                    setTok('checkboxBorderRadius', szVal(s.borderRadius), `sheet:${sel}`);
+                    const w = parseInt(s.width) || 0, h = parseInt(s.height) || 0;
+                    const sz = Math.min(w, h);
+                    if (sz > 0) setTok('checkboxSize', `${sz}px`, `sheet:${sel}`);
+                }],
+                // ── Table ─────────────────────────────────────────────
+                [/\.(table|Table|data-table|DataTable)\b/i, (s, sel) => {
+                    setTok('tableBg',          colVal(s.backgroundColor), `sheet:${sel}`);
+                    setTok('tableBorderColor', colVal(s.borderColor),     `sheet:${sel}`);
+                }],
+                [/\.(table-header|TableHeader|thead|table th)\b/i, (s, sel) => {
+                    setTok('tableHeaderBg',         colVal(s.backgroundColor), `sheet:${sel}`);
+                    setTok('tableHeaderForeground', colVal(s.color),           `sheet:${sel}`);
+                    setTok('tableHeaderFontWeight', szVal(s.fontWeight),       `sheet:${sel}`);
+                    setTok('tableHeaderFontSize',   szVal(s.fontSize),         `sheet:${sel}`);
+                    setTok('tableHeaderPaddingTop', szVal(s.paddingTop),       `sheet:${sel}`);
+                }],
+            ];
+
+            let ruleCount = 0;
+            const MAX_RULES = 6000;
+
+            outer:
+            for (const sheet of document.styleSheets) {
+                for (const rule of allRules(sheet)) {
+                    if (++ruleCount > MAX_RULES) break outer;
+                    const sel = rule.selectorText;
+                    if (!sel) continue;
+                    for (const [pat, handler] of patterns) {
+                        if (pat.test(sel)) handler(rule.style, sel);
+                    }
+                }
+            }
+
+            return result;
+        }
+
+        // Merge CSS variable tokens (lower priority than DOM scan)
+        const cssVarTokens = extractCssVariableTokens();
+        for (const [key, val] of Object.entries(cssVarTokens)) {
+            if (!semanticTokens[key]) semanticTokens[key] = val;
+        }
+
+        // Merge stylesheet rule tokens (sync class-pattern scan — works for named classes)
+        const sheetTokens = extractStylesheetTokens();
+        for (const [key, val] of Object.entries(sheetTokens)) {
+            if (!semanticTokens[key]) semanticTokens[key] = val;
+        }
+
+        // ─── DEEP STYLESHEET SCAN ────────────────────────────────────────────────
+        // Fetches actual CSS source, correlates classes with known DOM elements,
+        // and infers component types from property profiles.
+        // Works for CSS modules, Tailwind, CSS-in-JS — anything with actual CSS rules.
+        async function deepScanStylesheets() {
+            const deep = {};
+
+            // Keys that represent background/surface colors — #000000 is almost always
+            // a browser-resolved default (unset color inherits black), not a real design token.
+            const _bgKeys = new Set(['primary','secondary','card','inputBg','popover','dialog',
+                'sidebar','muted','accent','destructive','toastBg','alertBg','dialogBg',
+                'sheetBg','tooltipBg','tabsBg','tabActiveBg','tableHeaderBg','tableBg',
+                'headerBg','badgeBackground','avatarBg','switchBg','accordionBg']);
+
+            function setD(key, value, source) {
+                if (!value || value === 'none' || value === 'transparent' ||
+                    value === 'rgba(0, 0, 0, 0)' || value === '0px' ||
+                    value === 'auto' || value === 'normal' || value === 'initial' ||
+                    value === 'inherit' || deep[key] || semanticTokens[key]) return;
+                // Reject pure black (#000000) as a background/surface token — it is
+                // almost always a browser default rather than a real design decision.
+                if ((value.toUpperCase() === '#000000') &&
+                    (_bgKeys.has(key) || key.endsWith('Bg') || key.endsWith('Background') || key.endsWith('Surface'))) return;
+                deep[key] = { value, source };
+            }
+
+            // ── 1. Collect all CSS text (inline + fetched cross-origin) ──────────
+            const cssBlocks = []; // [{ text, url }]
+            let totalBytes = 0;
+            const BYTE_CAP = 4_000_000; // 4MB total
+
+            for (const sheet of document.styleSheets) {
+                if (totalBytes >= BYTE_CAP) break;
+                // Same-origin: serialize accessible rules
+                try {
+                    const rules = sheet.cssRules || sheet.rules;
+                    if (rules && rules.length > 0) {
+                        const lines = [];
+                        for (const r of rules) { if (r.cssText) lines.push(r.cssText); }
+                        const text = lines.join('\n');
+                        cssBlocks.push({ text, url: sheet.href || 'inline' });
+                        totalBytes += text.length;
+                        continue;
+                    }
+                } catch (_) {}
+                // Cross-origin: try fetch (many CDNs allow CORS)
+                if (sheet.href && totalBytes < BYTE_CAP) {
+                    try {
+                        const res = await fetch(sheet.href, { cache: 'force-cache' });
+                        if (res.ok) {
+                            const text = await res.text();
+                            cssBlocks.push({ text, url: sheet.href });
+                            totalBytes += text.length;
+                        }
+                    } catch (_) {}
+                }
+            }
+            if (cssBlocks.length === 0) return deep;
+
+            // ── 2. Build class → component role map from DOM elements ────────────
+            // For elements we CAN identify (they have semantic tags / ARIA roles),
+            // record every CSS class they use → that class is "button", "input" etc.
+            const classRole = {};
+            function mapClasses(selector, role) {
+                try {
+                    document.querySelectorAll(selector).forEach(el => {
+                        if (el.closest('#plukrr-sidebar,#plukrr-picker,#dc-overlay,#plukrr-ds-builder-panel')) return;
+                        el.classList.forEach(cls => { if (!classRole[cls]) classRole[cls] = role; });
+                    });
+                } catch (_) {}
+            }
+            mapClasses('button, [role="button"], input[type="submit"], input[type="button"]', 'button');
+            mapClasses('input:not([type="hidden"]):not([type="submit"]):not([type="button"]):not([type="checkbox"]):not([type="radio"])', 'input');
+            mapClasses('textarea',                                              'input');
+            mapClasses('[role="checkbox"], input[type="checkbox"]',             'checkbox');
+            mapClasses('[role="switch"]',                                       'switch');
+            mapClasses('[role="tab"]',                                          'tab');
+            mapClasses('[role="tablist"]',                                      'tablist');
+            mapClasses('[role="menu"], [role="listbox"], [role="combobox"]',    'popover');
+            mapClasses('[role="dialog"], [role="alertdialog"]',                 'dialog');
+            mapClasses('[role="tooltip"]',                                      'tooltip');
+            mapClasses('[role="alert"], [role="status"]',                       'alert');
+            mapClasses('aside, [role="complementary"]',                         'sidebar');
+            mapClasses('header, [role="banner"]',                               'header');
+            mapClasses('table, [role="table"], [role="grid"]',                  'table');
+            mapClasses('[role="progressbar"], progress',                        'progress');
+            mapClasses('[role="radio"], input[type="radio"]',                   'radio');
+            mapClasses('[role="slider"], input[type="range"]',                  'slider');
+
+            // ── 3. Parse CSS: yields { selectors[], decls{} } for every rule ─────
+            function* parseCssRules(text) {
+                const clean = text.replace(/\/\*[\s\S]*?\*\//g, '');
+                // Two-pass: top-level rules, then rules inside @media/@supports blocks
+                function* extractRules(src) {
+                    const re = /([^@{}][^{}]*?)\{([^{}]*)\}/g;
+                    let m;
+                    while ((m = re.exec(src)) !== null) {
+                        const selectors = m[1].trim().split(',').map(s => s.trim()).filter(s => s && !s.startsWith('@'));
+                        if (selectors.length === 0) continue;
+                        const decls = {};
+                        for (const part of m[2].split(';')) {
+                            const ci = part.indexOf(':');
+                            if (ci < 1) continue;
+                            const prop = part.slice(0, ci).trim().toLowerCase();
+                            const val  = part.slice(ci + 1).trim().replace(/\s*!important\s*$/, '');
+                            if (prop && val) decls[prop] = val;
+                        }
+                        if (Object.keys(decls).length > 0) yield { selectors, decls };
+                    }
+                }
+                yield* extractRules(clean);
+                // Also extract rules nested inside @media / @supports / @layer
+                const atBlocks = clean.match(/@[^{]+\{([\s\S]*?)\}\s*\}/g) || [];
+                for (const block of atBlocks) {
+                    const inner = block.replace(/^[^{]+\{/, '').replace(/\}\s*$/, '');
+                    yield* extractRules(inner);
+                }
+            }
+
+            // ── 4. Value helpers ──────────────────────────────────────────────────
+            function resolveVal(val) {
+                if (!val) return null;
+                val = val.trim();
+                if (val.startsWith('var(')) {
+                    const vn = (val.match(/var\(\s*(--[^,)]+)/) || [])[1];
+                    if (vn) {
+                        const resolved = getComputedStyle(document.documentElement).getPropertyValue(vn).trim();
+                        return resolved || null;
+                    }
+                    return null;
+                }
+                return val;
+            }
+            function hex(val) {
+                const r = resolveVal(val);
+                if (!r) return null;
+                if (/^#[0-9a-fA-F]{3,8}$/.test(r)) return r.toUpperCase();
+                if (/^rgba?/.test(r)) return toHex(r);
+                // Try resolving through dummy element for HSL/oklch
+                try {
+                    const el = document.createElement('div');
+                    el.style.cssText = `color:${r}!important;position:absolute;visibility:hidden`;
+                    document.documentElement.appendChild(el);
+                    const h = toHex(getComputedStyle(el).color);
+                    el.remove();
+                    return h;
+                } catch (_) { return null; }
+            }
+            function sz(val) {
+                const r = resolveVal(val);
+                if (!r || r === 'auto' || r === 'none' || r === '0px' || r === 'normal') return null;
+                return r;
+            }
+            function getBorderColor(decls) {
+                // border shorthand: "1px solid #ccc"
+                const b = resolveVal(decls['border'] || decls['border-top'] || '');
+                if (b) {
+                    const parts = b.split(/\s+/);
+                    for (const p of parts) {
+                        const h = hex(p);
+                        if (h) return h;
+                    }
+                }
+                return hex(decls['border-color'] || decls['border-top-color'] || '');
+            }
+            function getBorderWidth(decls) {
+                const bw = sz(decls['border-width'] || decls['border-top-width'] || '');
+                if (bw) return bw;
+                const b = resolveVal(decls['border'] || '');
+                if (b) {
+                    const m = b.match(/\b(\d+px)\b/);
+                    return m ? m[1] : null;
+                }
+                return null;
+            }
+
+            // ── 5. Apply extracted properties to semantic tokens by role ──────────
+            function applyProps(role, decls, source) {
+                const bg     = hex(decls['background-color'] || decls['background']);
+                const fg     = hex(decls['color']);
+                const br     = sz(decls['border-radius']);
+                const shadow = (() => { const v = resolveVal(decls['box-shadow']); return v && v !== 'none' ? v : null; })();
+                const bc     = getBorderColor(decls);
+                const bw     = getBorderWidth(decls);
+                const fs     = sz(decls['font-size']);
+                const fw     = sz(decls['font-weight']);
+                const pt     = sz(decls['padding-top']);
+                const pr     = sz(decls['padding-right']);
+                const h      = sz(decls['height'] || decls['min-height']);
+                const w      = sz(decls['width']);
+
+                switch (role) {
+                    case 'button':
+                        setD('primary',             bg,     source);
+                        setD('primaryForeground',   fg,     source);
+                        setD('primaryBorderRadius', br,     source);
+                        setD('primaryBorderColor',  bc,     source);
+                        setD('primaryBorderWidth',  bw,     source);
+                        setD('primaryFontSize',     fs,     source);
+                        setD('primaryFontWeight',   fw,     source);
+                        setD('primaryPaddingTop',   pt,     source);
+                        setD('primaryPaddingRight', pr,     source);
+                        setD('primaryHeight',       h,      source);
+                        setD('primaryBoxShadow',    shadow, source);
+                        break;
+                    case 'input':
+                        setD('inputBg',           bg, source);
+                        setD('border',            bc, source);
+                        setD('inputBorderRadius', br, source);
+                        setD('inputBorderWidth',  bw, source);
+                        setD('inputFontSize',     fs, source);
+                        setD('inputPaddingTop',   pt, source);
+                        setD('inputPaddingRight', pr, source);
+                        setD('inputHeight',       h,  source);
+                        break;
+                    case 'card':
+                        setD('card',             bg,     source);
+                        setD('cardForeground',   fg,     source);
+                        setD('cardBorderRadius', br,     source);
+                        setD('cardBorderColor',  bc,     source);
+                        setD('cardBorderWidth',  bw,     source);
+                        setD('cardBoxShadow',    shadow, source);
+                        setD('cardPaddingTop',   pt,     source);
+                        setD('cardPaddingRight', pr,     source);
+                        break;
+                    case 'badge':
+                        setD('badgeBackground',   bg, source);
+                        setD('badgeForeground',   fg, source);
+                        setD('badgeBorderRadius', br, source);
+                        setD('badgeFontSize',     fs, source);
+                        setD('badgeFontWeight',   fw, source);
+                        setD('badgePaddingTop',   pt, source);
+                        setD('badgePaddingRight', pr, source);
+                        break;
+                    case 'dialog':
+                        setD('dialogBg',           bg,     source);
+                        setD('dialogForeground',   fg,     source);
+                        setD('dialogBorderRadius', br,     source);
+                        setD('dialogBoxShadow',    shadow, source);
+                        setD('dialogPaddingTop',   pt,     source);
+                        setD('dialogPaddingRight', pr,     source);
+                        break;
+                    case 'popover':
+                        setD('popover',             bg,     source);
+                        setD('popoverForeground',   fg,     source);
+                        setD('popoverBorderRadius', br,     source);
+                        setD('popoverBoxShadow',    shadow, source);
+                        setD('popoverBorderColor',  bc,     source);
+                        break;
+                    case 'sidebar':
+                        setD('sidebar',            bg, source);
+                        setD('sidebarForeground',  fg, source);
+                        setD('sidebarBorderColor', bc, source);
+                        setD('sidebarWidth',       w,  source);
+                        break;
+                    case 'header':
+                        setD('headerBg',          bg,     source);
+                        setD('headerBorderColor', bc,     source);
+                        setD('headerBoxShadow',   shadow, source);
+                        setD('headerHeight',      h,      source);
+                        break;
+                    case 'tablist':
+                        setD('tabsBg',           bg, source);
+                        setD('tabsBorderRadius', br, source);
+                        setD('tabsPaddingTop',   pt, source);
+                        break;
+                    case 'tab':
+                        setD('tabActiveBg',           bg, source);
+                        setD('tabActiveForeground',   fg, source);
+                        setD('tabActiveBorderRadius', br, source);
+                        setD('tabActiveFontWeight',   fw, source);
+                        break;
+                    case 'alert':
+                        setD('alertBg',           bg, source);
+                        setD('alertForeground',   fg, source);
+                        setD('alertBorderColor',  bc, source);
+                        setD('alertBorderRadius', br, source);
+                        setD('alertPaddingTop',   pt, source);
+                        setD('alertPaddingRight', pr, source);
+                        break;
+                    case 'toast':
+                        setD('toastBg',           bg,     source);
+                        setD('toastForeground',   fg,     source);
+                        setD('toastBorderRadius', br,     source);
+                        setD('toastBorderColor',  bc,     source);
+                        setD('toastBoxShadow',    shadow, source);
+                        setD('toastPaddingTop',   pt,     source);
+                        setD('toastPaddingRight', pr,     source);
+                        break;
+                    case 'tooltip':
+                        setD('tooltipBg',           bg, source);
+                        setD('tooltipForeground',   fg, source);
+                        setD('tooltipBorderRadius', br, source);
+                        setD('tooltipFontSize',     fs, source);
+                        setD('tooltipPaddingTop',   pt, source);
+                        setD('tooltipPaddingRight', pr, source);
+                        break;
+                    case 'avatar':
+                        setD('avatarBg',           bg, source);
+                        setD('avatarBorderRadius', br, source);
+                        setD('avatarSize',         w || h, source);
+                        setD('avatarBorderColor',  bc, source);
+                        break;
+                    case 'switch':
+                        setD('switchBg',           bg, source);
+                        setD('switchBorderRadius', br, source);
+                        setD('switchWidth',        w,  source);
+                        setD('switchHeight',       h,  source);
+                        break;
+                    case 'checkbox':
+                        setD('checkboxBorderColor',  bc, source);
+                        setD('checkboxBorderRadius', br, source);
+                        break;
+                }
+            }
+
+            // ── 6. Property-profile inference for elements not in DOM ─────────────
+            function inferRole(decls) {
+                const bg       = resolveVal(decls['background-color'] || decls['background'] || '');
+                const br       = parseFloat(resolveVal(decls['border-radius']) || '0');
+                const bs       = resolveVal(decls['box-shadow'] || '') || 'none';
+                const position = resolveVal(decls['position'] || '') || '';
+                const zIdx     = parseInt(resolveVal(decls['z-index'] || '') || '0', 10);
+                const cursor   = resolveVal(decls['cursor'] || '') || '';
+                const display  = resolveVal(decls['display'] || '') || '';
+                const width    = resolveVal(decls['width']  || '') || '';
+                const height   = resolveVal(decls['height'] || '') || '';
+                const pt       = parseFloat(resolveVal(decls['padding-top']   || '') || '0');
+                const pr       = parseFloat(resolveVal(decls['padding-right'] || '') || '0');
+                const fs       = parseFloat(resolveVal(decls['font-size']     || '') || '0');
+                const hasBg    = bg && bg !== 'transparent' && !bg.includes('none') && bg !== 'inherit';
+                const hasBorder = !!(decls['border'] || decls['border-color'] || decls['border-top-width']);
+                const hasShadow = bs !== 'none' && !!bs;
+                const wPx = parseFloat(width);
+                const hPx = parseFloat(height);
+
+                // Avatar: square pixel dimensions + circular radius
+                if (width.endsWith('px') && height.endsWith('px') && wPx >= 16 && wPx <= 96 &&
+                    Math.abs(wPx - hPx) < 4 && br >= wPx * 0.3) return 'avatar';
+
+                // Badge/Pill: high radius + small + colored + inline-ish
+                if (br >= 9 && hasBg && pt >= 1 && pt <= 8 && pr >= 4 && pr <= 20) return 'badge';
+                if (br >= 9 && hasBg && hPx > 0 && hPx <= 32) return 'badge';
+
+                // Toast: fixed + bottom + z-index
+                if (position === 'fixed' && zIdx >= 50 && hasBg && decls['bottom']) return 'toast';
+
+                // Dialog/Modal: fixed + high z-index + background (no bottom anchor)
+                if (position === 'fixed' && zIdx >= 50 && hasBg && !decls['bottom']) return 'dialog';
+
+                // Card: has background + (shadow or border) + radius >= 4
+                if (hasBg && (hasShadow || hasBorder) && br >= 4 && !cursor.includes('pointer')) return 'card';
+
+                return null;
+            }
+
+            // ── 7. Process all collected CSS text ─────────────────────────────────
+            let ruleCount = 0;
+            const RULE_CAP = 30_000;
+
+            for (const { text, url } of cssBlocks) {
+                for (const { selectors, decls } of parseCssRules(text)) {
+                    if (++ruleCount > RULE_CAP) break;
+
+                    for (const sel of selectors) {
+                        // Strategy A: class-role correlation (high confidence)
+                        const classes = (sel.match(/\.(-?[a-zA-Z_][a-zA-Z0-9_-]*)/g) || []).map(c => c.slice(1));
+                        let role = null;
+                        for (const cls of classes) {
+                            if (classRole[cls]) { role = classRole[cls]; break; }
+                        }
+
+                        if (role) {
+                            applyProps(role, decls, `deep:${url}→${sel}`);
+                            continue;
+                        }
+
+                        // Strategy B: property-profile inference (fills gaps for off-page components)
+                        const inferred = inferRole(decls);
+                        if (inferred) applyProps(inferred, decls, `profile:${url}→${sel}`);
+                    }
+                }
+                if (ruleCount >= RULE_CAP) break;
+            }
+
+            return deep;
+        }
+
+        // Run deep scan and merge at lowest priority
+        try {
+            const deepTokens = await deepScanStylesheets();
+            for (const [key, val] of Object.entries(deepTokens)) {
+                if (!semanticTokens[key]) semanticTokens[key] = val;
+            }
+        } catch (_) {}
+
+        return {
+            pageUrl: window.location.href,
+            pageTitle: document.title,
+            typography,
+            colors,
+            components,
+            spacing,
+            radii,
+            shadows,
+            cssVariables,
+            layout,
+            semanticTokens
+        };
+    }
+
 })();
