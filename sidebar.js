@@ -14,6 +14,8 @@ let cachedScreenshot = null; // JPEG data URL, shared across all detail views in
 let dsBuilderData = null;
 let currentDsStep = 0;
 let dsBuilderPaused = false;
+/** URLs from the multi-page prompt; re-used when the user clicks Refresh. */
+let sessionAdditionalScanUrls = [];
 
 // ============================================
 // INIT
@@ -26,12 +28,14 @@ async function initSidebar() {
         const auth = await getAuth();
         if (!auth) { renderAuthScreen(); return; }
         renderTopbar('overview');
-        renderLoadingScreen('Scanning page…');
         setupMainListeners();
         await loadSubscription();
-        // Restore an in-progress DS Builder session if one was saved
         const restored = await restoreDsBuilderState();
-        if (!restored) await scanCurrentTab();
+        if (!restored) renderMultiScanGate();
+        else {
+            renderLoadingScreen('Scanning page…');
+            await scanCurrentTab();
+        }
     } catch (e) {
         console.error('[Sidebar] Init error:', e);
         renderAuthScreen();
@@ -53,33 +57,443 @@ async function loadSubscription() {
 }
 
 // ============================================
+// MULTI-PAGE SCAN — merge & helpers
+// ============================================
+
+function componentSignature(c) {
+    const p = c.properties || {};
+    const keys = Object.keys(p).sort();
+    return `${c.category}|${keys.map((k) => `${k}:${String(p[k]).slice(0, 120)}`).join('|')}`;
+}
+
+function mergeDetectionDetails(ds) {
+    const out = { inputTextField: false, inputTextarea: false };
+    for (const d of ds) {
+        if (!d) continue;
+        out.inputTextField = out.inputTextField || !!d.inputTextField;
+        out.inputTextarea = out.inputTextarea || !!d.inputTextarea;
+    }
+    return out;
+}
+
+function mergeColorRoles(primaryCr, secondaryCrs) {
+    const outs = [primaryCr, ...secondaryCrs].filter((cr) => cr && typeof cr === 'object');
+    if (!outs.length) return null;
+    const out = {};
+    for (const cr of outs) {
+        for (const [k, v] of Object.entries(cr)) {
+            if (!v?.hex) continue;
+            const prev = out[k];
+            const c = (x) => (x && x.confidence != null ? x.confidence : 0);
+            if (!prev || c(v) > c(prev)) out[k] = { ...v };
+        }
+    }
+    return Object.keys(out).length ? out : null;
+}
+
+function mergeColorArrays(primary, others) {
+    const oth = others;
+    const mergeRole = (arrs) => {
+        const byHex = new Map();
+        for (const arr of arrs) {
+            for (const e of arr || []) {
+                if (!e?.hex) continue;
+                const key = (e.role || '') + '|' + e.hex.toUpperCase();
+                const prev = byHex.get(key);
+                const conf = (x) => (x && x.confidence != null ? x.confidence : 0);
+                if (!prev || conf(e) > conf(prev)) byHex.set(key, { ...e });
+            }
+        }
+        return [...byHex.values()];
+    };
+    const cr = mergeColorRoles(primary.colorRoles, oth.map((o) => o.colorRoles));
+    return {
+        backgrounds: mergeRole([primary.backgrounds, ...oth.map((o) => o.backgrounds)]),
+        text: mergeRole([primary.text, ...oth.map((o) => o.text)]),
+        interactive: mergeRole([primary.interactive, ...oth.map((o) => o.interactive)]),
+        borders: mergeRole([primary.borders, ...oth.map((o) => o.borders)]),
+        ...(cr ? { colorRoles: cr } : {}),
+    };
+}
+
+function mergeSemanticTokensUnion(primary, others) {
+    const merged = { ...primary };
+    for (const st of others) {
+        for (const [k, v] of Object.entries(st || {})) {
+            const prev = merged[k];
+            const c = (x) => (x && x.confidence != null ? x.confidence : 0);
+            if (!prev || c(v) > c(prev)) merged[k] = v;
+        }
+    }
+    return merged;
+}
+
+function mergeCssVariables(primary, others) {
+    const out = {
+        colors: { ...(primary.colors || {}) },
+        sizes: { ...(primary.sizes || {}) },
+        fonts: { ...(primary.fonts || {}) },
+    };
+    for (const o of others) {
+        for (const [k, v] of Object.entries(o.colors || {})) {
+            if (out.colors[k] === undefined) out.colors[k] = v;
+        }
+        for (const [k, v] of Object.entries(o.sizes || {})) {
+            if (out.sizes[k] === undefined) out.sizes[k] = v;
+        }
+        for (const [k, v] of Object.entries(o.fonts || {})) {
+            if (out.fonts[k] === undefined) out.fonts[k] = v;
+        }
+    }
+    return out;
+}
+
+function mergeUniqueByValue(primaryArr, otherArr, valueKey = 'value') {
+    const seen = new Set();
+    const out = [];
+    for (const item of [...primaryArr, ...otherArr]) {
+        if (!item?.[valueKey]) continue;
+        const key = String(item[valueKey]).trim();
+        if (seen.has(key)) continue;
+        seen.add(key);
+        out.push(item);
+    }
+    return out;
+}
+
+function mergeSpacing(primary, others) {
+    let best = { ...primary };
+    for (const o of others) {
+        if (!o?.scale?.length) continue;
+        if (!best.scale?.length || o.scale.length > best.scale.length) {
+            best = { baseUnit: o.baseUnit || best.baseUnit, scale: [...o.scale] };
+        }
+    }
+    return best;
+}
+
+function mergeLayout(primary, others) {
+    const out = { ...primary };
+    for (const o of others) {
+        if (!o) continue;
+        if (!out.maxWidth && o.maxWidth) out.maxWidth = o.maxWidth;
+        if (!out.gridColumns && o.gridColumns) {
+            out.gridColumns = o.gridColumns;
+            out.gridGap = o.gridGap || out.gridGap;
+        }
+        out.flexLayouts = Math.max(out.flexLayouts || 0, o.flexLayouts || 0);
+        out.gridLayouts = Math.max(out.gridLayouts || 0, o.gridLayouts || 0);
+        if (o.breakpoints?.length && (!out.breakpoints?.length || o.breakpoints.length > (out.breakpoints?.length || 0))) {
+            out.breakpoints = o.breakpoints;
+            if (o.breakpointMeta) out.breakpointMeta = o.breakpointMeta;
+            if (o.breakpointRows) out.breakpointRows = o.breakpointRows;
+        }
+    }
+    return out;
+}
+
+function mergeTypography(primaryUrl, primaryTypo, supplementalPages) {
+    const seen = new Map();
+    let nid = 0;
+    function add(list, pageUrl) {
+        for (const t of list) {
+            const sig = `${t.family}|${t.size}|${t.weight}|${t.label}|${t.category || ''}`;
+            if (!seen.has(sig)) {
+                const id = t.id || `typo_${nid++}`;
+                seen.set(sig, { ...t, id, sourcePageUrl: pageUrl, detectedOnUrls: [pageUrl] });
+            } else {
+                const ex = seen.get(sig);
+                if (!ex.detectedOnUrls.includes(pageUrl)) ex.detectedOnUrls.push(pageUrl);
+            }
+        }
+    }
+    add(primaryTypo || [], primaryUrl);
+    for (const p of supplementalPages) {
+        add(p.data.typography || [], p.url);
+    }
+    return [...seen.values()];
+}
+
+function mergeComponentsLists(primaryUrl, primaryComps, supplementalPages) {
+    const seen = new Map();
+    let idx = 0;
+    function add(list, pageUrl) {
+        for (const c of list) {
+            const sig = componentSignature(c);
+            if (!seen.has(sig)) {
+                const id = `m_comp_${idx++}`;
+                seen.set(sig, { ...c, id, sourcePageUrl: pageUrl, detectedOnUrls: [pageUrl] });
+            } else {
+                const ex = seen.get(sig);
+                if (!ex.detectedOnUrls.includes(pageUrl)) ex.detectedOnUrls.push(pageUrl);
+            }
+        }
+    }
+    add(primaryComps || [], primaryUrl);
+    for (const p of supplementalPages) {
+        add(p.data.components || [], p.url);
+    }
+    return [...seen.values()];
+}
+
+function mergeExtractedData(primary, supplemental) {
+    const supplementalPages = supplemental.filter((s) => s && s.data);
+    const others = supplementalPages.map((s) => s.data);
+    const primaryUrl = primary.pageUrl;
+
+    const merged = { ...primary };
+    merged.multiPageScan = {
+        primaryUrl,
+        scannedPages: [
+            { url: primary.pageUrl, pageTitle: primary.pageTitle, role: 'primary' },
+            ...supplementalPages.map((p) => ({ url: p.url, pageTitle: p.data.pageTitle, role: 'supplemental' })),
+        ],
+        componentDetectionByUrl: {},
+        componentsDetectedOn: {},
+    };
+
+    merged.multiPageScan.componentDetectionByUrl[primary.pageUrl] = primary.componentDetection?.detectedIds || [];
+    for (const p of supplementalPages) {
+        merged.multiPageScan.componentDetectionByUrl[p.url] = p.data.componentDetection?.detectedIds || [];
+    }
+
+    const ids = new Set(primary.componentDetection?.detectedIds || []);
+    for (const p of supplementalPages) {
+        for (const id of p.data.componentDetection?.detectedIds || []) ids.add(id);
+    }
+    merged.componentDetection = merged.componentDetection || {};
+    merged.componentDetection.detectedIds = [...ids];
+
+    const dets = [
+        primary.componentDetection?.details,
+        ...supplementalPages.map((p) => p.data.componentDetection?.details),
+    ].filter(Boolean);
+    merged.componentDetection.details = mergeDetectionDetails(dets);
+
+    merged.components = mergeComponentsLists(primaryUrl, primary.components || [], supplementalPages);
+    merged.typography = mergeTypography(primaryUrl, primary.typography || [], supplementalPages);
+    merged.colors = mergeColorArrays(primary.colors || {}, others.map((o) => o.colors || {}));
+    merged.semanticTokens = mergeSemanticTokensUnion(primary.semanticTokens || {}, others.map((o) => o.semanticTokens || {}));
+    merged.cssVariables = mergeCssVariables(primary.cssVariables || {}, others.map((o) => o.cssVariables || {}));
+    merged.radii = mergeUniqueByValue(primary.radii || [], others.flatMap((o) => o.radii || []));
+    merged.shadows = mergeUniqueByValue(primary.shadows || [], others.flatMap((o) => o.shadows || []));
+    merged.spacing = mergeSpacing(primary.spacing || {}, others.map((o) => o.spacing || {}).filter(Boolean));
+    merged.layout = mergeLayout(primary.layout || {}, others.map((o) => o.layout || {}));
+
+    const warns = new Set([...(primary.extractionWarnings || [])]);
+    for (const o of others) {
+        for (const w of o.extractionWarnings || []) warns.add(w);
+    }
+    merged.extractionWarnings = [...warns];
+
+    for (const id of merged.componentDetection.detectedIds) {
+        const urls = [];
+        if ((primary.componentDetection?.detectedIds || []).includes(id)) urls.push(primaryUrl);
+        for (const p of supplementalPages) {
+            if ((p.data.componentDetection?.detectedIds || []).includes(id)) urls.push(p.url);
+        }
+        merged.multiPageScan.componentsDetectedOn[id] = urls;
+    }
+
+    return merged;
+}
+
+function parseAdditionalScanUrls(text, currentUrl) {
+    let curNorm = '';
+    try {
+        curNorm = new URL(currentUrl || '').href.replace(/\/$/, '');
+    } catch (_) {}
+    const lines = (text || '').split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+    const out = [];
+    for (const line of lines) {
+        if (out.length >= 5) break;
+        try {
+            let u = /^https?:\/\//i.test(line) ? line : new URL('https://' + line.replace(/^\/\//, '')).href;
+            u = new URL(u).href;
+            const uNorm = u.replace(/\/$/, '');
+            if (curNorm && uNorm === curNorm) continue;
+            if (out.some((x) => x.replace(/\/$/, '') === uNorm)) continue;
+            out.push(u);
+        } catch (_) {}
+    }
+    return out;
+}
+
+async function injectAndScanTab(tabId) {
+    try {
+        await chrome.scripting.executeScript({ target: { tabId }, files: ['content.js'] });
+    } catch (_) {}
+    await sleep(100);
+    return new Promise((resolve) => {
+        chrome.tabs.sendMessage(tabId, { action: 'AUTO_SCAN_PAGE' }, (resp) => {
+            resolve(resp);
+        });
+    });
+}
+
+async function scanUrlInBackground(url) {
+    if (isSystemPage(url)) return { url, data: null, error: 'unsupported URL' };
+    return new Promise((resolve) => {
+        chrome.tabs.create({ url, active: false }, async (tab) => {
+            if (chrome.runtime.lastError || !tab?.id) {
+                resolve({ url, data: null, error: chrome.runtime.lastError?.message || 'no tab' });
+                return;
+            }
+            const tabId = tab.id;
+            const closeTab = () => {
+                try {
+                    chrome.tabs.remove(tabId);
+                } catch (_) {}
+            };
+            try {
+                const t0 = Date.now();
+                while (Date.now() - t0 < 50000) {
+                    const ti = await new Promise((res) => chrome.tabs.get(tabId, res));
+                    if (!ti) {
+                        resolve({ url, data: null, error: 'tab closed' });
+                        return;
+                    }
+                    if (ti.status === 'complete') break;
+                    await sleep(150);
+                }
+                await sleep(900);
+                try {
+                    await chrome.scripting.executeScript({ target: { tabId }, files: ['content.js'] });
+                } catch (_) {}
+                await sleep(120);
+                const resp = await new Promise((r) => {
+                    chrome.tabs.sendMessage(tabId, { action: 'AUTO_SCAN_PAGE' }, (x) => r(x));
+                });
+                closeTab();
+                if (!resp || resp.status !== 'ok') resolve({ url, data: null, error: 'scan failed' });
+                else resolve({ url, data: resp.data, error: null });
+            } catch (e) {
+                closeTab();
+                resolve({ url, data: null, error: e?.message || 'error' });
+            }
+        });
+    });
+}
+
+async function runFullScan(additionalUrls) {
+    detailStack = [];
+    cachedScreenshot = null;
+    renderTopbar('overview');
+    renderLoadingScreen('Scanning current page…');
+    showBottomBar(false);
+
+    try {
+        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        if (!tab) {
+            renderOverview(null, '');
+            return;
+        }
+        lastScannedTabId = tab.id;
+        const url = tab.url || '';
+        if (isSystemPage(url)) {
+            renderOverview(null, url);
+            return;
+        }
+
+        const primaryResp = await injectAndScanTab(tab.id);
+        if (!primaryResp || primaryResp.status !== 'ok') {
+            renderOverview(null, url);
+            return;
+        }
+
+        let merged = primaryResp.data;
+        const supplemental = [];
+
+        if (additionalUrls?.length) {
+            for (let i = 0; i < additionalUrls.length; i++) {
+                renderLoadingScreen(`Scanning additional page ${i + 1} of ${additionalUrls.length}…`);
+                const r = await scanUrlInBackground(additionalUrls[i]);
+                if (r.data) supplemental.push({ url: r.url, data: r.data });
+            }
+            if (supplemental.length) merged = mergeExtractedData(merged, supplemental);
+        }
+
+        scanData = await mergeUserVerifiedIntoScanData(merged);
+        renderOverview(scanData, scanData.pageUrl);
+    } catch (e) {
+        console.error('[Sidebar] Multi-scan error:', e);
+        renderOverview(null, '');
+    }
+}
+
+function renderMultiScanGate() {
+    showBottomBar(false);
+    renderTopbar('overview');
+    chrome.tabs.query({ active: true, currentWindow: true }, ([tab]) => {
+        const cur = tab?.url || '';
+        document.getElementById('contentArea').innerHTML = `
+            <div class="section" style="padding:16px;">
+                <div class="section-title" style="margin-bottom:8px;">Multi-page scan</div>
+                <p style="font-size:12px;color:var(--muted);line-height:1.5;margin-bottom:12px;">
+                    Would you like to scan multiple pages for better coverage? Paste up to 5 URLs — e.g. login, dashboard, or a product page.
+                    Homepages often miss tables, toasts, and logged-in UI. Cross-origin URLs open in a background tab (same as navigating manually).
+                </p>
+                <textarea id="multiScanUrls" placeholder="https://example.com/login&#10;https://example.com/app/dashboard"
+                    style="width:100%;min-height:88px;padding:10px;border:1px solid var(--line);border-radius:var(--radius);font-size:12px;font-family:inherit;resize:vertical;"></textarea>
+                <p style="font-size:11px;color:var(--muted-light);margin-top:6px;">Leave empty to scan only the current tab.</p>
+                <div style="display:flex;flex-direction:column;gap:8px;margin-top:14px;">
+                    <button type="button" id="btnScanMulti" class="action-btn" style="padding:12px;">Scan current + additional URLs</button>
+                    <button type="button" id="btnScanCurrentOnly" class="btn-cancel" style="width:100%;padding:10px;">Scan current page only</button>
+                </div>
+            </div>
+            <div class="status-toast" id="statusToast"></div>
+            <div class="content-pad"></div>`;
+
+        document.getElementById('btnScanCurrentOnly').addEventListener('click', () => {
+            sessionAdditionalScanUrls = [];
+            runFullScan([]);
+        });
+        document.getElementById('btnScanMulti').addEventListener('click', () => {
+            const raw = document.getElementById('multiScanUrls').value;
+            sessionAdditionalScanUrls = parseAdditionalScanUrls(raw, cur);
+            runFullScan(sessionAdditionalScanUrls);
+        });
+    });
+}
+
+// ============================================
 // SCAN
 // ============================================
 
 async function scanCurrentTab(manual = false) {
-    if (!manual) detailStack = [];
-    cachedScreenshot = null; // discard previous capture on each new scan
+    if (manual) {
+        await runFullScan(sessionAdditionalScanUrls);
+        return;
+    }
+    detailStack = [];
+    cachedScreenshot = null;
     renderTopbar('overview');
     renderLoadingScreen('Scanning page…');
     showBottomBar(false);
 
     try {
         const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-        if (!tab) { renderOverview(null, tab?.url); return; }
+        if (!tab) {
+            renderOverview(null, tab?.url);
+            return;
+        }
         lastScannedTabId = tab.id;
         const url = tab.url || '';
-        if (isSystemPage(url)) { renderOverview(null, url); return; }
+        if (isSystemPage(url)) {
+            renderOverview(null, url);
+            return;
+        }
 
         try {
             await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['content.js'] });
-        } catch (_) { /* already injected */ }
+        } catch (_) {}
         await sleep(80);
 
-        chrome.tabs.sendMessage(tab.id, { action: 'AUTO_SCAN_PAGE' }, (resp) => {
+        chrome.tabs.sendMessage(tab.id, { action: 'AUTO_SCAN_PAGE' }, async (resp) => {
             if (chrome.runtime.lastError || !resp || resp.status !== 'ok') {
                 renderOverview(null, url);
             } else {
-                scanData = resp.data;
+                scanData = await mergeUserVerifiedIntoScanData(resp.data);
                 renderOverview(scanData, url);
             }
         });
@@ -327,11 +741,24 @@ function renderOverview(data, url) {
 
 function buildGeneralSection(data) {
     const domain = (() => { try { return new URL(data.pageUrl).hostname; } catch (_) { return data.pageUrl; } })();
+    const mps = data.multiPageScan;
+    const extraPages =
+        mps?.scannedPages?.length > 1
+            ? mps.scannedPages
+                  .filter((p) => p.role !== 'primary')
+                  .map((p) => `<li style="font-size:11px;color:var(--muted);word-break:break-all;margin-top:4px;">${escHtml(p.url)}</li>`)
+                  .join('')
+            : '';
     return `
         <div class="section">
             <div class="section-hd"><span class="section-title">General</span></div>
             <div style="font-size:13px;color:var(--muted);word-break:break-all;line-height:1.5;">${escHtml(data.pageUrl)}</div>
             ${data.pageTitle ? `<div style="font-size:12px;color:var(--muted-light);margin-top:4px;">${escHtml(data.pageTitle)}</div>` : ''}
+            ${
+                extraPages
+                    ? `<div style="font-size:11px;font-weight:600;color:var(--text);margin-top:10px;">Also scanned (${mps.scannedPages.length - 1} additional)</div><ul style="margin:6px 0 0 16px;padding:0;">${extraPages}</ul>`
+                    : ''
+            }
         </div>`;
 }
 
@@ -497,7 +924,16 @@ function buildComponentSubtitle(item) {
     if (p['Background'] && p['Background'] !== 'transparent') parts.push(p['Background']);
     if (p['Border Radius'] && p['Border Radius'] !== '0px') parts.push(`r:${p['Border Radius']}`);
     if (p['Font Size']) parts.push(p['Font Size']);
-    return parts.slice(0, 3).join(' · ') || item.category;
+    const base = parts.slice(0, 3).join(' · ') || item.category;
+    if (item.detectedOnUrls?.length > 1) {
+        try {
+            const hosts = item.detectedOnUrls.map((u) => new URL(u).hostname).filter((h, i, a) => a.indexOf(h) === i);
+            return `${base} · ${hosts.slice(0, 3).join(', ')}${hosts.length > 3 ? '…' : ''}`;
+        } catch (_) {
+            return `${base} · ${item.detectedOnUrls.length} pages`;
+        }
+    }
+    return base;
 }
 
 // ─── Spacing ───────────────────────────────────────────────
@@ -560,7 +996,7 @@ function buildShadowsSection(shadows) {
 // ─── Layout ────────────────────────────────────────────────
 
 function hasLayoutData(l) {
-    return l && (l.maxWidth || l.breakpoints?.length || l.gridColumns || l.flexLayouts > 0);
+    return l && (l.maxWidth || l.breakpointRows?.length || l.breakpoints?.length || l.gridColumns || l.flexLayouts > 0);
 }
 
 function buildLayoutSection(layout) {
@@ -571,7 +1007,12 @@ function buildLayoutSection(layout) {
     if (layout.gridGap) stats.push({ label: 'Grid gap', value: layout.gridGap });
     if (layout.flexLayouts > 0) stats.push({ label: 'Flex layouts', value: `${layout.flexLayouts} elements` });
     if (layout.gridLayouts > 0) stats.push({ label: 'Grid layouts', value: `${layout.gridLayouts} elements` });
-    if (layout.breakpoints?.length) stats.push({ label: 'Breakpoints', value: layout.breakpoints.join(', ') + 'px' });
+    if (layout.breakpointRows?.length) {
+        const summary = layout.breakpointRows.map((r) => `${r.name} ${r.range}`).join(' · ');
+        stats.push({ label: 'Breakpoints', value: summary });
+    } else if (layout.breakpoints?.length) {
+        stats.push({ label: 'Breakpoints', value: layout.breakpoints.join(', ') + 'px' });
+    }
 
     if (!stats.length) return '';
     const rows = stats.map(s => `<div class="layout-stat"><span class="layout-stat-label">${escHtml(s.label)}</span><span class="layout-stat-value">${escHtml(s.value)}</span></div>`).join('');
@@ -747,8 +1188,19 @@ function renderDetailView(item) {
         propsHtml = buildPropsFromObj(p);
     }
 
+    let detectedOnHtml = '';
+    if (item.detectedOnUrls?.length > 1) {
+        const lines = item.detectedOnUrls
+            .map((u) => `<div style="font-size:11px;color:var(--muted);word-break:break-all;margin-top:4px;">${escHtml(u)}</div>`)
+            .join('');
+        detectedOnHtml = `<div style="font-size:11px;color:var(--text);margin-bottom:12px;padding:10px;background:var(--line-subtle);border-radius:var(--radius);border:1px solid var(--line);"><strong>Detected on these pages</strong>${lines}</div>`;
+    } else if (item.sourcePageUrl && item.detectedOnUrls?.length === 1) {
+        detectedOnHtml = `<div style="font-size:11px;color:var(--muted);margin-bottom:10px;">Source: <span style="word-break:break-all;color:var(--text);">${escHtml(item.sourcePageUrl)}</span></div>`;
+    }
+
     ca.innerHTML = `
         <div class="detail-wrap">
+            ${detectedOnHtml}
             ${preview}
             ${propsHtml}
         </div>
@@ -987,9 +1439,10 @@ function handleGetDesignMd() {
     if (!scanData) { showStatus('error', 'No scan data available. Scan a page first.'); return; }
     const designMd  = generateDesignMarkdown(scanData);
     const shadcnMd  = generateShadcnThemeMd(scanData);
+    const tokensJson = buildTokensJsonPayload(scanData);
     showBottomBar(false);
     renderTopbar('detail', 'design files');
-    renderDesignMdView(designMd, shadcnMd, scanData.pageUrl);
+    renderDesignMdView(designMd, shadcnMd, scanData.pageUrl, tokensJson);
 }
 
 // ============================================
@@ -1030,7 +1483,12 @@ async function handleCreateDs() {
         // accumulateStep() overwrites individual keys when the user selects an element,
         // so user picks always take priority over auto-scan — but nothing is lost on skip.
         semanticTokens: scanData?.semanticTokens
-            ? Object.fromEntries(Object.entries(scanData.semanticTokens).map(([k, v]) => [k, { ...v, source: 'auto-scan' }]))
+            ? Object.fromEntries(
+                Object.entries(scanData.semanticTokens).map(([k, v]) => [
+                    k,
+                    v && v.source === 'user-verified' ? { ...v } : { ...(v || {}), source: 'auto-scan' },
+                ])
+            )
             : {},
         stepStatuses: {},
         typography:   scanData?.typography   ? [...scanData.typography]   : [],
@@ -1062,8 +1520,9 @@ function accumulateStep(stepKey, styles, stepIndex) {
     if (styles) {
         // Write each style value into semanticTokens
         for (const [k, v] of Object.entries(styles)) {
-            if (v) st[k] = { value: v, source: stepKey };
+            if (v) st[k] = { value: v, source: 'user-verified', confidence: 1, stepKey };
         }
+        persistUserVerifiedTokens(dsBuilderData.pageUrl, styles, stepKey);
 
         // Special cases: also populate fallback arrays
         if (stepKey === 'pageBackground') {
@@ -1115,8 +1574,16 @@ function buildScanDataFromDsBuilderData(dsb) {
 
     // Only include valid hex values
     function hexEntry(key, count) {
-        const v = st[key]?.value;
-        return (v && /^#[0-9a-fA-F]{6}$/.test(v)) ? [{ hex: v, count }] : [];
+        const tok = st[key];
+        const v = tok?.value;
+        if (!(v && /^#[0-9a-fA-F]{6}$/.test(v))) return [];
+        const row = { hex: v, count };
+        if (tok?.source === 'user-verified') {
+            row.confidence = 1;
+            row.extractionSource = 'user-verified';
+            row.method = 'user-verified';
+        }
+        return [row];
     }
 
     // Synthesize full color arrays from semantic tokens so generateDesignMarkdown has real data
@@ -1396,12 +1863,13 @@ function finalizeDsBuilder() {
     const syntheticScanData = buildScanDataFromDsBuilderData(dsBuilderData);
     const designMd = generateDesignMarkdown(syntheticScanData);
     const shadcnMd = generateShadcnThemeMd(syntheticScanData);
+    const tokensJson = buildTokensJsonPayload(syntheticScanData);
     dsBuilderData = null;
     currentDsStep = 0;
     dsBuilderPaused = false;
     saveDsBuilderState(); // clears storage
     renderTopbar('detail', 'design files');
-    renderDesignMdView(designMd, shadcnMd, syntheticScanData.pageUrl);
+    renderDesignMdView(designMd, shadcnMd, syntheticScanData.pageUrl, tokensJson);
 }
 
 function renderDsBuilderSidebar() {
@@ -1489,7 +1957,7 @@ function renderDsBuilderSidebar() {
     });
 }
 
-function renderDesignMdView(designMd, shadcnMd, pageUrl) {
+function renderDesignMdView(designMd, shadcnMd, pageUrl, tokensJson) {
     const ca = document.getElementById('contentArea');
     let activeTab = 'design'; // 'design' | 'shadcn'
 
@@ -1521,6 +1989,10 @@ function renderDesignMdView(designMd, shadcnMd, pageUrl) {
                         <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
                         Download
                     </button>
+                    ${tokensJson ? `<button class="design-md-btn" id="downloadTokensJsonBtn" title="Extraction metadata for Create DS">
+                        <svg viewBox="0 0 24 24" width="16" height="16"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                        tokens.json
+                    </button>` : ''}
                 </div>
                 <textarea class="design-md-textarea" id="mdTextarea" spellcheck="false">${escHtml(content)}</textarea>
             </div>`;
@@ -1549,6 +2021,16 @@ function renderDesignMdView(designMd, shadcnMd, pageUrl) {
             a.href = url; a.download = filename; a.click();
             URL.revokeObjectURL(url);
         });
+
+        if (tokensJson) {
+            document.getElementById('downloadTokensJsonBtn')?.addEventListener('click', () => {
+                const blob = new Blob([tokensJson], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url; a.download = getSlug() + '-tokens.json'; a.click();
+                URL.revokeObjectURL(url);
+            });
+        }
     }
 
     render();
@@ -2336,300 +2818,501 @@ function generateShadcnThemeMd(data) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// COMPONENT PROPERTIES TABLE
-// Maps semanticTokens → the standard 28-row component table.
-// Populated by auto-scan (performQuickScan → extractSemanticTokens).
-// DS Builder enriches the same keys with exact computed values.
+// COMPONENT STYLING OUTPUT (detection-based)
+// Only components detected on the page get emitted blocks. No "—" placeholders.
+// Non-visual primitives (Aspect Ratio, Slot, Portal, etc.) are not tracked.
 // ─────────────────────────────────────────────────────────────────────────────
-function generateComponentsTable(st) {
-    // Clean a raw token value — returns the value or '—'
-    function v(key) {
-        const raw = st[key]?.value;
-        if (!raw || raw === 'none' || raw === '0px' || raw === 'normal' ||
-            raw === 'rgba(0, 0, 0, 0)' || raw === 'transparent') return '—';
-        return raw;
-    }
 
-    // Build "Xpx Ypx" padding string from two token keys
-    function pad(topKey, rightKey) {
-        const t = v(topKey), r = v(rightKey);
-        if (t !== '—' && r !== '—') return `${t} ${r}`;
-        if (t !== '—') return t;
-        if (r !== '—') return r;
-        return '—';
-    }
+/** Full catalog of tracked UI components (excluding layout primitives). Order = §4 display order. */
+const TRACKED_UI_COMPONENT_IDS = [
+    'button', 'input', 'card', 'navigation', 'link', 'badge', 'avatar',
+    'dialog', 'accordion', 'table', 'toast', 'switch', 'checkbox', 'radio',
+    'tabs', 'tooltip', 'drawer', 'sidebar', 'popover', 'dropdown', 'select',
+    'alert', 'context_menu'
+];
 
-    // Combine font-weight + letter-spacing + text-transform into "Other"
-    function otherTypo(...keys) {
-        return keys.map(k => v(k)).filter(x => x !== '—').join(', ') || '—';
-    }
+const UI_COMPONENT_LABELS = {
+    button: 'Button',
+    input: 'Input',
+    card: 'Card',
+    navigation: 'Navigation',
+    link: 'Link',
+    badge: 'Badge',
+    avatar: 'Avatar',
+    dialog: 'Dialog',
+    accordion: 'Accordion',
+    table: 'Table',
+    toast: 'Toast',
+    switch: 'Switch',
+    checkbox: 'Checkbox',
+    radio: 'Radio',
+    tabs: 'Tabs',
+    tooltip: 'Tooltip',
+    drawer: 'Drawer',
+    sidebar: 'Sidebar',
+    popover: 'Popover',
+    dropdown: 'Dropdown',
+    select: 'Select',
+    alert: 'Alert',
+    context_menu: 'Context Menu'
+};
 
-    // Render a single table row
-    // Columns: Component | Variant | Bg | Text | TextSize | LabelSize | Padding | Margin | Shadow | BorderColor | BorderStroke | BorderRadius | IconColor | IconSize | Size | Other
-    function row(comp, variant, bg, text, textSize, labelSize, padding, margin, shadow, borderColor, borderStroke, borderRadius, iconColor, iconSize, size, other) {
-        const cells = [comp, variant, bg, text, textSize, labelSize, padding, margin, shadow, borderColor, borderStroke, borderRadius, iconColor, iconSize, size, other]
-            .map(c => escMd(c || '—'));
-        return `| ${cells.join(' | ')} |\n`;
+function camelToLabel(s) {
+    if (!s) return '';
+    return s.replace(/([A-Z])/g, ' $1').replace(/^./, x => x.toUpperCase()).trim();
+}
+
+function rawSemanticToken(st, key) {
+    const raw = st[key]?.value;
+    if (!raw || raw === 'none' || raw === '0px' || raw === 'normal' ||
+        raw === 'rgba(0, 0, 0, 0)' || raw === 'transparent') return null;
+    return raw;
+}
+
+function padTokenPair(st, topKey, rightKey) {
+    const t = rawSemanticToken(st, topKey);
+    const r = rawSemanticToken(st, rightKey);
+    if (t && r) return `${t} ${r}`;
+    return t || r || null;
+}
+
+function emitVariantBlock(st, variantDef) {
+    const lines = [];
+    for (const k of variantDef.keys || []) {
+        const val = rawSemanticToken(st, k);
+        if (val) lines.push(`- **${camelToLabel(k)}**: \`${escMd(String(val))}\``);
     }
+    if (variantDef.pad) {
+        const p = padTokenPair(st, variantDef.pad[0], variantDef.pad[1]);
+        if (p) lines.push(`- **Padding**: \`${escMd(p)}\``);
+    }
+    if (variantDef.typo) {
+        const parts = variantDef.typo.map(k => rawSemanticToken(st, k)).filter(Boolean);
+        if (parts.length) lines.push(`- **Typography**: \`${escMd(parts.join(', '))}\``);
+    }
+    return lines.length ? lines.join('\n') : '';
+}
+
+const COMPONENT_STYLING_BLUEPRINT = {
+    button: {
+        variants: [
+            { title: 'Primary', keys: ['primary', 'primaryForeground', 'primaryFontSize', 'primaryBoxShadow', 'primaryBorderColor', 'primaryBorderWidth', 'primaryBorderRadius', 'primaryHeight'], pad: ['primaryPaddingTop', 'primaryPaddingRight'], typo: ['primaryFontWeight', 'primaryTextTransform'] },
+            { title: 'Secondary', keys: ['secondary', 'secondaryForeground', 'secondaryBoxShadow', 'secondaryBorderColor', 'secondaryBorderWidth', 'secondaryBorderRadius', 'secondaryHeight'], pad: ['secondaryPaddingTop', 'secondaryPaddingRight'] },
+            { title: 'Destructive', keys: ['destructive', 'destructiveForeground', 'destructiveFontSize', 'destructiveBoxShadow', 'destructiveBorderRadius', 'destructiveHeight'], pad: ['destructivePaddingTop', 'destructivePaddingRight'], typo: ['destructiveFontWeight'] }
+        ]
+    },
+    input: {
+        variants: [
+            { title: 'Text field', keys: ['inputBg', 'foreground', 'inputFontSize', 'border', 'inputBorderWidth', 'inputBorderRadius', 'inputHeight'], pad: ['inputPaddingTop', 'inputPaddingRight'] },
+            { title: 'Textarea', keys: ['inputBg', 'foreground', 'inputFontSize', 'border', 'inputBorderWidth', 'inputBorderRadius'], pad: ['inputPaddingTop', 'inputPaddingRight'] }
+        ]
+    },
+    card: {
+        variants: [{ title: 'Default', keys: ['card', 'cardForeground', 'cardBoxShadow', 'cardBorderColor', 'cardBorderWidth', 'cardBorderRadius'], pad: ['cardPaddingTop', 'cardPaddingRight'] }]
+    },
+    navigation: {
+        variants: [{ title: 'Top bar', keys: ['headerBg', 'sidebarForeground', 'navLinkFontSize', 'headerBoxShadow', 'headerBorderColor', 'navLinkForeground', 'headerHeight'], pad: ['navLinkPaddingTop', 'navLinkPaddingRight'] }]
+    },
+    link: {
+        variants: [{ title: 'Default', keys: ['accent', 'accentTextDecoration'] }]
+    },
+    badge: {
+        variants: [{ title: 'Default', keys: ['badgeBackground', 'badgeForeground', 'badgeFontSize', 'badgeBorderColor', 'badgeBorderRadius'], pad: ['badgePaddingTop', 'badgePaddingRight'], typo: ['badgeFontWeight'] }]
+    },
+    avatar: {
+        variants: [{ title: 'Default', keys: ['avatarBg', 'avatarBorderColor', 'avatarBorderRadius', 'avatarSize'] }]
+    },
+    dialog: {
+        variants: [{ title: 'Default', keys: ['dialogBg', 'dialogForeground', 'dialogBoxShadow', 'dialogBorderRadius'], pad: ['dialogPaddingTop', 'dialogPaddingRight'] }]
+    },
+    accordion: {
+        variants: [{ title: 'Default', keys: ['accordionBg', 'accordionTriggerForeground', 'accordionTriggerFontSize', 'accordionBorderColor'], pad: ['accordionTriggerPaddingTop', 'accordionTriggerPaddingRight'], typo: ['accordionTriggerFontWeight'] }]
+    },
+    table: {
+        variants: [
+            { title: 'Header', keys: ['tableHeaderBg', 'tableHeaderForeground', 'tableHeaderFontSize', 'tableBorderColor'], pad: ['tableHeaderPaddingTop', 'tableHeaderPaddingRight'], typo: ['tableHeaderFontWeight'] },
+            { title: 'Cell', keys: ['tableBg', 'tableCellForeground', 'tableFontSize', 'tableBorderColor'], pad: ['tableCellPaddingTop', 'tableCellPaddingRight'] }
+        ]
+    },
+    toast: {
+        variants: [{ title: 'Default', keys: ['toastBg', 'toastForeground', 'toastFontSize', 'toastBoxShadow', 'toastBorderColor', 'toastBorderRadius'], pad: ['toastPaddingTop', 'toastPaddingRight'] }]
+    },
+    switch: {
+        variants: [{ title: 'Default', keys: ['switchBg', 'switchBorderRadius', 'switchHeight'] }]
+    },
+    checkbox: {
+        variants: [{ title: 'Default', keys: ['checkboxBorderColor', 'checkboxBorderRadius', 'checkboxAccentColor', 'checkboxSize'] }]
+    },
+    radio: {
+        variants: [{ title: 'Default', keys: ['radioAccentColor'] }]
+    },
+    tabs: {
+        variants: [
+            { title: 'Tab list', keys: ['tabsBg', 'tabInactiveForeground', 'tabsBorderRadius'], pad: ['tabsPaddingTop', 'tabsPaddingTop'] },
+            { title: 'Active tab', keys: ['tabActiveBg', 'tabActiveForeground', 'tabActiveBorderRadius'], typo: ['tabActiveFontWeight'] }
+        ]
+    },
+    tooltip: {
+        variants: [{ title: 'Default', keys: ['tooltipBg', 'tooltipForeground', 'tooltipFontSize', 'tooltipBoxShadow', 'tooltipBorderRadius'], pad: ['tooltipPaddingTop', 'tooltipPaddingRight'] }]
+    },
+    drawer: {
+        variants: [{ title: 'Default', keys: ['sheetBg', 'sheetForeground', 'sheetBorderColor'] }]
+    },
+    sidebar: {
+        variants: [
+            { title: 'Default', keys: ['sidebar', 'sidebarForeground', 'sidebarBorderColor', 'sidebarWidth'], pad: ['sidebarItemPaddingTop', 'sidebarItemPaddingRight'] },
+            { title: 'Active item', keys: ['sidebarPrimary', 'sidebarPrimaryForeground', 'sidebarItemBorderRadius'], typo: ['sidebarItemFontWeight'] }
+        ]
+    },
+    popover: {
+        variants: [{ title: 'Default', keys: ['popover', 'popoverForeground', 'popoverBoxShadow', 'popoverBorderColor', 'popoverBorderRadius'] }]
+    },
+    dropdown: {
+        variants: [{ title: 'Default', keys: ['popover', 'popoverForeground', 'popoverBoxShadow', 'popoverBorderColor', 'popoverBorderRadius'] }]
+    },
+    select: {
+        variants: [{ title: 'Default', keys: ['inputBg', 'foreground', 'inputFontSize', 'border', 'inputBorderRadius'], pad: ['inputPaddingTop', 'inputPaddingRight'] }]
+    },
+    alert: {
+        variants: [{ title: 'Default', keys: ['alertBg', 'alertForeground', 'alertFontSize', 'alertBoxShadow', 'alertBorderColor', 'alertBorderRadius'], pad: ['alertPaddingTop', 'alertPaddingRight'] }]
+    },
+    context_menu: {
+        variants: [{ title: 'Default', keys: ['popover', 'popoverForeground', 'popoverBoxShadow', 'popoverBorderColor', 'popoverBorderRadius'] }]
+    }
+};
+
+function inferDetectedIdsFromTokens(st) {
+    const rv = (k) => st[k]?.value;
+    const has = (k) => {
+        const v = rv(k);
+        return v && v !== 'none' && v !== 'transparent' && v !== 'rgba(0, 0, 0, 0)' && v !== '0px' && v !== 'normal';
+    };
+    const out = [];
+    if (has('primary') || has('secondary') || has('destructive')) out.push('button');
+    if (has('inputBg') || has('inputBorderRadius') || has('inputBorderWidth')) out.push('input');
+    if (has('card') || has('cardBorderRadius')) out.push('card');
+    if (has('headerBg') || has('navLinkFontSize')) out.push('navigation');
+    if (has('accent')) out.push('link');
+    if (has('badgeBackground')) out.push('badge');
+    if (has('avatarSize') || has('avatarBorderRadius')) out.push('avatar');
+    if (has('dialogBg')) out.push('dialog');
+    if (has('accordionBg')) out.push('accordion');
+    if (has('tableHeaderBg') || has('tableBg')) out.push('table');
+    if (has('toastBg')) out.push('toast');
+    if (has('switchBg')) out.push('switch');
+    if (has('checkboxSize')) out.push('checkbox');
+    if (has('radioAccentColor')) out.push('radio');
+    if (has('tabsBg') || has('tabActiveBg')) out.push('tabs');
+    if (has('tooltipBg')) out.push('tooltip');
+    if (has('sheetBg')) out.push('drawer');
+    if (has('sidebar') || has('sidebarWidth')) out.push('sidebar');
+    if (has('popover')) out.push('popover');
+    if (has('alertBg')) out.push('alert');
+    return [...new Set(out)];
+}
+
+function generateDetectedComponentsMarkdown(st, detection) {
+    let detectedIds = [];
+    if (detection && Array.isArray(detection.detectedIds) && detection.detectedIds.length) {
+        detectedIds = [...detection.detectedIds];
+    } else {
+        detectedIds = inferDetectedIdsFromTokens(st);
+    }
+    const details = detection && detection.details ? detection.details : {};
+    const set = new Set(detectedIds);
+    const ordered = TRACKED_UI_COMPONENT_IDS.filter(id => set.has(id));
 
     let md = '';
-    md += `| Component | Variant / Notes | Background Color | Text Color | Text Size | Label Size | Padding | Margin | Shadow | Border Color | Border Stroke | Border Radius | Icon Color | Icon Size | Size | Other |\n`;
-    md += `|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|\n`;
+    if (ordered.length) {
+        md += `Components below are **detected on the scanned page** (selectors + predicates). Properties appear only when the scan captured a value.\n\n`;
+    } else {
+        md += `No UI components matched the on-page detectors for this scan.\n\n`;
+    }
 
-    // ── Buttons ──────────────────────────────────────────────────────────────
-    md += row('**Button**', 'Primary',
-        v('primary'), v('primaryForeground'), v('primaryFontSize'), '—',
-        pad('primaryPaddingTop','primaryPaddingRight'), '—',
-        v('primaryBoxShadow'), v('primaryBorderColor'), v('primaryBorderWidth'),
-        v('primaryBorderRadius'), v('primaryForeground'), '—', v('primaryHeight'),
-        otherTypo('primaryFontWeight','primaryTextTransform')
-    );
-    md += row('**Button**', 'Secondary',
-        v('secondary'), v('secondaryForeground'), '—', '—',
-        pad('secondaryPaddingTop','secondaryPaddingRight'), '—',
-        v('secondaryBoxShadow'), v('secondaryBorderColor'), v('secondaryBorderWidth'),
-        v('secondaryBorderRadius'), v('secondaryForeground'), '—', v('secondaryHeight'), '—'
-    );
-    md += row('**Button**', 'Destructive',
-        v('destructive'), v('destructiveForeground'), v('destructiveFontSize'), '—',
-        pad('destructivePaddingTop','destructivePaddingRight'), '—',
-        v('destructiveBoxShadow'), '—', '—',
-        v('destructiveBorderRadius'), v('destructiveForeground'), '—', v('destructiveHeight'),
-        otherTypo('destructiveFontWeight')
-    );
+    for (const id of ordered) {
+        const label = UI_COMPONENT_LABELS[id] || id;
+        const bp = COMPONENT_STYLING_BLUEPRINT[id];
+        if (!bp) continue;
 
-    // ── Aspect Ratio ─────────────────────────────────────────────────────────
-    md += row('**Aspect Ratio**', '—', '—', '—', '—', '—', '—', '—', '—', '—', '—', '—', '—', '—', '—', '—');
+        md += `### ${label}\n\n`;
 
-    // ── Navigation Menu ──────────────────────────────────────────────────────
-    md += row('**Navigation Menu**', 'Top Bar',
-        v('headerBg'), v('sidebarForeground'), v('navLinkFontSize'), '—',
-        pad('navLinkPaddingTop','navLinkPaddingRight'), '—',
-        v('headerBoxShadow'), v('headerBorderColor'), '—', '—',
-        v('navLinkForeground'), '—', v('headerHeight'), '—'
-    );
+        if (id === 'input') {
+            const hasDet = detection && Array.isArray(detection.detectedIds) && detection.detectedIds.length;
+            const showField = !hasDet || details.inputTextField !== false;
+            const showTa = !hasDet || details.inputTextarea;
+            let any = false;
+            if (showField) {
+                const b = emitVariantBlock(st, bp.variants[0]);
+                if (b) {
+                    md += `#### Text field\n\n${b}\n\n`;
+                    any = true;
+                }
+            }
+            if (showTa) {
+                const b = emitVariantBlock(st, bp.variants[1]);
+                if (b) {
+                    md += `#### Textarea\n\n${b}\n\n`;
+                    any = true;
+                }
+            }
+            if (!any) {
+                md += `*Detected on page — no semantic styling tokens were captured for this component in this scan.*\n\n`;
+            }
+            continue;
+        }
 
-    // ── Input ────────────────────────────────────────────────────────────────
-    md += row('**Input**', 'Text Field',
-        v('inputBg'), v('foreground'), v('inputFontSize'), '—',
-        pad('inputPaddingTop','inputPaddingRight'), '—', '—',
-        v('border'), v('inputBorderWidth'),
-        v('inputBorderRadius'), '—', '—', v('inputHeight'), '—'
-    );
+        let anySub = false;
+        for (const vdef of bp.variants) {
+            const body = emitVariantBlock(st, vdef);
+            if (!body) continue;
+            anySub = true;
+            md += `#### ${vdef.title}\n\n${body}\n\n`;
+        }
+        if (!anySub) {
+            md += `*Detected on page — no semantic styling tokens were captured for this component in this scan.*\n\n`;
+        }
+    }
 
-    // ── Avatar ───────────────────────────────────────────────────────────────
-    md += row('**Avatar**', '—',
-        v('avatarBg'), '—', '—', '—', '—', '—', '—',
-        v('avatarBorderColor'), '—',
-        v('avatarBorderRadius'), '—', '—', v('avatarSize'), '—'
-    );
+    const notDetected = TRACKED_UI_COMPONENT_IDS.filter(id => !set.has(id));
+    if (notDetected.length) {
+        md += `### Not detected on scanned page\n\n`;
+        md += `These patterns were not matched by the detectors. Use **Create DS** to capture them if your product needs them.\n\n`;
+        for (const id of notDetected) {
+            md += `- ${UI_COMPONENT_LABELS[id] || id}\n`;
+        }
+        md += `\n`;
+    }
 
-    // ── Badge ────────────────────────────────────────────────────────────────
-    md += row('**Badge**', '—',
-        v('badgeBackground'), v('badgeForeground'), v('badgeFontSize'), '—',
-        pad('badgePaddingTop','badgePaddingRight'), '—', '—',
-        v('badgeBorderColor'), '—',
-        v('badgeBorderRadius'), v('badgeForeground'), '—', '—',
-        otherTypo('badgeFontWeight')
-    );
-
-    // ── Links ────────────────────────────────────────────────────────────────
-    md += row('**Links**', '—',
-        '—', v('accent'), '—', '—', '—', '—', '—', '—', '—', '—',
-        v('accent'), '—', '—',
-        v('accentTextDecoration') !== '—' ? `decoration: ${v('accentTextDecoration')}` : '—'
-    );
-
-    // ── Checkbox ─────────────────────────────────────────────────────────────
-    md += row('**Checkbox**', '—',
-        '—', '—', '—', '—', '—', '—', '—',
-        v('checkboxBorderColor'), '—',
-        v('checkboxBorderRadius'), v('checkboxAccentColor'), '—', v('checkboxSize'), '—'
-    );
-
-    // ── Context Menu ─────────────────────────────────────────────────────────
-    md += row('**Context Menu**', '—',
-        v('popover'), v('popoverForeground'), '—', '—', '—', '—',
-        v('popoverBoxShadow'), v('popoverBorderColor'), '—',
-        v('popoverBorderRadius'), '—', '—', '—', '—'
-    );
-
-    // ── Button Group ─────────────────────────────────────────────────────────
-    md += row('**Button Group**', '—',
-        v('secondary'), v('secondaryForeground'), '—', '—',
-        pad('secondaryPaddingTop','secondaryPaddingRight'), '—', '—',
-        v('secondaryBorderColor'), v('secondaryBorderWidth'),
-        v('secondaryBorderRadius'), '—', '—', '—', '—'
-    );
-
-    // ── Calendar ─────────────────────────────────────────────────────────────
-    md += row('**Calendar**', '—',
-        v('popover'), v('popoverForeground'), '—', '—', '—', '—',
-        v('popoverBoxShadow'), v('popoverBorderColor'), '—',
-        v('popoverBorderRadius'), '—', '—', '—', '—'
-    );
-
-    // ── Card ─────────────────────────────────────────────────────────────────
-    md += row('**Card**', '—',
-        v('card'), v('cardForeground'), '—', '—',
-        pad('cardPaddingTop','cardPaddingRight'), '—',
-        v('cardBoxShadow'), v('cardBorderColor'), v('cardBorderWidth'),
-        v('cardBorderRadius'), '—', '—', '—', '—'
-    );
-
-    // ── Accordion ────────────────────────────────────────────────────────────
-    md += row('**Accordion**', '—',
-        v('accordionBg'), v('accordionTriggerForeground'), v('accordionTriggerFontSize'), '—',
-        pad('accordionTriggerPaddingTop','accordionTriggerPaddingRight'), '—', '—',
-        v('accordionBorderColor'), '—', '—', '—', '—', '—',
-        otherTypo('accordionTriggerFontWeight')
-    );
-
-    // ── Alert ────────────────────────────────────────────────────────────────
-    md += row('**Alert**', '—',
-        v('alertBg'), v('alertForeground'), v('alertFontSize'), '—',
-        pad('alertPaddingTop','alertPaddingRight'), '—',
-        v('alertBoxShadow'), v('alertBorderColor'), '—',
-        v('alertBorderRadius'), '—', '—', '—', '—'
-    );
-
-    // ── Alert Dialog ─────────────────────────────────────────────────────────
-    md += row('**Alert Dialog**', '—',
-        v('dialogBg'), v('dialogForeground'), '—', '—',
-        pad('dialogPaddingTop','dialogPaddingRight'), '—',
-        v('dialogBoxShadow'), '—', '—',
-        v('dialogBorderRadius'), '—', '—', '—', '—'
-    );
-
-    // ── Command ──────────────────────────────────────────────────────────────
-    md += row('**Command**', '—',
-        v('popover'), v('popoverForeground'), '—', '—', '—', '—',
-        v('popoverBoxShadow'), v('popoverBorderColor'), '—',
-        v('popoverBorderRadius'), '—', '—', '—', '—'
-    );
-
-    // ── Table ────────────────────────────────────────────────────────────────
-    md += row('**Table**', 'Header',
-        v('tableHeaderBg'), v('tableHeaderForeground'), v('tableHeaderFontSize'), '—',
-        pad('tableHeaderPaddingTop','tableHeaderPaddingRight'), '—', '—',
-        v('tableBorderColor'), '—', '—', '—', '—', '—',
-        otherTypo('tableHeaderFontWeight')
-    );
-    md += row('**Table**', 'Cell',
-        v('tableBg'), v('tableCellForeground'), v('tableFontSize'), '—',
-        pad('tableCellPaddingTop','tableCellPaddingRight'), '—', '—',
-        v('tableBorderColor'), '—', '—', '—', '—', '—', '—'
-    );
-
-    // ── Dialog ───────────────────────────────────────────────────────────────
-    md += row('**Dialog**', '—',
-        v('dialogBg'), v('dialogForeground'), '—', '—',
-        pad('dialogPaddingTop','dialogPaddingRight'), '—',
-        v('dialogBoxShadow'), '—', '—',
-        v('dialogBorderRadius'), '—', '—', '—', '—'
-    );
-
-    // ── Drawer ───────────────────────────────────────────────────────────────
-    md += row('**Drawer**', '—',
-        v('sheetBg'), v('sheetForeground'), '—', '—', '—', '—', '—',
-        v('sheetBorderColor'), '—', '—', '—', '—', '—', '—'
-    );
-
-    // ── Hover Card ───────────────────────────────────────────────────────────
-    md += row('**Hover Card**', '—',
-        v('popover'), v('popoverForeground'), '—', '—', '—', '—',
-        v('popoverBoxShadow'), v('popoverBorderColor'), '—',
-        v('popoverBorderRadius'), '—', '—', '—', '—'
-    );
-
-    // ── Menu Bar ─────────────────────────────────────────────────────────────
-    md += row('**Menu Bar**', '—',
-        v('headerBg'), v('sidebarForeground'), v('navLinkFontSize'), '—',
-        pad('navLinkPaddingTop','navLinkPaddingRight'), '—',
-        v('headerBoxShadow'), v('headerBorderColor'), '—', '—',
-        v('navLinkForeground'), '—', v('headerHeight'), '—'
-    );
-
-    // ── Pop-over ─────────────────────────────────────────────────────────────
-    md += row('**Pop-over**', '—',
-        v('popover'), v('popoverForeground'), '—', '—', '—', '—',
-        v('popoverBoxShadow'), v('popoverBorderColor'), '—',
-        v('popoverBorderRadius'), '—', '—', '—', '—'
-    );
-
-    // ── Radio Button ─────────────────────────────────────────────────────────
-    md += row('**Radio Button**', '—',
-        '—', '—', '—', '—', '—', '—', '—', '—', '—', '—',
-        v('radioAccentColor'), '—', '—', '—'
-    );
-
-    // ── Sidebar ──────────────────────────────────────────────────────────────
-    md += row('**Sidebar**', 'Default',
-        v('sidebar'), v('sidebarForeground'), '—', '—',
-        pad('sidebarItemPaddingTop','sidebarItemPaddingRight'), '—', '—',
-        v('sidebarBorderColor'), '—', '—', '—', '—', v('sidebarWidth'), '—'
-    );
-    md += row('**Sidebar**', 'Active Item',
-        v('sidebarPrimary'), v('sidebarPrimaryForeground'), '—', '—', '—', '—', '—', '—', '—',
-        v('sidebarItemBorderRadius'), '—', '—', '—',
-        otherTypo('sidebarItemFontWeight')
-    );
-
-    // ── Toast ────────────────────────────────────────────────────────────────
-    md += row('**Toast**', '—',
-        v('toastBg'), v('toastForeground'), v('toastFontSize'), '—',
-        pad('toastPaddingTop','toastPaddingRight'), '—',
-        v('toastBoxShadow'), v('toastBorderColor'), '—',
-        v('toastBorderRadius'), '—', '—', '—', '—'
-    );
-
-    // ── Switch ───────────────────────────────────────────────────────────────
-    md += row('**Switch**', '—',
-        v('switchBg'), '—', '—', '—', '—', '—', '—', '—', '—',
-        v('switchBorderRadius'), '—', '—',
-        v('switchHeight'), '—'
-    );
-
-    // ── Tabs ─────────────────────────────────────────────────────────────────
-    md += row('**Tabs**', 'List',
-        v('tabsBg'), v('tabInactiveForeground'), '—', '—',
-        pad('tabsPaddingTop','tabsPaddingTop'), '—', '—', '—', '—',
-        v('tabsBorderRadius'), '—', '—', '—', '—'
-    );
-    md += row('**Tabs**', 'Active Tab',
-        v('tabActiveBg'), v('tabActiveForeground'), '—', '—', '—', '—', '—', '—', '—',
-        v('tabActiveBorderRadius'), '—', '—', '—',
-        otherTypo('tabActiveFontWeight')
-    );
-
-    // ── Text Area ────────────────────────────────────────────────────────────
-    md += row('**Text Area**', '—',
-        v('inputBg'), v('foreground'), v('inputFontSize'), '—',
-        pad('inputPaddingTop','inputPaddingRight'), '—', '—',
-        v('border'), v('inputBorderWidth'),
-        v('inputBorderRadius'), '—', '—', '—', '—'
-    );
-
-    // ── Tooltip ──────────────────────────────────────────────────────────────
-    md += row('**Tooltip**', '—',
-        v('tooltipBg'), v('tooltipForeground'), v('tooltipFontSize'), '—',
-        pad('tooltipPaddingTop','tooltipPaddingRight'), '—',
-        v('tooltipBoxShadow'), '—', '—',
-        v('tooltipBorderRadius'), '—', '—', '—', '—'
-    );
-
-    md += `\n`;
     return md;
+}
+
+// ── Token confidence + tokens.json sidecar (extraction metadata) ─────────────
+const SEMANTIC_KEY_TO_COLOR_ROLE = {
+    background: 'color.bg.canvas',
+    card: 'color.bg.surface',
+    foreground: 'color.text.primary',
+    mutedForeground: 'color.text.secondary',
+    primary: 'color.action.primary',
+    border: 'color.border.default',
+    destructive: 'color.feedback.negative',
+};
+
+function pageKey(url) {
+    try {
+        const u = new URL(url);
+        u.hash = '';
+        return u.href;
+    } catch (_) {
+        return url || '';
+    }
+}
+
+async function mergeUserVerifiedIntoScanData(data) {
+    if (!data?.pageUrl) return data;
+    try {
+        const { plukrr_user_verified_tokens } = await chrome.storage.local.get('plukrr_user_verified_tokens');
+        const map = plukrr_user_verified_tokens || {};
+        const saved = map[pageKey(data.pageUrl)];
+        if (!saved || typeof saved !== 'object') return data;
+
+        const semanticTokens = { ...(data.semanticTokens || {}) };
+        for (const [k, ent] of Object.entries(saved)) {
+            if (ent && ent.source === 'user-verified' && ent.value != null && ent.value !== '') {
+                semanticTokens[k] = { ...ent };
+            }
+        }
+
+        let colorRoles =
+            data.colors?.colorRoles && typeof data.colors.colorRoles === 'object'
+                ? { ...data.colors.colorRoles }
+                : null;
+        for (const [k, ent] of Object.entries(saved)) {
+            if (!ent || ent.source !== 'user-verified') continue;
+            const val = ent.value;
+            if (typeof val !== 'string' || !/^#[0-9a-fA-F]{6}$/.test(val)) continue;
+            const roleKey = SEMANTIC_KEY_TO_COLOR_ROLE[k];
+            if (!roleKey) continue;
+            if (!colorRoles) colorRoles = {};
+            colorRoles[roleKey] = {
+                hex: val.toUpperCase(),
+                sourceSelector: 'user-verified',
+                method: 'user-verified',
+                confidence: 1,
+                extractionSource: 'user-verified',
+            };
+        }
+
+        return {
+            ...data,
+            semanticTokens,
+            colors: colorRoles ? { ...data.colors, colorRoles } : data.colors,
+        };
+    } catch (_) {
+        return data;
+    }
+}
+
+async function persistUserVerifiedTokens(pageUrl, styles, stepKey) {
+    if (!pageUrl || !styles) return;
+    try {
+        const { plukrr_user_verified_tokens } = await chrome.storage.local.get('plukrr_user_verified_tokens');
+        const map = { ...(plukrr_user_verified_tokens || {}) };
+        const pk = pageKey(pageUrl);
+        if (!map[pk]) map[pk] = {};
+        for (const [k, v] of Object.entries(styles)) {
+            if (!v) continue;
+            map[pk][k] = { value: v, confidence: 1, source: 'user-verified', stepKey };
+        }
+        await chrome.storage.local.set({ plukrr_user_verified_tokens: map });
+    } catch (_) {}
+}
+
+function confidenceFromSemanticTokenEntry(ent) {
+    if (!ent) return { confidence: 0.5, source: 'frequency-inference' };
+    if (ent.source === 'user-verified') return { confidence: 1, source: 'user-verified' };
+    const s = String(ent.source || '');
+    if (s.startsWith('css-var:')) return { confidence: 0.9, source: 'named-css-variable' };
+    return { confidence: 0.5, source: 'frequency-inference' };
+}
+
+/** Collects the same design-token rows as the MD table, with per-token confidence and source. */
+function collectDesignTokenRowsWithMeta(data) {
+    const colorRoles =
+        data.colors?.colorRoles && typeof data.colors.colorRoles === 'object' ? data.colors.colorRoles : null;
+    const bgs = (data.colors?.backgrounds || []).filter((c) => c.hex && c.hex?.toUpperCase() !== '#000000');
+    const texts = data.colors?.text || [];
+    const interacts = data.colors?.interactive || [];
+    const borders = data.colors?.borders || [];
+    const typo = data.typography || [];
+    const spacing = data.spacing || {};
+    const radii = data.radii || [];
+    const st = data.semanticTokens || {};
+
+    const rows = [];
+    function pushRow(token, value, confidence, source, detail) {
+        const c = typeof confidence === 'number' ? Math.max(0, Math.min(1, confidence)) : 0.5;
+        rows.push({
+            token,
+            value: String(value),
+            confidence: c,
+            source: source || 'unknown',
+            detail: detail || '',
+        });
+    }
+
+    if (colorRoles && Object.keys(colorRoles).length) {
+        const semanticOrder = [
+            'color.bg.canvas',
+            'color.bg.surface',
+            'color.text.primary',
+            'color.text.secondary',
+            'color.text.tertiary',
+            'color.text.disabled',
+            'color.text.inverse',
+            'color.action.primary',
+            'color.action.primary.hover',
+            'color.feedback.positive',
+            'color.feedback.negative',
+            'color.border.default',
+        ];
+        for (const k of semanticOrder) {
+            const ent = colorRoles[k];
+            if (!ent?.hex) continue;
+            const conf = ent.confidence != null ? ent.confidence : 0.5;
+            const src = ent.extractionSource || ent.method || 'dom';
+            pushRow(k, ent.hex, conf, src, ent.sourceSelector || '');
+        }
+    } else {
+        const fc = (entry) => (entry && entry.confidence != null ? entry.confidence : 0.5);
+        const fs = (entry) => entry?.extractionSource || entry?.method || 'frequency-inference';
+        if (bgs[0]) pushRow('color.surface.base', bgs[0].hex, fc(bgs[0]), fs(bgs[0]), bgs[0].sourceSelector || '');
+        if (bgs[1]) pushRow('color.surface.raised', bgs[1].hex, fc(bgs[1]), fs(bgs[1]), bgs[1].sourceSelector || '');
+        if (texts[0]) pushRow('color.text.primary', texts[0].hex, fc(texts[0]), fs(texts[0]), texts[0].sourceSelector || '');
+        if (texts[1]) pushRow('color.text.secondary', texts[1].hex, fc(texts[1]), fs(texts[1]), texts[1].sourceSelector || '');
+        if (interacts[0]) pushRow('color.action.primary', interacts[0].hex, fc(interacts[0]), fs(interacts[0]), interacts[0].sourceSelector || '');
+        if (borders[0]) pushRow('color.border.default', borders[0].hex, fc(borders[0]), fs(borders[0]), borders[0].sourceSelector || '');
+    }
+
+    const stPrimary = st.primary?.value;
+    const stDestructive = st.destructive?.value;
+    const stMuted = st.muted?.value;
+    const cPrimary = confidenceFromSemanticTokenEntry(st.primary);
+    const cDest = confidenceFromSemanticTokenEntry(st.destructive);
+    const cMuted = confidenceFromSemanticTokenEntry(st.muted);
+
+    if (stPrimary && !rows.find((r) => r.value === stPrimary && r.token !== 'color.action.accent'))
+        pushRow('color.action.accent', stPrimary, cPrimary.confidence, cPrimary.source, String(st.primary?.source || ''));
+    if (stDestructive) pushRow('color.action.destructive', stDestructive, cDest.confidence, cDest.source, String(st.destructive?.source || ''));
+    if (stMuted) pushRow('color.surface.muted', stMuted, cMuted.confidence, cMuted.source, String(st.muted?.source || ''));
+
+    const sortedR = [...radii].sort((a, b) => parseFloat(a.value) - parseFloat(b.value));
+    const rSizes = ['xs', 'sm', 'md', 'lg', 'xl', '2xl'];
+    sortedR.slice(0, 6).forEach((r, i) => {
+        pushRow(`radius.${rSizes[i]}`, r.value, 0.5, 'frequency-inference', '');
+    });
+
+    const roleTypo = (typo || []).filter((t) => t.category === 'role');
+    const roleOrder = ['display', 'h1', 'h2', 'h3', 'body', 'bodySmall', 'caption'];
+    const roleSorted = roleOrder.map((k) => roleTypo.find((t) => t.role === k)).filter(Boolean);
+    roleSorted.forEach((t) => {
+        const slug = (t.role || '').replace(/([A-Z])/g, '_$1').toLowerCase().replace(/^_/, '');
+        pushRow(`font.role.${slug}`, t.size, 0.5, 'frequency-inference', t.label || '');
+    });
+
+    if (spacing.scale?.length) {
+        spacing.scale.slice(0, 8).forEach((s, i) => {
+            pushRow(`space.${i + 1}`, `${s}px`, 0.5, 'frequency-inference', '');
+        });
+    }
+
+    const overallConfidence = rows.length ? rows.reduce((a, r) => a + r.confidence, 0) / rows.length : 0;
+    return { rows, overallConfidence };
+}
+
+function buildTokensJsonPayload(data) {
+    const { rows, overallConfidence } = collectDesignTokenRowsWithMeta(data);
+    const mps = data.multiPageScan;
+    return JSON.stringify(
+        {
+            pageUrl: data.pageUrl || '',
+            pageTitle: data.pageTitle || '',
+            generatedAt: new Date().toISOString(),
+            overallConfidence: Math.round(overallConfidence * 1000) / 1000,
+            overallConfidencePercent: Math.round(overallConfidence * 100),
+            ...(mps
+                ? {
+                      multiPageScan: {
+                          scannedPages: mps.scannedPages,
+                          componentDetectionByUrl: mps.componentDetectionByUrl,
+                          componentsDetectedOn: mps.componentsDetectedOn,
+                      },
+                  }
+                : {}),
+            tokens: rows.map((r) => ({
+                token: r.token,
+                value: r.value,
+                confidence: Math.round(r.confidence * 1000) / 1000,
+                source: r.source,
+                ...(r.detail ? { detail: r.detail } : {}),
+            })),
+        },
+        null,
+        2
+    );
 }
 
 function generateDesignMarkdown(data) {
     const domain = (() => { try { return new URL(data.pageUrl).hostname; } catch (_) { return data.pageUrl || 'Unknown'; } })();
     const title = data.pageTitle || domain;
+    const tokenMeta = collectDesignTokenRowsWithMeta(data);
+    const overallPct = Math.round(tokenMeta.overallConfidence * 100);
 
     // ── Pre-compute atoms ──────────────────────────────────
     // Filter #000000 from backgrounds — it is nearly always a browser default,
     // not a real design decision. Valid dark canvases use near-black, not pure black.
-    const bgs        = (data.colors?.backgrounds || []).filter(c => c.hex?.toUpperCase() !== '#000000');
+    const colorRoles = data.colors?.colorRoles && typeof data.colors.colorRoles === 'object'
+        ? data.colors.colorRoles : null;
+    const bgs        = (data.colors?.backgrounds || []).filter(c => c.hex && c.hex?.toUpperCase() !== '#000000');
     const texts      = data.colors?.text        || [];
     const interacts  = data.colors?.interactive || [];
     const borders    = data.colors?.borders     || [];
@@ -2640,8 +3323,9 @@ function generateDesignMarkdown(data) {
     const radii      = data.radii               || [];
     const shadows    = data.shadows             || [];
     const cssVars    = data.cssVariables        || {};
+    const colorScheme = data.colorScheme       || null;
 
-    const families   = [...new Set(typo.map(t => t.family))];
+    const families   = [...new Set(typo.map(t => t.family).filter(Boolean))];
     const weights    = [...new Set(typo.map(t => String(t.weight)).filter(Boolean))];
     const transforms = [...new Set(typo.map(t => t.textTransform).filter(Boolean))];
 
@@ -2666,11 +3350,14 @@ function generateDesignMarkdown(data) {
     const primaryBgDark  = bgs.length > 0 && !isLightHex(bgs[0].hex);
     const darkSignals    = [bgSignal, textSignal, primaryBgDark].filter(Boolean).length;
     const isDark         = darkSignals >= 2; // require at least 2 of 3 signals to agree
+    // Prefer explicit color-scheme detection from the content script (body luminance, html color-scheme, meta).
+    const modeFromScan = colorScheme?.mode === 'light' || colorScheme?.mode === 'dark' ? colorScheme.mode : null;
+    const themeIsDark  = modeFromScan === 'dark' ? true : modeFromScan === 'light' ? false : isDark;
     const isFlat         = shadows.length === 0;
     const hasRounding    = radii.some(r => { const v = parseFloat(r.value); return v > 4 && v < 500; });
     const hasPill        = radii.some(r => parseFloat(r.value) >= 500 || r.value === '50%' || r.value === '100%');
     const densityLabel   = spacing.scale?.length > 6 ? 'rich' : spacing.scale?.length > 3 ? 'moderate' : 'minimal';
-    const modeLabel      = isDark ? 'dark-mode' : 'light-mode';
+    const modeLabel      = themeIsDark ? 'dark-mode' : 'light-mode';
     const depthLabel     = isFlat ? 'flat / no elevation' : `${shadows.length}-level elevation system`;
     const shapeLabel     = hasPill ? 'pill-shaped elements' : hasRounding ? 'rounded corners' : 'sharp / rectangular';
 
@@ -2687,549 +3374,467 @@ function generateDesignMarkdown(data) {
 
     let md = '';
 
+    // ── Additional pre-computation ─────────────────────────
+    const st = data.semanticTokens || {};
+    const hierTypo   = typo.filter(t => t.category === 'role');
+    const hierOrder  = ['display', 'h1', 'h2', 'h3', 'body', 'bodySmall', 'caption'];
+    const hierSorted = hierOrder.map(k => hierTypo.find(t => t.role === k)).filter(Boolean);
+
     // ══════════════════════════════════════════════════════
     // HEADER
     // ══════════════════════════════════════════════════════
+    const extractDate = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+    const pageCount = data.multiPageScan?.scannedPages?.length || 1;
     md += `# Design System — ${escMd(title)}\n\n`;
-    md += `> Extracted from: \`${escMd(data.pageUrl || domain)}\`\n\n`;
+    md += `> Source: \`${escMd(data.pageUrl || domain)}\` · Extracted: ${extractDate} · Pages scanned: ${pageCount}\n`;
+    md += `> Confidence: **${overallPct}%** — components marked \`⚠\` need manual verification via Create Design System flow.\n\n`;
+    md += `\n---\n\n`;
+
+    // ══════════════════════════════════════════════════════
+    // 1. FINGERPRINT
+    // ══════════════════════════════════════════════════════
+    md += `## 1. Fingerprint\n\n`;
+    {
+        const nonPillRadiiF = radii
+            .filter(r => parseFloat(r.value) < 50 && r.value !== '50%' && r.value !== '100%')
+            .sort((a, b) => parseFloat(a.value) - parseFloat(b.value));
+        const defaultR = nonPillRadiiF[0]?.value;
+        let fp = `${escMd(title)} is a **${modeLabel}** interface.`;
+        if (bgs[0])       fp += ` Canvas \`${bgs[0].hex}\`,`;
+        if (texts[0])     fp += ` primary text \`${texts[0].hex}\`,`;
+        if (interacts[0]) fp += ` accent \`${interacts[0].hex}\`.`;
+        if (families[0])  fp += ` Typography: \`${families[0]}\``;
+        if (weights.length) fp += ` with weights \`${weights.join(' / ')}\`.`;
+        if (spacing.baseUnit) fp += ` Base spacing unit \`${spacing.baseUnit}px\`,`;
+        if (defaultR)     fp += ` default radius \`${defaultR}\`.`;
+        fp += ` Depth: **${depthLabel}**.`;
+        md += `${fp}\n\n`;
+    }
     md += `---\n\n`;
 
     // ══════════════════════════════════════════════════════
-    // 1. VISUAL THEME & ATMOSPHERE
+    // 2. TOKENS
     // ══════════════════════════════════════════════════════
-    md += `## 1. Visual Theme & Atmosphere\n\n`;
+    md += `## 2. Tokens\n\n`;
 
-    // Narrative paragraph built from real signals
-    const fontDesc   = families.length ? `**${families.join(' / ')}**` : 'a system font stack';
-    const bgDesc     = bgs[0] ? `(\`${bgs[0].hex}\`)` : '';
-    const shapeDesc  = hasPill ? 'pill-shaped interactive elements' : hasRounding ? 'softly rounded corners' : 'sharp, rectangular forms';
-    const depthDesc  = isFlat ? 'flat surfaces with no elevation' : `a ${shadows.length}-level shadow system`;
-    const weightDesc = weights.length === 1 ? `a single weight (${weights[0]})` : weights.length === 2 ? `two weights (${weights.join(' / ')})` : `${weights.length} weights (${weights.join(', ')})`;
-    const trackDesc  = typo.some(t => t.letterSpacing && t.letterSpacing !== 'normal' && t.letterSpacing !== '0px') ? ' with deliberate letter-spacing as a stylistic signature' : '';
-    const transformDesc = transforms.includes('uppercase') ? ' Uppercase text-transform is applied systematically as a formal voice.' : '';
+    // ── Color ──────────────────────────────────────────────
+    md += `### Color\n\n`;
+    md += `| Token | Value | Role |\n|-------|-------|------|\n`;
 
-    const bgDescInline = bgDesc ? ` ${bgDesc}` : '';
-    md += `${escMd(title)} is a ${modeLabel} interface built on ${fontDesc} typography${trackDesc}. The canvas is ${isDark ? 'dark' : 'light'}${bgDescInline}, with ${shapeDesc} and ${depthDesc}. `;
-    md += `Typography uses ${weightDesc} to create hierarchy.${transformDesc} `;
-    md += `The spacing system is ${densityLabel} with ${spacing.scale?.length || 0} defined steps.\n\n`;
-
-    if (interacts.length || bgs.length > 1) {
-        const accentHex = interacts[0]?.hex;
-        if (accentHex) md += `The accent color (\`${accentHex}\`) drives interactive elements — buttons, links, and focus states — creating a consistent action signal throughout the interface.\n\n`;
+    function resolveColor(roleKey, fallback) {
+        const ent = colorRoles?.[roleKey];
+        if (ent?.hex) return { hex: ent.hex, conf: ent.confidence ?? 0.7 };
+        if (fallback) return { hex: fallback, conf: 0.6 };
+        return null;
     }
 
-    md += `**Key Characteristics:**\n`;
-    if (bgs[0]) md += `- ${isDark ? 'Dark' : 'Light'} canvas (\`${bgs[0].hex}\`) — the primary background surface\n`;
-    if (texts[0]) md += `- Primary text \`${texts[0].hex}\`${texts[1] ? `, secondary \`${texts[1].hex}\`` : ''}\n`;
-    if (interacts[0]) md += `- Accent / action color: \`${interacts[0].hex}\`\n`;
-    if (borders[0]) md += `- Border: \`${borders[0].hex}\`\n`;
-    if (families.length) md += `- Font: ${families.map(f => `\`${f}\``).join(' + ')}\n`;
-    md += `- Weight system: ${weightDesc}\n`;
-    if (transforms.length) md += `- Text transform: \`${transforms.join(' / ')}\`\n`;
-    md += `- Shape: ${shapeLabel}\n`;
-    md += `- Depth: ${depthLabel}\n`;
-    md += `- Spacing: ${densityLabel} (${spacing.scale?.length || 0} steps, base ${spacing.baseUnit || '?'}px)\n`;
-    if (components.length) md += `- ${components.length} component type(s) detected\n`;
+    const colorDefs = [
+        ['color.bg.canvas',            resolveColor('color.bg.canvas', bgs[0]?.hex),                        'Page background'],
+        ['color.bg.surface',           resolveColor('color.bg.surface', bgs[1]?.hex),                       'Cards, panels, raised surfaces'],
+        ['color.bg.muted',             resolveColor('color.bg.muted', /^#[0-9a-fA-F]{6}$/.test(st.muted?.value || '') ? st.muted.value : null), 'Subtle fills, hover states'],
+        ['color.text.primary',         resolveColor('color.text.primary', texts[0]?.hex),                   'Headings, body'],
+        ['color.text.secondary',       resolveColor('color.text.secondary', texts[1]?.hex),                 'Supporting text, metadata'],
+        ['color.text.disabled',        resolveColor('color.text.disabled', null),                           'Disabled states'],
+        ['color.text.inverse',         resolveColor('color.text.inverse', null),                            'Text on dark/accent backgrounds'],
+        ['color.action.primary',       resolveColor('color.action.primary', interacts[0]?.hex),             'CTAs, links, focus rings'],
+        ['color.action.primary.hover', resolveColor('color.action.primary.hover', interacts[1]?.hex),       'Hover state for primary actions'],
+        ['color.feedback.positive',    resolveColor('color.feedback.positive', null),                       'Success, gains'],
+        ['color.feedback.negative',    resolveColor('color.feedback.negative', /^#[0-9a-fA-F]{6}$/.test(st.destructive?.value || '') ? st.destructive.value : null), 'Errors, losses, destructive'],
+        ['color.feedback.warning',     resolveColor('color.feedback.warning', null),                        'Warnings, caution'],
+        ['color.border.default',       resolveColor('color.border.default', borders[0]?.hex),               'Card/input borders, dividers'],
+        ['color.border.strong',        resolveColor('color.border.strong', borders[1]?.hex),                'Emphasized borders'],
+    ];
+
+    let colorRowsOut = 0;
+    for (const [token, res, role] of colorDefs) {
+        if (!res) continue;
+        const warn = res.conf < 0.7 ? '⚠ ' : '';
+        md += `| ${warn}\`${token}\` | \`${res.hex}\` | ${role} |\n`;
+        colorRowsOut++;
+    }
+    if (!colorRowsOut) md += `| — | — | No color tokens extracted |\n`;
     md += `\n`;
 
-    // Design token reference in hierarchical dot-notation format — matches how
-    // tokens are consumed in code (Tailwind, CSS-in-JS, design tools)
-    const st = data.semanticTokens || {};
-    const tokenRows = [];
-    if (bgs[0])       tokenRows.push([`color.surface.base`,    bgs[0].hex]);
-    if (bgs[1])       tokenRows.push([`color.surface.raised`,  bgs[1].hex]);
-    if (texts[0])     tokenRows.push([`color.text.primary`,    texts[0].hex]);
-    if (texts[1])     tokenRows.push([`color.text.secondary`,  texts[1].hex]);
-    if (interacts[0]) tokenRows.push([`color.action.primary`,  interacts[0].hex]);
-    if (borders[0])   tokenRows.push([`color.border.default`,  borders[0].hex]);
-    const stPrimary = st.primary?.value;
-    const stDestructive = st.destructive?.value;
-    const stMuted = st.muted?.value;
-    if (stPrimary && !tokenRows.find(r => r[1] === stPrimary))
-        tokenRows.push([`color.action.accent`, stPrimary]);
-    if (stDestructive) tokenRows.push([`color.action.destructive`, stDestructive]);
-    if (stMuted)       tokenRows.push([`color.surface.muted`,  stMuted]);
-    const sortedR = [...radii].sort((a, b) => parseFloat(a.value) - parseFloat(b.value));
-    const rSizes = ['xs','sm','md','lg','xl','2xl'];
-    sortedR.slice(0, 6).forEach((r, i) => tokenRows.push([`radius.${rSizes[i]}`, r.value]));
-    const typoSizes = [...new Set(typo.map(t => t.size).filter(Boolean))].sort((a, b) => parseFloat(a) - parseFloat(b));
-    const tSizes = ['xs','sm','md','lg','xl','2xl'];
-    typoSizes.slice(0, 6).forEach((s, i) => tokenRows.push([`font.size.${tSizes[i]}`, s]));
-    if (spacing.scale?.length) {
-        spacing.scale.slice(0, 8).forEach((s, i) => tokenRows.push([`space.${i + 1}`, `${s}px`]));
-    }
-    if (tokenRows.length) {
-        md += `**Design Tokens**\n\n`;
-        md += `| Token | Value |\n|-------|-------|\n`;
-        tokenRows.forEach(([k, v]) => { md += `| \`${k}\` | \`${escMd(v)}\` |\n`; });
-        md += `\n`;
-    }
-
-    // ══════════════════════════════════════════════════════
-    // 2. COLOR PALETTE & ROLES
-    // ══════════════════════════════════════════════════════
-    md += `## 2. Color Palette & Roles\n\n`;
-
-    // Primary / canvas colors
-    if (bgs.length) {
-        md += `### Primary & Background\n\n`;
-        bgs.forEach((c, i) => {
-            const name = semanticName(c.hex, 'backgrounds', i);
-            md += `- **${name}** (\`${c.hex}\`): ${i === 0 ? 'Page background / canvas' : i === 1 ? 'Card / surface background' : 'Overlay / muted surface'}\n`;
-        });
-        md += `\n`;
-    }
-
-    // Text colors
-    if (texts.length) {
-        md += `### Text\n\n`;
-        texts.forEach((c, i) => {
-            const name = semanticName(c.hex, 'text', i);
-            md += `- **${name}** (\`${c.hex}\`): ${i === 0 ? 'Headings and primary body text' : i === 1 ? 'Secondary / supporting text' : 'Muted / disabled text'}\n`;
-        });
-        md += `\n`;
-    }
-
-    // Interactive / accent colors
-    if (interacts.length) {
-        md += `### Interactive & Accent\n\n`;
-        interacts.forEach((c, i) => {
-            const name = semanticName(c.hex, 'interactive', i);
-            md += `- **${name}** (\`${c.hex}\`): ${i === 0 ? 'Primary CTA, links, focus rings' : i === 1 ? 'Secondary actions' : 'Hover / active state'}\n`;
-        });
-        md += `\n`;
-    }
-
-    // Border colors
-    if (borders.length) {
-        md += `### Borders & Dividers\n\n`;
-        borders.forEach((c, i) => {
-            const name = semanticName(c.hex, 'borders', i);
-            md += `- **${name}** (\`${c.hex}\`): ${i === 0 ? 'Default border on cards and inputs' : i === 1 ? 'Subtle / secondary border' : 'Strong / emphasis border'}\n`;
-        });
-        md += `\n`;
-    }
-
-    // CSS color tokens
-    const colorTokens = cssVars.colors || {};
-    if (Object.keys(colorTokens).length) {
-        md += `### CSS Color Tokens\n\n`;
-        md += `| Token | Value |\n`;
-        md += `|-------|-------|\n`;
-        for (const [k, v] of Object.entries(colorTokens)) {
-            md += `| \`${escMd(k)}\` | \`${escMd(v)}\` |\n`;
-        }
-        md += `\n`;
-    }
-
-    // ══════════════════════════════════════════════════════
-    // 3. TYPOGRAPHY RULES
-    // ══════════════════════════════════════════════════════
-    md += `## 3. Typography Rules\n\n`;
-
-    if (families.length) {
-        md += `### Font Families\n\n`;
-        md += `| Role | Family | Fallback |\n`;
-        md += `|------|--------|----------|\n`;
-        families.forEach((f, i) => {
-            const role = i === 0 ? 'Primary' : i === 1 ? 'Secondary / Monospace' : 'Tertiary';
-            md += `| ${role} | \`${escMd(f)}\` | system-ui, sans-serif |\n`;
-        });
-        md += `\n`;
-    }
-
-    if (typo.length) {
-        md += `### Hierarchy\n\n`;
-        md += `| Role | Font | Size | Weight | Line Height | Letter Spacing | Notes |\n`;
-        md += `|------|------|------|--------|-------------|----------------|-------|\n`;
-        for (const t of typo) {
-            const px = parseFloat(t.size) || 16;
-            const rem = (px / 16).toFixed(2);
-            const notes = t.textTransform && t.textTransform !== 'none' ? `\`text-transform: ${t.textTransform}\`` : '—';
-            md += `| ${escMd(t.label)} | \`${escMd(t.family)}\` | ${escMd(t.size)} (${rem}rem) | ${t.weight} | ${escMd(t.lineHeight || '—')} | ${escMd(t.letterSpacing || 'normal')} | ${notes} |\n`;
-        }
-        md += `\n`;
-    }
-
-    md += `### Principles\n\n`;
-    if (weights.length === 1) md += `- **Single-weight system**: Only \`${weights[0]}\` is used — no hierarchy through weight variation.\n`;
-    else if (weights.length === 2) md += `- **Two-weight system**: \`${weights.join('` / `')}\` — clean, disciplined hierarchy.\n`;
-    else md += `- **Multi-weight system**: ${weights.length} weights (\`${weights.join('`, `')}\`) create a rich typographic hierarchy.\n`;
-    if (transforms.includes('uppercase')) md += `- **Uppercase convention**: UI text uses \`text-transform: uppercase\`, creating a systematic, formal voice.\n`;
-    const hasTracking = typo.some(t => t.letterSpacing && t.letterSpacing !== 'normal' && t.letterSpacing !== '0px');
-    if (hasTracking) md += `- **Letter-spacing as identity**: Tracked type is a deliberate design signal — preserve letter-spacing values exactly.\n`;
-    const tightLines = typo.filter(t => parseFloat(t.lineHeight) < 1.3);
-    if (tightLines.length > typo.length / 2) md += `- **Tight line-heights**: Most text uses compressed line-heights — efficient, information-dense layout.\n`;
-    else md += `- **Open line-heights**: Generous line-heights favour readability over density.\n`;
-    md += `\n`;
-
-    // Font tokens (inline, not a separate section)
-    const fontTokens = cssVars.fonts || {};
-    if (Object.keys(fontTokens).length) {
-        md += `### Font Tokens\n\n`;
-        md += `| Token | Value |\n`;
-        md += `|-------|-------|\n`;
-        for (const [k, v] of Object.entries(fontTokens)) {
-            md += `| \`${escMd(k)}\` | \`${escMd(v)}\` |\n`;
-        }
-        md += `\n`;
-    }
-
-    // ══════════════════════════════════════════════════════
-    // 4. COMPONENT STYLINGS
-    // ══════════════════════════════════════════════════════
-    md += `## 4. Component Stylings\n\n`;
-    md += `> Populated automatically from page scan. **Create DS** fills missing values with exact computed styles.\n\n`;
-    md += generateComponentsTable(data.semanticTokens || {});
-    md += `\n**Required States** — every interactive component in the table above must implement:\n`;
-    md += `\`default\` · \`hover\` · \`focus-visible\` · \`active\` · \`disabled\` · \`loading\` · \`error\`\n\n`;
-    md += `> **Keyboard**: all interactive components must be fully operable via keyboard. `;
-    md += `**Touch**: minimum 44px tap target, minimum 8px gap between tappable elements.\n\n`;
-
-    // ══════════════════════════════════════════════════════
-    // 5. LAYOUT PRINCIPLES
-    // ══════════════════════════════════════════════════════
-    md += `## 5. Layout Principles\n\n`;
-
-    // Spacing system
-    md += `### Spacing System\n\n`;
-    if (spacing.scale?.length) {
-        const base = spacing.baseUnit || 4;
-        md += `- Base unit: **${base}px**\n`;
-        md += `- Scale: ${spacing.scale.map(v => `${v}px`).join(', ')}\n\n`;
-    } else if (spacing.baseUnit) {
-        md += `- Base unit: **${spacing.baseUnit}px**\n\n`;
-    } else {
-        md += `No spacing scale detected.\n\n`;
-    }
-
-    // Size tokens (inline)
-    const sizeTokens = cssVars.sizes || {};
-    if (Object.keys(sizeTokens).length) {
-        md += `**Size Tokens:**\n`;
-        md += `| Token | Value |\n`;
-        md += `|-------|-------|\n`;
-        for (const [k, v] of Object.entries(sizeTokens)) {
-            md += `| \`${escMd(k)}\` | \`${escMd(v)}\` |\n`;
-        }
-        md += `\n`;
-    }
-
-    // Grid & container
-    const layoutStats = [];
-    if (layout.maxWidth)                                              layoutStats.push(['Container max-width', layout.maxWidth]);
-    if (layout.containerPadding && layout.containerPadding !== '0px') layoutStats.push(['Container padding', layout.containerPadding]);
-    if (layout.gridColumns)                                           layoutStats.push(['Grid columns', String(layout.gridColumns)]);
-    if (layout.gridGap)                                               layoutStats.push(['Grid gap', layout.gridGap]);
-    if (layout.flexLayouts > 0)                                       layoutStats.push(['Flex containers', `${layout.flexLayouts}`]);
-    if (layout.gridLayouts > 0)                                       layoutStats.push(['Grid containers', `${layout.gridLayouts}`]);
-
-    if (layoutStats.length) {
-        md += `### Grid & Container\n\n`;
-        md += `| Property | Value |\n`;
-        md += `|----------|-------|\n`;
-        for (const [k, v] of layoutStats) md += `| ${k} | \`${escMd(v)}\` |\n`;
-        md += `\n`;
-    }
-
-    // Whitespace philosophy
-    md += `### Whitespace Philosophy\n\n`;
-    if (isDark) {
-        md += `Dark backgrounds create natural depth — whitespace is experienced as contrast rather than blank space. `;
-    } else {
-        md += `The light canvas provides breathing room between content blocks. `;
-    }
-    if (densityLabel === 'rich') {
-        md += `The rich spacing scale (${spacing.scale?.length} steps) supports precise, intentional rhythm throughout the layout.\n\n`;
-    } else if (densityLabel === 'moderate') {
-        md += `A moderate spacing scale creates consistent rhythm without over-engineering.\n\n`;
-    } else {
-        md += `Minimal spacing steps keep the layout simple — rely on the defined scale and avoid one-off values.\n\n`;
-    }
-
-    // Border radius scale
-    md += `### Border Radius Scale\n\n`;
+    // ── Radius ─────────────────────────────────────────────
     if (radii.length) {
-        const sortedRadii = [...radii].sort((a, b) => parseFloat(a.value) - parseFloat(b.value));
-        for (const r of sortedRadii) {
-            const px = parseFloat(r.value) || 0;
-            const shape = px === 0 ? 'Sharp / rectangular' : px >= 9999 ? 'Fully circular' : px >= 50 ? 'Pill / fully rounded' : px >= 24 ? 'Section / large containers' : px >= 16 ? 'Feature cards / panels' : px >= 8 ? 'Standard cards' : px >= 4 ? 'Inputs / small elements' : 'Slightly rounded';
-            md += `- **${px}px** (\`${r.value}\`): ${shape}${r.label ? ` — ${r.label}` : ''}\n`;
+        const sortedAllR = [...radii].sort((a, b) => parseFloat(a.value) - parseFloat(b.value));
+        const pillR    = sortedAllR.filter(r => parseFloat(r.value) >= 50 || r.value === '50%' || r.value === '100%');
+        const nonPillR = sortedAllR.filter(r => parseFloat(r.value) < 50 && r.value !== '50%' && r.value !== '100%');
+        if (nonPillR.length || pillR.length) {
+            md += `### Radius\n\n`;
+            md += `| Token | Value | Used for |\n|-------|-------|----------|\n`;
+            if (nonPillR[0]) md += `| \`radius.sm\` | \`${nonPillR[0].value}\` | Inputs, badges, chips |\n`;
+            if (nonPillR.length >= 3) {
+                const mid = nonPillR[Math.floor(nonPillR.length / 2)];
+                md += `| \`radius.md\` | \`${mid.value}\` | Buttons, small cards |\n`;
+            }
+            if (nonPillR.length >= 2) md += `| \`radius.lg\` | \`${nonPillR[nonPillR.length - 1].value}\` | Cards, modals |\n`;
+            if (pillR[0]) md += `| \`radius.pill\` | \`${pillR[0].value}\` | Tag-style pills, round buttons |\n`;
+            md += `\n`;
         }
+    }
+
+    // ── Spacing ─────────────────────────────────────────────
+    if (spacing.baseUnit || spacing.scale?.length) {
+        md += `### Spacing\n\n`;
+        if (spacing.baseUnit) md += `- **Base unit:** \`${spacing.baseUnit}px\`\n`;
+        if (spacing.scale?.length) md += `- **Scale:** \`${spacing.scale.join(', ')}\` (in px)\n`;
         md += `\n`;
+    }
+
+    // ── Typography ──────────────────────────────────────────
+    if (hierSorted.length || families.length) {
+        md += `### Typography\n\n`;
+        if (hierSorted.length) {
+            md += `| Role | Family | Size | Weight | Line height |\n|------|--------|------|--------|-------------|\n`;
+            for (const t of hierSorted) {
+                md += `| ${escMd(t.label)} | \`${escMd(t.family)}\` | \`${escMd(t.size)}\` | \`${t.weight}\` | \`${escMd(t.lineHeight || '—')}\` |\n`;
+            }
+            md += `\n`;
+        }
+        if (families.length) {
+            md += `**Font stack:** \`${escMd(families.join(', '))}\`, system-ui, sans-serif\n`;
+            md += `**Weights in use:** \`${escMd(weights.join(' / '))}\`\n`;
+            md += `\n`;
+        }
+    }
+
+    md += `---\n\n`;
+
+    // ══════════════════════════════════════════════════════
+    // 3. COMPONENTS
+    // ══════════════════════════════════════════════════════
+    md += `## 3. Components\n\n`;
+
+    const compDetection = data.componentDetection || null;
+    let detectedIds = [];
+    if (compDetection && Array.isArray(compDetection.detectedIds) && compDetection.detectedIds.length) {
+        detectedIds = [...compDetection.detectedIds];
     } else {
-        md += `No border radius tokens detected — elements may use sharp corners or inline values.\n\n`;
+        detectedIds = inferDetectedIdsFromTokens(st);
+    }
+    const detectedSet = new Set(detectedIds);
+
+    function stVal(key) {
+        const v = st[key]?.value;
+        if (!v || v === 'none' || v === '0px' || v === 'normal' ||
+            v === 'rgba(0, 0, 0, 0)' || v === 'transparent') return null;
+        return v;
+    }
+    function padPair(k1, k2) {
+        const a = stVal(k1), b = stVal(k2);
+        if (a && b) return `${a} ${b}`;
+        return a || b || null;
+    }
+    function compBlock(pairs) {
+        return pairs.filter(([, v]) => v).map(([label, v]) => `- **${label}:** \`${escMd(v)}\``).join('\n');
     }
 
-    // Breakpoints
-    if (layout.breakpoints?.length) {
+    const accentForFocus = stVal('accent') || interacts[0]?.hex || null;
+    const defaultStates = `- **States:**\n  - Hover: not extracted\n  - Active: not extracted\n  - Disabled: opacity 0.5\n  - Focus: 2px ring${accentForFocus ? ` \`${accentForFocus}\`` : ''}\n`;
+
+    if (detectedSet.has('button')) {
+        const pBlock = compBlock([
+            ['Background',  stVal('primary')],
+            ['Foreground',  stVal('primaryForeground')],
+            ['Padding',     padPair('primaryPaddingTop', 'primaryPaddingRight')],
+            ['Radius',      stVal('primaryBorderRadius')],
+            ['Font',        [stVal('primaryFontSize'), stVal('primaryFontWeight'), families[0]].filter(Boolean).join(' / ') || null],
+            ['Border',      stVal('primaryBorderColor') ? `${stVal('primaryBorderWidth') || '1px'} solid ${stVal('primaryBorderColor')}` : null],
+            ['Min height',  stVal('primaryHeight')],
+        ]);
+        if (pBlock) md += `### Button — Primary\n\n${pBlock}\n${defaultStates}\n`;
+
+        const sBlock = compBlock([
+            ['Background',  stVal('secondary')],
+            ['Foreground',  stVal('secondaryForeground')],
+            ['Padding',     padPair('secondaryPaddingTop', 'secondaryPaddingRight')],
+            ['Radius',      stVal('secondaryBorderRadius')],
+            ['Border',      stVal('secondaryBorderColor') ? `${stVal('secondaryBorderWidth') || '1px'} solid ${stVal('secondaryBorderColor')}` : null],
+            ['Min height',  stVal('secondaryHeight')],
+        ]);
+        if (sBlock) md += `### Button — Secondary\n\n${sBlock}\n${defaultStates}\n`;
+
+        const dBlock = compBlock([
+            ['Background',  stVal('destructive')],
+            ['Foreground',  stVal('destructiveForeground')],
+            ['Padding',     padPair('destructivePaddingTop', 'destructivePaddingRight')],
+            ['Radius',      stVal('destructiveBorderRadius')],
+            ['Min height',  stVal('destructiveHeight')],
+        ]);
+        if (dBlock) md += `### Button — Destructive\n\n${dBlock}\n${defaultStates}\n`;
+    }
+
+    if (detectedSet.has('input')) {
+        const iBlock = compBlock([
+            ['Background',       stVal('inputBg')],
+            ['Border',           stVal('border') ? `${stVal('inputBorderWidth') || '1px'} solid ${stVal('border')}` : null],
+            ['Radius',           stVal('inputBorderRadius')],
+            ['Padding',          padPair('inputPaddingTop', 'inputPaddingRight')],
+            ['Placeholder color',stVal('mutedForeground')],
+            ['Label',            [stVal('inputFontSize'), stVal('foreground')].filter(Boolean).join(' / ') || null],
+            ['Min height',       stVal('inputHeight')],
+        ]);
+        if (iBlock) {
+            md += `### Input — Text Field\n\n${iBlock}\n`;
+            md += `- **States:**\n`;
+            md += `  - Focus: 2px ring${accentForFocus ? ` \`${accentForFocus}\`` : ''}\n`;
+            md += `  - Error: border \`${stVal('destructive') || 'red'}\`\n`;
+            md += `  - Disabled: opacity 0.5\n\n`;
+        }
+    }
+
+    if (detectedSet.has('card')) {
+        const cBlock = compBlock([
+            ['Background', stVal('card')],
+            ['Border',     stVal('cardBorderColor') ? `${stVal('cardBorderWidth') || '1px'} solid ${stVal('cardBorderColor')}` : null],
+            ['Radius',     stVal('cardBorderRadius')],
+            ['Padding',    padPair('cardPaddingTop', 'cardPaddingRight')],
+            ['Shadow',     stVal('cardBoxShadow')],
+        ]);
+        if (cBlock) md += `### Card\n\n${cBlock}\n\n`;
+    }
+
+    if (detectedSet.has('navigation')) {
+        const nBlock = compBlock([
+            ['Background', stVal('headerBg')],
+            ['Height',     stVal('headerHeight')],
+            ['Item color', stVal('navLinkForeground')],
+            ['Divider',    stVal('headerBorderColor') ? `1px solid ${stVal('headerBorderColor')}` : null],
+        ]);
+        if (nBlock) md += `### Navigation — Top Bar\n\n${nBlock}\n\n`;
+    }
+
+    if (detectedSet.has('link')) {
+        const lBlock = compBlock([
+            ['Color',      stVal('accent')],
+            ['Underline',  stVal('accentTextDecoration')],
+        ]);
+        if (lBlock) md += `### Link\n\n${lBlock}\n- **Hover:** color darkened or underline added\n\n`;
+    }
+
+    if (detectedSet.has('badge')) {
+        const bBlock = compBlock([
+            ['Background', stVal('badgeBackground')],
+            ['Foreground', stVal('badgeForeground')],
+            ['Padding',    padPair('badgePaddingTop', 'badgePaddingRight')],
+            ['Radius',     stVal('badgeBorderRadius')],
+            ['Font',       [stVal('badgeFontSize'), stVal('badgeFontWeight')].filter(Boolean).join(' / ') || null],
+        ]);
+        if (bBlock) md += `### Badge / Tag\n\n${bBlock}\n\n`;
+    }
+
+    // Remaining detected components (generic nested-block format)
+    const handledIds = new Set(['button', 'input', 'card', 'navigation', 'link', 'badge']);
+    for (const id of detectedIds) {
+        if (handledIds.has(id)) continue;
+        const label = UI_COMPONENT_LABELS[id] || id;
+        const bp    = COMPONENT_STYLING_BLUEPRINT[id];
+        if (!bp) continue;
+        for (const vdef of bp.variants) {
+            const lines = [];
+            for (const k of vdef.keys || []) {
+                const v = stVal(k);
+                if (v) lines.push(`- **${camelToLabel(k)}:** \`${escMd(v)}\``);
+            }
+            if (vdef.pad) {
+                const p = padPair(vdef.pad[0], vdef.pad[1]);
+                if (p) lines.push(`- **Padding:** \`${escMd(p)}\``);
+            }
+            if (lines.length) {
+                const heading = bp.variants.length > 1 ? `${label} — ${vdef.title}` : label;
+                md += `### ${heading}\n\n${lines.join('\n')}\n\n`;
+            }
+        }
+    }
+
+    // Not detected
+    const notDetectedIds = TRACKED_UI_COMPONENT_IDS.filter(id => !detectedSet.has(id));
+    if (notDetectedIds.length) {
+        md += `### ⚠ Not detected on scanned pages\n\n`;
+        md += `The following components are common in apps like this but were not found on the scanned pages. They likely exist behind login or on unscanned routes — use Create Design System to capture them:\n\n`;
+        for (const id of notDetectedIds) md += `- ${UI_COMPONENT_LABELS[id] || id}\n`;
         md += `\n`;
     }
 
-    // ══════════════════════════════════════════════════════
-    // 6. DEPTH & ELEVATION
-    // ══════════════════════════════════════════════════════
-    md += `## 6. Depth & Elevation\n\n`;
+    md += `---\n\n`;
 
+    // ══════════════════════════════════════════════════════
+    // 4. LAYOUT
+    // ══════════════════════════════════════════════════════
+    md += `## 4. Layout\n\n`;
+    let layoutLines = 0;
+    if (layout.maxWidth)                                              { md += `- **Container max-width:** \`${escMd(layout.maxWidth)}\`\n`; layoutLines++; }
+    if (layout.containerPadding && layout.containerPadding !== '0px'){ md += `- **Gutter:** \`${escMd(layout.containerPadding)}\`\n`; layoutLines++; }
+    if (layout.gridColumns)                                           { md += `- **Grid columns:** \`${layout.gridColumns}\` (desktop), \`${Math.min(layout.gridColumns, 2)}\` (tablet), \`1\` (mobile)\n`; layoutLines++; }
+    const rhythmPx = spacing.scale?.length ? spacing.scale[Math.floor(spacing.scale.length / 2)] : null;
+    if (rhythmPx)                                                     { md += `- **Section vertical rhythm:** \`${rhythmPx}px\` between major sections\n`; layoutLines++; }
+    if (!layoutLines) md += `No layout metrics detected.\n`;
+    md += `\n---\n\n`;
+
+    // ══════════════════════════════════════════════════════
+    // 5. DEPTH & MOTION
+    // ══════════════════════════════════════════════════════
+    md += `## 5. Depth & Motion\n\n`;
     if (shadows.length) {
-        md += `| Level | Name | CSS Value | Use Case |\n`;
-        md += `|-------|------|-----------|----------|\n`;
-        shadows.forEach((s, i) => {
-            const use = i === 0 ? 'Subtle lift (cards, inputs)' : i === 1 ? 'Raised elements (dropdowns, popovers)' : i === 2 ? 'Floating elements (modals, sheets)' : 'Highest emphasis (toasts, tooltips)';
-            md += `| ${i} | ${escMd(s.label)} | \`${escMd(s.value)}\` | ${use} |\n`;
-        });
-        md += `\n`;
-
-        md += `**Shadow Philosophy:** The system uses ${shadows.length} shadow level(s). Elevation communicates hierarchy — reserve higher levels for overlays and modal states. Don't introduce shadows outside this scale.\n\n`;
+        md += `- **Shadow scale:**\n`;
+        shadows.forEach((s, i) => { md += `  - Level ${i}: \`${escMd(s.value)}\`\n`; });
     } else {
-        md += `**Flat design** — no shadows detected.\n\n`;
-        md += `> Depth is communicated through color contrast and spacing alone. Don't introduce drop shadows — the flat surface is intentional.\n\n`;
+        md += `- **Shadow scale:** No shadows detected — flat design.\n`;
     }
-
-    // ══════════════════════════════════════════════════════
-    // 7. DO'S AND DON'TS
-    // ══════════════════════════════════════════════════════
-    md += `## 7. Do's and Don'ts\n\n`;
-
-    const dos   = [];
-    const donts = [];
-
-    if (families.length) {
-        dos.push(`Use \`${families[0]}\` as the primary typeface`);
-        donts.push(`Introduce fonts outside \`${families.join(' / ')}\``);
-    }
-    if (bgs[0]) {
-        dos.push(`Use \`${bgs[0].hex}\` as the page canvas background`);
-        donts.push(`Swap the canvas for a different background tone`);
-    }
-    dos.push(`Stay within the extracted color palette`);
-    donts.push(`Introduce off-palette colors`);
-    if (spacing.baseUnit) {
-        dos.push(`Snap all spacing to the ${spacing.baseUnit}px base unit`);
-        donts.push(`Use arbitrary spacing values outside the defined scale`);
-    }
-    if (radii.length) {
-        const sortedForDo = [...radii].sort((a, b) => parseFloat(a.value) - parseFloat(b.value));
-        const minR = sortedForDo[0];
-        const maxR = sortedForDo[sortedForDo.length - 1];
-        const radiusDesc = minR.value === maxR.value
-            ? `\`${minR.value}\``
-            : `\`${minR.value}\` – \`${maxR.value}\``;
-        dos.push(`Use the defined radius scale (${radiusDesc}) for all elements`);
-        donts.push(`Mix arbitrary border-radius values not in the scale`);
-    }
-    if (isFlat) {
-        dos.push(`Use colour contrast for depth — the design is intentionally flat`);
-        donts.push(`Add shadows — they conflict with the flat surface philosophy`);
+    const animArr = data.animations || data.transitions;
+    const firstAnim = Array.isArray(animArr) && animArr.length > 0 ? animArr[0] : null;
+    if (firstAnim && (firstAnim.duration || firstAnim.easing)) {
+        md += `- **Transition:** \`${escMd([firstAnim.duration, firstAnim.easing].filter(Boolean).join(' '))}\` (observed default)\n`;
     } else {
-        dos.push(`Use the ${shadows.length}-level shadow scale for elevation`);
-        donts.push(`Apply shadows outside the defined elevation scale`);
+        md += `- **Transition:** not observed\n`;
     }
-    if (transforms.includes('uppercase')) {
-        dos.push(`Apply \`text-transform: uppercase\` for UI labels and navigation`);
-        donts.push(`Use sentence-case for elements that belong in uppercase`);
-    }
-    if (weights.length <= 2) {
-        dos.push(`Keep to ${weights.length === 1 ? `the single weight (\`${weights[0]}\`)` : `\`${weights.join('` / `')}\` weights`} only`);
-        donts.push(`Add intermediate weights not present in the type system`);
-    }
-    if (hasTracking) {
-        dos.push(`Preserve letter-spacing values exactly — they are a key identity signal`);
-        donts.push(`Reset or ignore letter-spacing on styled text`);
-    }
-    dos.push(`Reference the component CSS recipes above for new UI`);
-    donts.push(`Deviate from defined component padding, radius, or border without reason`);
-
-    md += `### Must (non-negotiable)\n\n`;
-    dos.slice(0, 3).forEach(d => { md += `- **Must**: ${d}\n`; });
-    md += `- **Must**: Every interactive component must define all 7 states (default, hover, focus-visible, active, disabled, loading, error)\n`;
-    md += `- **Must**: All text must meet WCAG 2.2 AA contrast — 4.5:1 for body text, 3:1 for large text (≥18px regular or ≥14px bold)\n`;
-    md += `- **Must**: Focus indicators must be visible (\`focus-visible\`) on every interactive element\n`;
-    md += `\n`;
-
-    md += `### Should (strong recommendation)\n\n`;
-    dos.slice(3).forEach(d => { md += `- **Should**: ${d}\n`; });
-    md += `\n`;
-
-    md += `### Don't\n\n`;
-    donts.forEach(d => { md += `- ${d}\n`; });
-    md += `\n`;
+    md += `\n---\n\n`;
 
     // ══════════════════════════════════════════════════════
-    // 8. ACCESSIBILITY
+    // 6. RESPONSIVE
     // ══════════════════════════════════════════════════════
-    md += `## 8. Accessibility\n\n`;
-    md += `- **Target**: WCAG 2.2 AA minimum\n`;
-    md += `- **Contrast**: Body text must meet 4.5:1; large text (≥18px) must meet 3:1\n`;
-    if (texts[0] && bgs[0]) {
-        // Compute rough contrast ratio
-        function relLum(hex) {
-            const r = parseInt(hex.slice(1,3),16)/255, g = parseInt(hex.slice(3,5),16)/255, b = parseInt(hex.slice(5,7),16)/255;
-            const toL = c => c <= 0.03928 ? c/12.92 : Math.pow((c+0.055)/1.055, 2.4);
-            return 0.2126*toL(r) + 0.7152*toL(g) + 0.0722*toL(b);
+    md += `## 6. Responsive\n\n`;
+    md += `| Breakpoint | Range | Behavior |\n|------------|-------|----------|\n`;
+    if (layout.breakpointRows?.length) {
+        for (const row of layout.breakpointRows) {
+            md += `| ${escMd(row.name)} | \`${escMd(row.range)}\` | ${escMd(row.keyChanges || '—')} |\n`;
         }
+    } else if (layout.breakpoints?.length) {
+        const bps = [...layout.breakpoints].sort((a, b) => a - b);
+        const mobileMax = bps.find(b => b <= 768) || 768;
+        const tabletMax = bps.find(b => b > 768 && b <= 1280) || 1024;
+        md += `| Mobile | \`< ${mobileMax}px\` | Single column, collapsed nav |\n`;
+        md += `| Tablet | \`${mobileMax}px – ${tabletMax}px\` | 2-col grid, condensed nav |\n`;
+        md += `| Desktop | \`≥ ${tabletMax}px\` | Full layout |\n`;
+    } else {
+        md += `| Mobile | \`< 768px\` | Single column, collapsed nav |\n`;
+        md += `| Tablet | \`768px – 1023px\` | 2-col grid, condensed nav |\n`;
+        md += `| Desktop | \`≥ 1024px\` | Full layout |\n`;
+    }
+    md += `\n---\n\n`;
+
+    // ══════════════════════════════════════════════════════
+    // 7. PRINCIPLES
+    // ══════════════════════════════════════════════════════
+    md += `## 7. Principles\n\n`;
+    {
+        const principles = [];
+        if (themeIsDark) {
+            principles.push(`Dark canvas (\`${bgs[0]?.hex || 'dark'}\`) — depth is created through colour contrast; whitespace is experienced as contrast rather than blank space.`);
+        } else {
+            principles.push(`Light canvas (\`${bgs[0]?.hex || 'light'}\`) — whitespace carries visual weight; avoid over-filling with colour.`);
+        }
+        if (isFlat) {
+            principles.push(`Flat design — no box-shadows; depth is communicated through colour contrast and spacing alone.`);
+        } else {
+            principles.push(`${shadows.length}-level elevation system — elevation communicates hierarchy; reserve higher levels for overlays and modals.`);
+        }
+        if (hasPill) {
+            principles.push(`Pill-shaped interactive elements — a deliberate approachability signal; preserve \`border-radius: 9999px\` on pill components.`);
+        } else if (hasRounding) {
+            const smR = radii.filter(r => parseFloat(r.value) < 50).sort((a, b) => parseFloat(a.value) - parseFloat(b.value))[0];
+            principles.push(`Consistently rounded corners (\`${smR?.value || 'rounded'}\`) — uniform radius signals coherence; don't mix sharp and rounded elements.`);
+        } else {
+            principles.push(`Sharp, rectangular forms — no border-radius; the flat geometric aesthetic is intentional.`);
+        }
+        if (transforms.includes('uppercase')) {
+            principles.push(`UI labels use \`text-transform: uppercase\` systematically — a formal voice signal; apply it consistently across nav and badge elements.`);
+        }
+        if (weights.length === 1) {
+            principles.push(`Single-weight typography (\`${weights[0]}\`) — hierarchy is driven entirely by size and colour contrast, not weight variation.`);
+        } else if (weights.length === 2) {
+            principles.push(`Two-weight type system (\`${weights.join(' / ')}\`) — disciplined hierarchy; don't introduce additional weights.`);
+        }
+        if (spacing.baseUnit) {
+            const stepCount = spacing.scale?.length || 0;
+            principles.push(`Spacing anchored to \`${spacing.baseUnit}px\`${stepCount ? ` (${stepCount}-step scale)` : ''} — snap all padding, margin, and gap values to the defined scale.`);
+        }
+        principles.slice(0, 6).forEach(p => { md += `- ${p}\n`; });
+    }
+    md += `\n---\n\n`;
+
+    // ══════════════════════════════════════════════════════
+    // 8. ACCESSIBILITY BASELINE
+    // ══════════════════════════════════════════════════════
+    md += `## 8. Accessibility baseline\n\n`;
+    function relLum(hex) {
+        if (!hex || hex.length < 7) return 0;
+        const r2 = parseInt(hex.slice(1, 3), 16) / 255;
+        const g2 = parseInt(hex.slice(3, 5), 16) / 255;
+        const b2 = parseInt(hex.slice(5, 7), 16) / 255;
+        const toL = c => c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+        return 0.2126 * toL(r2) + 0.7152 * toL(g2) + 0.0722 * toL(b2);
+    }
+    if (texts[0] && bgs[0]) {
         try {
             const L1 = relLum(texts[0].hex), L2 = relLum(bgs[0].hex);
-            const ratio = ((Math.max(L1,L2)+0.05)/(Math.min(L1,L2)+0.05)).toFixed(1);
-            const pass = parseFloat(ratio) >= 4.5 ? '✓ passes' : '✗ check required';
-            md += `- **Detected contrast**: \`${texts[0].hex}\` on \`${bgs[0].hex}\` = **${ratio}:1** (${pass} AA)\n`;
-        } catch (_) {}
-    }
-    md += `- **Keyboard**: Tab order must follow visual reading order; no keyboard traps\n`;
-    md += `- **Focus**: \`focus-visible\` ring required on all interactive elements; do not suppress with \`outline: none\` without a custom replacement\n`;
-    md += `- **Semantics**: Use native HTML elements (\`<button>\`, \`<input>\`, \`<nav>\`) before adding ARIA roles\n`;
-    md += `- **Motion**: Respect \`prefers-reduced-motion\` — disable or reduce transitions for users who opt out\n`;
-    md += `- **Touch**: Minimum 44×44px tap targets; minimum 8px gap between adjacent targets\n`;
-    md += `\n`;
-
-    // ══════════════════════════════════════════════════════
-    // 9. RESPONSIVE BEHAVIOR (was 8)
-    // ══════════════════════════════════════════════════════
-    // ══════════════════════════════════════════════════════
-    // RESPONSIVE BEHAVIOR
-    // ══════════════════════════════════════════════════════
-    md += `## 9. Responsive Behavior\n\n`;
-
-    md += `### Breakpoints\n\n`;
-    if (layout.breakpoints?.length) {
-        md += `| Name | Width | Key Changes |\n`;
-        md += `|------|-------|-------------|\n`;
-        const bps = [...layout.breakpoints].sort((a, b) => a - b);
-        bps.forEach((bp, i) => {
-            const prev = bps[i - 1];
-            const range = prev ? `${prev + 1}px – ${bp}px` : `< ${bp}px`;
-            const label = bp < 480 ? 'Mobile Small' : bp < 768 ? 'Mobile' : bp < 1024 ? 'Tablet' : bp < 1280 ? 'Desktop S' : bp < 1536 ? 'Desktop' : 'Wide';
-            const changes = bp < 480 ? 'Single column, tight padding' : bp < 768 ? 'Standard mobile, stacked layout' : bp < 1024 ? '2-column grids, condensed nav' : 'Full layout, expanded sections';
-            md += `| ${label} | ${range} | ${changes} |\n`;
-        });
-    } else {
-        md += `| Name | Width | Key Changes |\n`;
-        md += `|------|-------|-------------|\n`;
-        md += `| Mobile | < 768px | Single column, stacked layout |\n`;
-        md += `| Tablet | 768px – 1023px | 2-column grids |\n`;
-        md += `| Desktop | 1024px+ | Full layout |\n`;
-    }
-    md += `\n`;
-
-    // Touch targets
-    md += `### Touch Targets\n\n`;
-    const btnComp = components.find(c => c.category === 'button');
-    if (btnComp?.properties?.['Padding']) {
-        md += `- Buttons: \`${btnComp.properties['Padding']}\` padding — verify minimum 44px tap area on mobile\n`;
-    } else {
-        md += `- Buttons: ensure minimum 44px height for adequate touch area\n`;
-    }
-    md += `- Interactive elements: use generous padding to ease mobile tapping\n`;
-    md += `- Avoid placing tappable elements closer than 8px apart\n`;
-    md += `\n`;
-
-    // Collapsing strategy
-    md += `### Collapsing Strategy\n\n`;
-    if (typo.length > 1) {
-        const displayType = typo.find(t => ['h1', 'Heading 1', 'Display', 'Hero'].some(k => t.label?.includes(k)));
-        if (displayType) {
-            md += `- Hero / display text (${displayType.size}): scale down proportionally on mobile\n`;
+            const ratio = ((Math.max(L1, L2) + 0.05) / (Math.min(L1, L2) + 0.05)).toFixed(1);
+            const passFail = parseFloat(ratio) >= 4.5 ? 'passes' : 'fails';
+            md += `- **Contrast:** primary text on canvas = \`${ratio}:1\` (${passFail} WCAG AA)\n`;
+        } catch (_) {
+            md += `- **Contrast:** could not compute\n`;
         }
-    }
-    md += `- Navigation: horizontal → hamburger / collapsed at mobile breakpoint\n`;
-    if (layout.gridColumns && layout.gridColumns > 1) {
-        md += `- Feature grids: ${layout.gridColumns}-column → 2-column → single column on mobile\n`;
     } else {
-        md += `- Multi-column layouts: collapse to single column on mobile\n`;
+        md += `- **Contrast:** insufficient token data to compute\n`;
     }
-    md += `- Cards: maintain border-radius and padding ratios across breakpoints\n`;
-    md += `- Full-width sections: preserve full-width but compress vertical padding\n`;
-    md += `\n`;
+    md += `- **Focus rings:** not observed\n`;
+    md += `- **Min tap target:** 44px (WCAG 2.2 AA requires 44px)\n`;
+    md += `- **Reduced motion:** not observed\n`;
+    md += `\n---\n\n`;
 
     // ══════════════════════════════════════════════════════
-    // 9. AGENT PROMPT GUIDE
+    // APPENDIX A — Raw CSS custom properties
     // ══════════════════════════════════════════════════════
-    md += `## 10. Agent Prompt Guide\n\n`;
-
-    // Quick color reference as bullets (matches reference format)
-    md += `### Quick Color Reference\n\n`;
-    if (bgs[0])       md += `- Background: \`${bgs[0].hex}\`\n`;
-    if (bgs[1])       md += `- Surface: \`${bgs[1].hex}\`\n`;
-    if (texts[0])     md += `- Text: \`${texts[0].hex}\`\n`;
-    if (texts[1])     md += `- Secondary text: \`${texts[1].hex}\`\n`;
-    if (interacts[0]) md += `- Accent / CTA: \`${interacts[0].hex}\`\n`;
-    if (interacts[1]) md += `- Secondary action: \`${interacts[1].hex}\`\n`;
-    if (borders[0])   md += `- Border: \`${borders[0].hex}\`\n`;
-    if (families[0])  md += `- Font: \`${families[0]}\`\n`;
-    if (spacing.baseUnit) md += `- Spacing base: \`${spacing.baseUnit}px\`\n`;
-    if (radii.length) {
-        const sortedR = [...radii].sort((a, b) => parseFloat(a.value) - parseFloat(b.value));
-        if (sortedR[0])                              md += `- Radius (sm): \`${sortedR[0].value}\`\n`;
-        if (sortedR.length > 1)                      md += `- Radius (lg): \`${sortedR[sortedR.length - 1].value}\`\n`;
+    const cssColorEntries = Object.entries(cssVars.colors || {});
+    const cssSizeEntries  = Object.entries(cssVars.sizes  || {});
+    const cssFontEntries  = Object.entries(cssVars.fonts  || {});
+    const totalVars = cssColorEntries.length + cssSizeEntries.length + cssFontEntries.length;
+    if (totalVars > 0) {
+        md += `## Appendix A — Raw CSS custom properties\n\n`;
+        md += `<details>\n<summary>Click to expand (${totalVars} variables)</summary>\n\n`;
+        md += `\`\`\`css\n`;
+        if (cssColorEntries.length) {
+            md += `/* color */\n`;
+            cssColorEntries.forEach(([k, v]) => { md += `${k}: ${v};\n`; });
+        }
+        if (cssSizeEntries.length) {
+            md += `\n/* spacing / size */\n`;
+            cssSizeEntries.forEach(([k, v]) => { md += `${k}: ${v};\n`; });
+        }
+        if (cssFontEntries.length) {
+            md += `\n/* font */\n`;
+            cssFontEntries.forEach(([k, v]) => { md += `${k}: ${v};\n`; });
+        }
+        md += `\`\`\`\n\n</details>\n\n---\n\n`;
     }
+
+    // ══════════════════════════════════════════════════════
+    // APPENDIX B — Extraction metadata
+    // ══════════════════════════════════════════════════════
+    md += `## Appendix B — Extraction metadata\n\n`;
+    const lowConfCount = tokenMeta.rows.filter(r => r.confidence < 0.7).length;
+    const colorSchemeStr = colorScheme?.mode && colorScheme.mode !== 'unknown'
+        ? colorScheme.mode : (themeIsDark ? 'dark' : 'light');
+    const pagesStr = data.multiPageScan?.scannedPages?.length > 1
+        ? data.multiPageScan.scannedPages.map(p => `\`${escMd(p.url)}\``).join(', ')
+        : `\`${escMd(data.pageUrl || domain)}\``;
+    md += `| Field | Value |\n|-------|-------|\n`;
+    md += `| Extractor version | \`Plucker 1.0\` |\n`;
+    md += `| Pages scanned | ${pagesStr} |\n`;
+    md += `| Color-scheme detected | \`${colorSchemeStr}\` |\n`;
+    md += `| Components detected | \`${detectedIds.length} / ${TRACKED_UI_COMPONENT_IDS.length}\` |\n`;
+    md += `| Confidence < 0.7 count | \`${lowConfCount}\` |\n`;
+    md += `| Manual overrides via Create DS | \`0\` |\n`;
     md += `\n`;
 
-    // Example prompts built from real extracted values
-    md += `### Example Component Prompts\n\n`;
-
-    const primaryBg  = bgs[0]?.hex       || '#ffffff';
-    const primaryTxt = texts[0]?.hex      || '#000000';
-    const accent     = interacts[0]?.hex  || '#0066ff';
-    const font       = families[0]        || 'system-ui';
-    const sortedRadiiAll = [...radii].sort((a, b) => parseFloat(a.value) - parseFloat(b.value));
-    const smallR     = sortedRadiiAll[0]?.value || '4px';
-    const radius     = sortedRadiiAll[sortedRadiiAll.length - 1]?.value || '8px';
-    const borderCol  = borders[0]?.hex   || '#e5e5e5';
-    const shadowVal  = shadows[0]?.value || 'none';
-    const spBase     = spacing.baseUnit  || 8;
-
-    // Button prompt
-    if (btnComp) {
-        const p = btnComp.properties || {};
-        md += `- "Create a button: background \`${p['Background'] || accent}\`, color \`${p['Text Color'] || '#fff'}\`, `;
-        md += `font-size \`${p['Font Size'] || '14px'}\` weight \`${p['Font Weight'] || '600'}\` \`${font}\`, `;
-        md += `padding \`${p['Padding'] || `${spBase}px ${spBase * 2}px`}\`, border-radius \`${p['Border Radius'] || radius}\``;
-        if (p['Border'] && p['Border'] !== '—') md += `, border \`${p['Border']}\``;
-        if (p['Box Shadow'] && p['Box Shadow'] !== '—') md += `, box-shadow \`${p['Box Shadow']}\``;
-        md += `."\n`;
-    } else {
-        md += `- "Create a button: background \`${accent}\`, color \`#fff\`, font \`14px 600 ${font}\`, padding \`${spBase}px ${spBase * 2}px\`, border-radius \`${radius}\`."\n`;
+    const extWarnB = data.extractionWarnings;
+    if (extWarnB?.length) {
+        md += `**Extraction warnings:**\n\n`;
+        extWarnB.slice(0, 25).forEach(w => { md += `- ${escMd(w)}\n`; });
+        if (extWarnB.length > 25) md += `- … and ${extWarnB.length - 25} more\n`;
+        md += `\n`;
     }
-
-    // Card prompt
-    const cardComp = components.find(c => c.category === 'card');
-    if (cardComp) {
-        const p = cardComp.properties || {};
-        let cardPrompt = `Create a card: background \`${p['Background'] || primaryBg}\`, border-radius \`${p['Border Radius'] || smallR}\``;
-        if (p['Border'] && p['Border'] !== '—') cardPrompt += `, border \`${p['Border']}\``;
-        if (p['Box Shadow'] && p['Box Shadow'] !== '—') cardPrompt += `, box-shadow \`${p['Box Shadow']}\``;
-        cardPrompt += `, padding \`${spBase * 2}px\`, font \`${font}\`, color \`${primaryTxt}\`.`;
-        md += `- "${cardPrompt}"\n`;
-    } else if (shadows.length || borders.length) {
-        md += `- "Create a card: background \`${primaryBg}\`, border-radius \`${smallR}\`, border \`1px solid ${borderCol}\`${shadows.length ? `, box-shadow \`${shadowVal}\`` : ''}, padding \`${spBase * 2}px\`, color \`${primaryTxt}\`."\n`;
-    }
-
-    // Input prompt
-    const inputComp = components.find(c => c.category === 'input');
-    if (inputComp) {
-        const p = inputComp.properties || {};
-        md += `- "Create an input: background \`${p['Background'] || primaryBg}\`, color \`${p['Text Color'] || primaryTxt}\`, `;
-        md += `font-size \`${p['Font Size'] || '14px'}\` \`${font}\`, border \`${p['Border'] || `1px solid ${borderCol}`}\`, `;
-        md += `border-radius \`${p['Border Radius'] || smallR}\`, padding \`${p['Padding'] || `${spBase}px ${spBase * 1.5}px`}\`."\n`;
-    }
-
-    // Heading prompt from first typo entry
-    if (typo.length) {
-        const h = typo[0];
-        md += `- "Create a heading: font-family \`${h.family}\`, font-size \`${h.size}\`, font-weight \`${h.weight}\`, line-height \`${h.lineHeight || '1.2'}\`${h.letterSpacing && h.letterSpacing !== 'normal' ? `, letter-spacing \`${h.letterSpacing}\`` : ''}, color \`${primaryTxt}\`."\n`;
-    }
-
-    md += `\n`;
-
-    md += `### Iteration Guide\n\n`;
-    md += `1. **Canvas first** — set background to \`${primaryBg}\` before anything else\n`;
-    md += `2. **Typography** — apply font-family \`${font}\`, then set sizes and weights from the type scale\n`;
-    md += `3. **Color** — use the palette above; accent \`${accent}\` for actions, \`${primaryTxt}\` for text\n`;
-    md += `4. **Spacing** — snap all padding/margin/gap to the ${spBase}px base unit\n`;
-    md += `5. **Radius** — ${smallR === radius ? `use \`${smallR}\` consistently across all elements` : `use \`${smallR}\` for small elements (inputs, badges), \`${radius}\` for cards and panels`}\n`;
-    md += `6. **Elevation** — ${isFlat ? 'keep surfaces flat; use colour contrast for depth' : `apply the ${shadows.length}-level shadow scale; level 0 for cards, higher for modals`}\n`;
-    md += `7. **Components** — reference the CSS recipes in Section 4 for exact sizing and tokens\n`;
-    md += `\n`;
 
     return md;
 }

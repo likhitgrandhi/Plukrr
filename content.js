@@ -4780,84 +4780,128 @@
             const b = parseInt(hex.slice(5, 7), 16);
             return (0.299 * r + 0.587 * g + 0.114 * b) / 255;
         }
+        /** sRGB relative luminance 0–1 (WCAG). Used for dark-surface detection (inverse text). */
+        function relLuminanceFromHex(hex) {
+            if (!hex || hex.length < 7) return 0.5;
+            const linear = (v) => {
+                v /= 255;
+                return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+            };
+            const r = linear(parseInt(hex.slice(1, 3), 16));
+            const g = linear(parseInt(hex.slice(3, 5), 16));
+            const b = linear(parseInt(hex.slice(5, 7), 16));
+            return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+        }
+        function skipPlukrr(el) {
+            return !!(el.closest && el.closest('#plukrr-sidebar, #plukrr-picker, #dc-overlay, .le-action-bar, #plukrr-ds-builder-panel'));
+        }
+
+        /** Resolve active light/dark before reading theme tokens — avoids dark-only :root values leaking on light canvases. */
+        function detectActiveColorScheme() {
+            const signals = {};
+            const rootEl = document.documentElement;
+            const bodyEl = document.body;
+
+            function normQuick(h) {
+                if (!h) return null;
+                const u = String(h).toUpperCase();
+                if (/^#[0-9A-F]{6}$/.test(u)) return u;
+                if (/^#[0-9A-F]{3}$/.test(u)) {
+                    return '#' + u[1] + u[1] + u[2] + u[2] + u[3] + u[3];
+                }
+                const t = toHex(h);
+                return t || null;
+            }
+
+            // 1. color-scheme on <html>
+            const attrScheme = rootEl.getAttribute('color-scheme') || rootEl.getAttribute('data-theme') || rootEl.getAttribute('data-color-scheme') || '';
+            if (attrScheme) signals.htmlColorSchemeAttribute = attrScheme;
+
+            // 2. Computed color-scheme CSS property
+            const gcs = getComputedStyle(rootEl);
+            const schemeCss = gcs.colorScheme;
+            if (schemeCss && schemeCss !== 'normal') signals.computedColorScheme = schemeCss;
+
+            // 3. <meta name="color-scheme">
+            const meta = document.querySelector('meta[name="color-scheme"]');
+            if (meta) signals.metaColorScheme = (meta.getAttribute('content') || '').trim();
+
+            // 4. Stylesheets: :root outside vs inside @media (prefers-color-scheme: dark) — different --* values?
+            let dualThemeInSheets = false;
+            try {
+                const baseVars = {};
+                const darkMqVars = {};
+                function walk(rules, inDarkColorSchemeMq) {
+                    if (!rules) return;
+                    for (const r of rules) {
+                        if (r.type === CSSRule.MEDIA_RULE) {
+                            const mq = (r.media?.mediaText || r.conditionText || '').toLowerCase();
+                            const isDarkMq = mq.includes('prefers-color-scheme') && mq.includes('dark');
+                            walk(r.cssRules, inDarkColorSchemeMq || isDarkMq);
+                        } else if (r.type === CSSRule.STYLE_RULE) {
+                            const sel = (r.selectorText || '').trim();
+                            if (!/^(:root|html)\b/i.test(sel.split(',')[0] || '')) continue;
+                            const st = r.style;
+                            const bucket = inDarkColorSchemeMq ? darkMqVars : baseVars;
+                            for (let i = 0; i < st.length; i++) {
+                                const p = st[i];
+                                if (p && p.startsWith('--')) bucket[p] = st.getPropertyValue(p).trim();
+                            }
+                        }
+                    }
+                }
+                for (const sheet of document.styleSheets) {
+                    try { walk(sheet.cssRules || [], false); } catch (_) { /* CORS */ }
+                }
+                const keys = new Set([...Object.keys(baseVars), ...Object.keys(darkMqVars)]);
+                for (const k of keys) {
+                    if (baseVars[k] !== darkMqVars[k] && (baseVars[k] || darkMqVars[k])) {
+                        dualThemeInSheets = true;
+                        break;
+                    }
+                }
+            } catch (_) { /* ignore */ }
+            signals.prefersColorSchemeDarkDiffersFromRoot = dualThemeInSheets;
+
+            signals.prefersDarkMediaQuery = typeof window.matchMedia === 'function'
+                ? window.matchMedia('(prefers-color-scheme: dark)').matches : null;
+
+            // 5. Body / canvas luminance (authoritative paint signal)
+            const bodyBg = getComputedStyle(bodyEl).backgroundColor;
+            const htmlBg = getComputedStyle(rootEl).backgroundColor;
+            const rawBg = !isTransparent(bodyBg) ? bodyBg : htmlBg;
+            const canvasHex = normQuick(toHex(rawBg)) || '#FFFFFF';
+            const bodyLum = relLuminanceFromHex(canvasHex);
+            signals.bodyBackgroundLuminance = Math.round(bodyLum * 1000) / 1000;
+
+            let mode = 'unknown';
+            if (attrScheme) {
+                if (/\bdark\b/i.test(attrScheme) && !/\blight\b/i.test(attrScheme)) mode = 'dark';
+                else if (/\blight\b/i.test(attrScheme) && !/\bdark\b/i.test(attrScheme)) mode = 'light';
+            }
+            if (schemeCss) {
+                const parts = schemeCss.split(/[\s,]+/).filter(Boolean);
+                if (parts.includes('dark') && !parts.includes('light')) mode = 'dark';
+                else if (parts.includes('light') && !parts.includes('dark')) mode = 'light';
+            }
+            if (signals.metaColorScheme) {
+                const m = signals.metaColorScheme.toLowerCase();
+                if (m === 'dark' || m === 'only dark') mode = 'dark';
+                if (m === 'light' || m === 'only light') mode = 'light';
+            }
+            if (bodyLum < 0.2) mode = 'dark';
+            else if (bodyLum > 0.5 && mode !== 'dark') mode = 'light';
+
+            const dualThemeDetected = !!(dualThemeInSheets || /light\s+dark|dark\s+light/i.test(signals.metaColorScheme || ''));
+
+            return { mode, signals, dualThemeDetected };
+        }
 
         // ─── TYPOGRAPHY ───────────────────────────────────────
-        const typography = [];
-
-        // Heading levels H1–H6
-        for (let i = 1; i <= 6; i++) {
-            const el = document.querySelector(`h${i}`);
-            if (!el) continue;
-            const s = getComputedStyle(el);
-            typography.push({
-                id: `h${i}`, label: `Heading ${i}`, category: 'heading',
-                preview: el.textContent?.trim().replace(/\s+/g, ' ').slice(0, 60) || `Heading ${i}`,
-                family: cleanFamily(s.fontFamily), weight: s.fontWeight, size: s.fontSize,
-                lineHeight: s.lineHeight, letterSpacing: s.letterSpacing, color: toHex(s.color) || s.color,
-                textTransform: s.textTransform !== 'none' ? s.textTransform : null,
-                fontStyle: s.fontStyle !== 'normal' ? s.fontStyle : null
-            });
-        }
-
-        // Body text — deduplicate by style signature
-        const bodyStyleMap = new Map();
-        for (const el of Array.from(document.querySelectorAll('p, li, td')).slice(0, 40)) {
-            const s = getComputedStyle(el);
-            const key = `${s.fontSize}_${s.fontWeight}_${cleanFamily(s.fontFamily)}`;
-            if (!bodyStyleMap.has(key)) {
-                bodyStyleMap.set(key, {
-                    family: cleanFamily(s.fontFamily), weight: s.fontWeight, size: s.fontSize,
-                    lineHeight: s.lineHeight, letterSpacing: s.letterSpacing,
-                    color: toHex(s.color) || s.color,
-                    textTransform: s.textTransform !== 'none' ? s.textTransform : null,
-                    preview: el.textContent?.trim().replace(/\s+/g, ' ').slice(0, 80) || '',
-                    count: 1
-                });
-            } else { bodyStyleMap.get(key).count++; }
-        }
-        const bodySorted = [...bodyStyleMap.values()].sort((a, b) => b.count - a.count).slice(0, 3);
-        if (bodySorted.length === 0) {
-            const s = getComputedStyle(document.body);
-            bodySorted.push({ family: cleanFamily(s.fontFamily), weight: s.fontWeight, size: s.fontSize, lineHeight: s.lineHeight, letterSpacing: s.letterSpacing, color: toHex(s.color) || s.color, preview: '' });
-        }
-        const bodyVariantLabels = ['Body', 'Body Small', 'Body Large'];
-        bodySorted.forEach((item, i) => typography.push({ id: `body_${i}`, label: bodyVariantLabels[i] || `Body Variant ${i + 1}`, category: 'body', ...item }));
-
-        // Labels & captions
-        const labelEl = document.querySelector('label, figcaption, small, caption, [class*="caption"], [class*="label"]');
-        if (labelEl) {
-            const s = getComputedStyle(labelEl);
-            typography.push({ id: 'label', label: 'Label / Caption', category: 'label', preview: labelEl.textContent?.trim().slice(0, 40) || '', family: cleanFamily(s.fontFamily), weight: s.fontWeight, size: s.fontSize, lineHeight: s.lineHeight, letterSpacing: s.letterSpacing, color: toHex(s.color) || s.color, textTransform: s.textTransform !== 'none' ? s.textTransform : null });
-        }
-
-        // Monospace / code
-        const monoEl = document.querySelector('code, pre, kbd');
-        if (monoEl) {
-            const s = getComputedStyle(monoEl);
-            typography.push({ id: 'mono', label: 'Code / Monospace', category: 'mono', preview: monoEl.textContent?.trim().slice(0, 40) || 'const x = "code";', family: cleanFamily(s.fontFamily), weight: s.fontWeight, size: s.fontSize, lineHeight: s.lineHeight, letterSpacing: s.letterSpacing, color: toHex(s.color) || s.color });
-        }
-
-        // Button / UI text
-        const uiBtnEl = document.querySelector('button, [role="button"], .btn, [class*="button"]');
-        if (uiBtnEl) {
-            const s = getComputedStyle(uiBtnEl);
-            const fam = cleanFamily(s.fontFamily);
-            if (!typography.some(t => t.family === fam && t.size === s.fontSize)) {
-                typography.push({ id: 'ui-text', label: 'Button / UI Text', category: 'ui', preview: uiBtnEl.textContent?.trim().slice(0, 30) || 'Button', family: fam, weight: s.fontWeight, size: s.fontSize, lineHeight: s.lineHeight, letterSpacing: s.letterSpacing, color: toHex(s.color) || s.color, textTransform: s.textTransform !== 'none' ? s.textTransform : null });
-            }
-        }
-
-        // Navigation link text
-        const navLinkEl = document.querySelector('nav a, header a, [role="navigation"] a');
-        if (navLinkEl) {
-            const s = getComputedStyle(navLinkEl);
-            const fam = cleanFamily(s.fontFamily);
-            if (!typography.some(t => t.family === fam && t.size === s.fontSize && t.weight === s.fontWeight)) {
-                typography.push({ id: 'nav-link', label: 'Nav Link', category: 'ui', preview: navLinkEl.textContent?.trim().slice(0, 30) || 'Home', family: fam, weight: s.fontWeight, size: s.fontSize, lineHeight: s.lineHeight, letterSpacing: s.letterSpacing, color: toHex(s.color) || s.color });
-            }
-        }
+        // Built after CSS variables are collected (see below) so the full scale + appendix can align.
 
         // ─── COLORS ───────────────────────────────────────
+        const colorSchemeInfo = detectActiveColorScheme();
         const bgMap = new Map(), textMap = new Map(), borderMap = new Map(), accentMap = new Map();
 
         // Anchor body/html backgrounds with high weight so the canvas color wins
@@ -4894,7 +4938,727 @@
             }
         }
         const topN = (map, n) => [...map.entries()].sort((a, b) => b[1] - a[1]).slice(0, n).map(([hex, count]) => ({ hex, count }));
-        const colors = { backgrounds: topN(bgMap, 20), text: topN(textMap, 12), borders: topN(borderMap, 8), interactive: topN(accentMap, 12) };
+
+        /**
+         * Walk all stylesheet rules (including @media / @supports nesting) and collect
+         * --* definitions so var() chains can be expanded. Cross-origin sheets are skipped.
+         */
+        function buildResolvedCssVariables() {
+            const warnings = [];
+            const defMap = new Map();
+
+            function walkAllStyleRules(rules) {
+                if (!rules) return;
+                for (const rule of rules) {
+                    if (rule.type === CSSRule.STYLE_RULE && rule.style) {
+                        const st = rule.style;
+                        for (let i = 0; i < st.length; i++) {
+                            const p = st[i];
+                            if (p && p.startsWith('--')) {
+                                defMap.set(p, st.getPropertyValue(p).trim());
+                            }
+                        }
+                    } else if (rule.cssRules) {
+                        walkAllStyleRules(rule.cssRules);
+                    }
+                }
+            }
+            for (const sheet of document.styleSheets) {
+                try { walkAllStyleRules(sheet.cssRules || []); } catch (_) { /* CORS */ }
+            }
+
+            const cs = getComputedStyle(document.documentElement);
+
+            function normHexLocal(h) {
+                if (!h) return null;
+                const u = String(h).toUpperCase();
+                if (/^#[0-9A-F]{6}$/.test(u)) return u;
+                if (/^#[0-9A-F]{3}$/.test(u)) {
+                    return '#' + u[1] + u[1] + u[2] + u[2] + u[3] + u[3];
+                }
+                const rgb = toHex(h);
+                return rgb || null;
+            }
+
+            function fullyExpandVarChain(input) {
+                if (!input || typeof input !== 'string') return '';
+                let cur = input.trim();
+                for (let iter = 0; iter < 48 && /\bvar\s*\(/i.test(cur); iter++) {
+                    const next = cur.replace(/var\s*\(\s*(--[^,)\s]+)\s*(?:,\s*([^)]+))?\s*\)/gi, (full, name, fallback) => {
+                        const sub = defMap.get(name) || cs.getPropertyValue(name).trim();
+                        if (sub) return sub.trim();
+                        if (fallback) return fallback.trim();
+                        return full;
+                    });
+                    if (next === cur) break;
+                    cur = next;
+                }
+                return cur;
+            }
+
+            function probeColorCss(value) {
+                if (!value) return null;
+                const v = value.trim();
+                if (!v || /^inherit$/i.test(v) || /^initial$/i.test(v) || /^unset$/i.test(v)) return null;
+                try {
+                    const el = document.createElement('div');
+                    el.style.cssText = `color:${v}!important;position:absolute;visibility:hidden;pointer-events:none`;
+                    document.documentElement.appendChild(el);
+                    const h = normHexLocal(toHex(getComputedStyle(el).color));
+                    el.remove();
+                    return h;
+                } catch (_) { return null; }
+            }
+
+            function probePaddingCss(value) {
+                if (!value) return null;
+                const v = value.trim();
+                if (!v) return null;
+                try {
+                    const el = document.createElement('div');
+                    el.style.cssText = `position:absolute;visibility:hidden;padding-left:${v}!important`;
+                    document.documentElement.appendChild(el);
+                    const pl = getComputedStyle(el).paddingLeft;
+                    el.remove();
+                    if (pl && pl !== '0px' && !/\bvar\s*\(/i.test(pl)) return pl;
+                } catch (_) {}
+                return null;
+            }
+
+            function probeFontCss(value) {
+                if (!value) return null;
+                const v = value.trim();
+                if (!v) return null;
+                try {
+                    const el = document.createElement('div');
+                    el.style.cssText = `position:absolute;visibility:hidden;font-family:${v}!important`;
+                    document.documentElement.appendChild(el);
+                    const ff = getComputedStyle(el).fontFamily;
+                    el.remove();
+                    if (ff && ff !== 'inherit' && !/\bvar\s*\(/i.test(ff))
+                        return ff.split(',')[0].trim().replace(/^["']|["']$/g, '');
+                } catch (_) {}
+                return null;
+            }
+
+            function concreteColor(resolved) {
+                const r = resolved.trim();
+                if (/^#[0-9a-fA-F]{3,8}$/.test(r)) return normHexLocal(r);
+                if (/^rgba?\(/i.test(r)) return normHexLocal(toHex(r));
+                if (/^hsla?\(/i.test(r) || /^oklch\s*\(/i.test(r) || /^lab\s*\(/i.test(r) || /^lch\s*\(/i.test(r) || /^color\s*\(/i.test(r))
+                    return probeColorCss(r);
+                if (r && !/\bvar\s*\(/i.test(r) && /^[^#(]+$/.test(r))
+                    return probeColorCss(r);
+                if (/\bvar\s*\(/i.test(r)) return probeColorCss(r);
+                return null;
+            }
+
+            function bucketForName(prop) {
+                const name = prop.toLowerCase();
+                if (/color|bg|background|foreground|primary|secondary|accent|muted|border|ring|destructive|success|warning|error|content|surface|canvas|palette|fill|stroke/.test(name))
+                    return 'colors';
+                if (/\b(gray|slate|zinc|neutral|stone|red|blue|green|emerald|amber|orange|purple|pink|rose|teal|cyan|sky|violet|fuchsia|lime)-/.test(name) ||
+                    /(gray|green|red|blue|slate|zinc)[-_]?\d{2,4}\b/i.test(name))
+                    return 'colors';
+                if (/font|family|weight/.test(name)) return 'fonts';
+                if (/size|spacing|radius|gap|padding|margin|height|width/.test(name)) return 'sizes';
+                return 'other';
+            }
+
+            const customPropNames = new Set();
+            function collectNames(ruleList) {
+                if (!ruleList) return;
+                for (const rule of ruleList) {
+                    if (rule.type === CSSRule.MEDIA_RULE || rule.type === CSSRule.SUPPORTS_RULE) {
+                        collectNames(rule.cssRules);
+                        continue;
+                    }
+                    if (rule.type !== CSSRule.STYLE_RULE || !rule.style) continue;
+                    const st = rule.style;
+                    for (let i = 0; i < st.length; i++) {
+                        const p = st[i];
+                        if (p && p.startsWith('--')) customPropNames.add(p);
+                    }
+                }
+            }
+            for (const sheet of document.styleSheets) {
+                try { collectNames(sheet.cssRules || []); } catch (_) {}
+            }
+            try {
+                for (let i = 0; i < cs.length; i++) {
+                    const p = cs[i];
+                    if (p && p.startsWith('--')) customPropNames.add(p);
+                }
+            } catch (_) {}
+
+            const colors = {}, sizes = {}, fonts = {}, other = {};
+
+            function tryResolveColor(expanded, raw, prop) {
+                let out = concreteColor(expanded);
+                if (!out && /\bvar\s*\(/i.test(expanded)) out = probeColorCss(raw.trim());
+                if (!out) out = probeColorCss(`var(${prop})`);
+                return out && !/\bvar\s*\(/i.test(out) ? out : null;
+            }
+
+            function tryResolveLength(expanded, raw) {
+                const r = expanded.trim();
+                if (r && !/\bvar\s*\(/i.test(r) && /^[\d.]+\s*(px|rem|em|%|vh|vw|vmin|vmax|ch|ex)$/i.test(r)) return r;
+                const pl = probePaddingCss(raw) || probePaddingCss(expanded);
+                return pl && !/\bvar\s*\(/i.test(pl) ? pl : null;
+            }
+
+            for (const prop of customPropNames) {
+                const raw = cs.getPropertyValue(prop).trim();
+                if (!raw) continue;
+                const expanded = fullyExpandVarChain(raw);
+                const bucket = bucketForName(prop);
+
+                if (bucket === 'sizes') {
+                    const len = tryResolveLength(expanded, raw);
+                    if (len) sizes[prop] = len;
+                    else warnings.push(`Unresolved CSS size variable ${prop}: ${raw.slice(0, 120)}`);
+                    continue;
+                }
+                if (bucket === 'fonts') {
+                    let out = expanded;
+                    if (/\bvar\s*\(/i.test(out)) out = probeFontCss(raw) || probeFontCss(expanded) || '';
+                    else out = probeFontCss(out) || out;
+                    if (out && !/\bvar\s*\(/i.test(out)) fonts[prop] = out;
+                    else warnings.push(`Unresolved CSS font variable ${prop}: ${raw.slice(0, 120)}`);
+                    continue;
+                }
+                if (bucket === 'colors') {
+                    const col = tryResolveColor(expanded, raw, prop);
+                    if (col) colors[prop] = col;
+                    else warnings.push(`Unresolved CSS color variable ${prop}: ${raw.slice(0, 120)}`);
+                    continue;
+                }
+                if (bucket === 'other') {
+                    const col = tryResolveColor(expanded, raw, prop);
+                    if (col) colors[prop] = col;
+                    else if (!/\bvar\s*\(/i.test(expanded)) other[prop] = expanded;
+                    else warnings.push(`Unresolved CSS variable ${prop}: ${raw.slice(0, 120)}`);
+                }
+            }
+
+            return { colors, sizes, fonts, other, warnings };
+        }
+
+        const resolvedCssBundle = buildResolvedCssVariables();
+
+        // Semantic color roles: site semantic CSS variables first, then DOM, then named CSS fallbacks, then frequency (confidence ≤ 0.6).
+        // Each hex is claimed by at most one role — ordered assignment prevents contradictory buckets.
+        function extractSemanticColorRoles(schemeInfo, resolvedColorMap) {
+            const claimed = new Set();
+            const roles = {};
+            const cs = getComputedStyle(document.documentElement);
+
+            /** Site-authored token names (e.g. Groww --border-primary) take priority over DOM inference. */
+            const SITE_SEMANTIC_CSS_VARS = {
+                'color.bg.canvas': ['--background-primary', '--background', '--color-background', '--bg-canvas', '--color-bg-canvas', '--canvas', '--page-background'],
+                'color.bg.surface': ['--background-secondary', '--surface-primary', '--surface', '--card', '--color-card', '--background-elevated', '--bg-surface'],
+                'color.text.primary': ['--content-primary', '--foreground', '--text-primary', '--color-foreground', '--color-text', '--text-primary'],
+                'color.text.secondary': ['--content-secondary', '--muted-foreground', '--text-secondary', '--color-text-secondary'],
+                'color.text.tertiary': ['--content-tertiary', '--text-tertiary', '--color-text-tertiary'],
+                'color.text.disabled': ['--content-disabled', '--text-disabled'],
+                'color.text.inverse': ['--content-inverse', '--inverse-foreground'],
+                'color.action.primary': ['--background-accent', '--accent', '--primary', '--color-primary', '--action-primary'],
+                'color.action.primary.hover': ['--accent-hover', '--primary-hover', '--background-accent-hover'],
+                'color.feedback.positive': ['--success', '--positive', '--color-success', '--feedback-positive'],
+                'color.feedback.negative': ['--error', '--destructive', '--negative', '--color-error', '--color-destructive'],
+                'color.border.default': ['--border-primary', '--border', '--color-border', '--border-default'],
+            };
+
+            function surfaceConflictsWithScheme(surfaceHex, canvasHex) {
+                if (!schemeInfo || schemeInfo.mode === 'unknown' || !surfaceHex) return false;
+                const sl = relLuminanceFromHex(surfaceHex);
+                const cl = canvasHex ? relLuminanceFromHex(canvasHex) : 0.5;
+                if (schemeInfo.mode === 'light' && cl > 0.85 && sl < 0.28) return true;
+                if (schemeInfo.mode === 'dark' && cl < 0.2 && sl > 0.82) return true;
+                return false;
+            }
+
+            function normHex(h) {
+                if (!h) return null;
+                const u = h.toUpperCase();
+                if (/^#[0-9A-F]{6}$/.test(u)) return u;
+                if (/^#[0-9A-F]{3}$/.test(u)) {
+                    return '#' + u[1] + u[1] + u[2] + u[2] + u[3] + u[3];
+                }
+                const rgb = toHex(h);
+                return rgb || null;
+            }
+
+            function resolveCssVarColor(varNames) {
+                for (const vn of varNames) {
+                    const mapped = resolvedColorMap && resolvedColorMap[vn];
+                    if (mapped && /^#[0-9A-F]{3,8}$/i.test(mapped))
+                        return { hex: normHex(mapped), source: vn };
+                    const raw = cs.getPropertyValue(vn).trim();
+                    if (!raw) continue;
+                    if (/^#[0-9a-fA-F]{3,8}$/.test(raw)) return { hex: normHex(raw), source: vn };
+                    if (/^rgba?\(/i.test(raw)) {
+                        const h = toHex(raw);
+                        if (h) return { hex: h, source: vn };
+                    }
+                    try {
+                        const probe = document.createElement('div');
+                        probe.style.cssText = `color:${raw}!important;position:absolute;visibility:hidden;pointer-events:none`;
+                        document.documentElement.appendChild(probe);
+                        const h = normHex(toHex(getComputedStyle(probe).color));
+                        probe.remove();
+                        if (h) return { hex: h, source: `${vn}-resolved` };
+                    } catch (_) { /* ignore */ }
+                }
+                return null;
+            }
+
+            function trySiteSemanticFirst(roleKey) {
+                const list = SITE_SEMANTIC_CSS_VARS[roleKey];
+                if (!list || !resolvedColorMap) return null;
+                for (const vn of list) {
+                    const hex = resolvedColorMap[vn];
+                    if (hex && /^#[0-9A-F]{3,8}$/i.test(hex))
+                        return {
+                            hex: normHex(hex),
+                            source: vn,
+                            method: 'css-variable',
+                            confidence: 1.0,
+                            extractionSource: 'named-css-variable',
+                        };
+                }
+                return null;
+            }
+
+            function tryClaim(roleKey, hex, source, method, confidence = 1, extractionSource) {
+                if (!hex || claimed.has(hex)) return false;
+                claimed.add(hex);
+                roles[roleKey] = {
+                    hex,
+                    sourceSelector: source,
+                    method,
+                    confidence,
+                    extractionSource: extractionSource || method,
+                };
+                return true;
+            }
+
+            /**
+             * Aggregate computed-style hexes from all visible matches across selectors.
+             * Confidence: single match 0.85, multiple same hex 0.8, conflicting hexes (dominant) 0.65.
+             */
+            function aggregateVisibleHexes(selectors, visitor) {
+                const hexStats = new Map();
+                let total = 0;
+                for (const sel of selectors) {
+                    try {
+                        for (const el of document.querySelectorAll(sel)) {
+                            if (skipPlukrr(el)) continue;
+                            const r = el.getBoundingClientRect();
+                            if (r.width <= 0 || r.height <= 0) continue;
+                            const st = getComputedStyle(el);
+                            if (st.visibility === 'hidden' || st.display === 'none' || parseFloat(st.opacity) < 0.05) continue;
+                            const out = visitor(el, sel);
+                            if (!out || !out.hex) continue;
+                            total++;
+                            const h = normHex(out.hex);
+                            if (!h) continue;
+                            if (!hexStats.has(h)) hexStats.set(h, { count: 0, source: out.source || sel });
+                            hexStats.get(h).count++;
+                        }
+                    } catch (_) { /* invalid selector */ }
+                }
+                if (total === 0 || hexStats.size === 0) return null;
+                const sorted = [...hexStats.entries()].sort((a, b) => b[1].count - a[1].count);
+                const [domHex, info] = sorted[0];
+                const uniqueHexCount = hexStats.size;
+                let confidence;
+                let extractionSource;
+                if (total === 1) {
+                    confidence = 0.85;
+                    extractionSource = 'computed-dom-unique';
+                } else if (uniqueHexCount === 1) {
+                    confidence = 0.8;
+                    extractionSource = 'computed-dom-consistent';
+                } else {
+                    confidence = 0.65;
+                    extractionSource = 'computed-dom-dominant';
+                }
+                return { hex: domHex, source: info.source, confidence, extractionSource, method: 'dom' };
+            }
+
+            function firstVisibleForSelectors(selectors, visitor) {
+                for (const sel of selectors) {
+                    try {
+                        for (const el of document.querySelectorAll(sel)) {
+                            if (skipPlukrr(el)) continue;
+                            const r = el.getBoundingClientRect();
+                            if (r.width <= 0 || r.height <= 0) continue;
+                            const st = getComputedStyle(el);
+                            if (st.visibility === 'hidden' || st.display === 'none' || parseFloat(st.opacity) < 0.05) continue;
+                            const out = visitor(el, sel);
+                            if (out) return { ...out, matchedSelector: sel };
+                        }
+                    } catch (_) { /* invalid selector */ }
+                }
+                return null;
+            }
+
+            function ancestorBgChainLuminance(el) {
+                let cur = el;
+                while (cur && cur !== document.documentElement) {
+                    const bg = getComputedStyle(cur).backgroundColor;
+                    if (!isTransparent(bg)) {
+                        const h = normHex(toHex(bg));
+                        if (h) return relLuminanceFromHex(h);
+                    }
+                    cur = cur.parentElement;
+                }
+                const rootBg = getComputedStyle(document.documentElement).backgroundColor;
+                return isTransparent(rootBg) ? 1 : relLuminanceFromHex(normHex(toHex(rootBg)) || '#FFFFFF');
+            }
+
+            function getCanvasHexLocal() {
+                const bodyS = getComputedStyle(document.body);
+                const htmlS = getComputedStyle(document.documentElement);
+                const raw = !isTransparent(bodyS.backgroundColor) ? bodyS.backgroundColor : htmlS.backgroundColor;
+                if (isTransparent(raw)) return null;
+                return normHex(toHex(raw));
+            }
+
+            // ── Role order: canvas first; feedback + action before generic text (avoid stealing accent greens/reds)
+            const rolePlan = [
+                {
+                    key: 'color.bg.canvas',
+                    pick: () => {
+                        const h = getCanvasHexLocal();
+                        return h
+                            ? {
+                                  hex: h,
+                                  source: 'body/html background-color',
+                                  confidence: 0.85,
+                                  extractionSource: 'computed-dom-unique',
+                                  method: 'dom',
+                              }
+                            : null;
+                    },
+                },
+                {
+                    key: 'color.feedback.positive',
+                    pick: () => aggregateVisibleHexes(
+                        ['.success', '.positive', '.gain', '[data-sentiment="positive"]'],
+                        (el, sel) => {
+                            const h = normHex(toHex(getComputedStyle(el).color));
+                            return h ? { hex: h, source: sel } : null;
+                        }
+                    ),
+                },
+                {
+                    key: 'color.feedback.negative',
+                    pick: () => aggregateVisibleHexes(
+                        ['.error', '.negative', '.loss', '[data-sentiment="negative"]', '[role="alert"]'],
+                        (el, sel) => {
+                            const h = normHex(toHex(getComputedStyle(el).color));
+                            return h ? { hex: h, source: sel } : null;
+                        }
+                    ),
+                },
+                {
+                    key: 'color.action.primary',
+                    pick: () => {
+                        const bgPick = aggregateVisibleHexes(
+                            [
+                                'button[type="submit"]',
+                                '.primary',
+                                '[data-variant="primary"]',
+                            ],
+                            (el, sel) => {
+                                const s = getComputedStyle(el);
+                                const bg = s.backgroundColor;
+                                if (!isTransparent(bg)) {
+                                    const h = normHex(toHex(bg));
+                                    if (h) return { hex: h, source: sel + ' (background)' };
+                                }
+                                return null;
+                            }
+                        );
+                        if (bgPick) return bgPick;
+                        return aggregateVisibleHexes(
+                            ['main a', 'article a'],
+                            (el, sel) => {
+                                if (el.closest('nav, [role="navigation"], header nav, .nav')) return null;
+                                const h = normHex(toHex(getComputedStyle(el).color));
+                                return h ? { hex: h, source: sel + ' (link color)' } : null;
+                            }
+                        );
+                    },
+                },
+                {
+                    key: 'color.action.primary.hover',
+                    pick: () => {
+                        const hoverBg = findPrimaryHoverFromStylesheets();
+                        if (hoverBg)
+                            return {
+                                hex: hoverBg.hex,
+                                source: hoverBg.source,
+                                confidence: 0.85,
+                                extractionSource: 'stylesheet-hover-rule',
+                                method: 'dom',
+                            };
+                        return null;
+                    },
+                },
+                {
+                    key: 'color.text.primary',
+                    pick: () => aggregateVisibleHexes(
+                        [
+                            'main p:not([aria-disabled="true"]):not(.muted):not(.secondary):not([data-variant="secondary"])',
+                            'article p:not([aria-disabled="true"]):not(.muted):not(.secondary):not([data-variant="secondary"])',
+                            'main span:not([aria-disabled="true"]):not(.muted):not(.secondary):not([data-variant="secondary"])',
+                            'article span:not([aria-disabled="true"]):not(.muted):not(.secondary):not([data-variant="secondary"])',
+                            'main div:not([aria-disabled="true"]):not(.muted):not(.secondary):not([data-variant="secondary"])',
+                            'article div:not([aria-disabled="true"]):not(.muted):not(.secondary):not([data-variant="secondary"])',
+                        ],
+                        (el, sel) => {
+                            if (el.closest('a, button, [role="button"]')) return null;
+                            const lum = ancestorBgChainLuminance(el);
+                            if (lum < 0.2) return null;
+                            const h = normHex(toHex(getComputedStyle(el).color));
+                            return h ? { hex: h, source: sel } : null;
+                        }
+                    ),
+                },
+                {
+                    key: 'color.text.secondary',
+                    pick: () => aggregateVisibleHexes(
+                        ['.secondary', '.muted', '.subtitle', '[data-variant="secondary"]'],
+                        (el, sel) => {
+                            const h = normHex(toHex(getComputedStyle(el).color));
+                            return h ? { hex: h, source: sel } : null;
+                        }
+                    ),
+                },
+                {
+                    key: 'color.text.tertiary',
+                    pick: () => aggregateVisibleHexes(
+                        ['.tertiary', '[data-variant="tertiary"]', '.caption', '[class*="caption"]', 'small:not(.muted)'],
+                        (el, sel) => {
+                            if (el.closest('a, button')) return null;
+                            const h = normHex(toHex(getComputedStyle(el).color));
+                            return h ? { hex: h, source: sel } : null;
+                        }
+                    ),
+                },
+                {
+                    key: 'color.text.disabled',
+                    pick: () => aggregateVisibleHexes(
+                        ['[aria-disabled="true"]', '[disabled]', '.disabled'],
+                        (el, sel) => {
+                            const h = normHex(toHex(getComputedStyle(el).color));
+                            return h ? { hex: h, source: sel } : null;
+                        }
+                    ),
+                },
+                {
+                    key: 'color.text.inverse',
+                    pick: () => aggregateVisibleHexes(
+                        [
+                            'main p', 'main span', 'main h1', 'main h2', 'main h3', 'main li',
+                            'article p', 'article span', 'article h1', 'article h2', 'article td',
+                        ],
+                        (el, sel) => {
+                            if (skipPlukrr(el)) return null;
+                            if (el.closest('a, button, [role="button"]')) return null;
+                            let cur = el;
+                            while (cur && cur !== document.body) {
+                                const bg = getComputedStyle(cur).backgroundColor;
+                                if (!isTransparent(bg)) {
+                                    const bh = normHex(toHex(bg));
+                                    if (bh && relLuminanceFromHex(bh) < 0.2) {
+                                        const h = normHex(toHex(getComputedStyle(el).color));
+                                        if (h) return { hex: h, source: `${sel} inverse on dark <${cur.tagName.toLowerCase()}>` };
+                                    }
+                                    break;
+                                }
+                                cur = cur.parentElement;
+                            }
+                            return null;
+                        }
+                    ),
+                },
+                {
+                    key: 'color.border.default',
+                    pick: () =>
+                        aggregateVisibleHexes(
+                            ['input', 'button:not(.primary):not([data-variant="primary"])', '.card'],
+                            (el, sel) => {
+                                const s = getComputedStyle(el);
+                                if (s.borderTopWidth === '0px') return null;
+                                const h = normHex(toHex(s.borderTopColor));
+                                return h ? { hex: h, source: sel + ' border-color' } : null;
+                            }
+                        ),
+                },
+                {
+                    key: 'color.bg.surface',
+                    pick: () => {
+                        const canvasH = getCanvasHexLocal();
+                        return aggregateVisibleHexes(
+                            ['.card', 'article', 'main section', 'main [class*="card"]'],
+                            (el, sel) => {
+                                const s = getComputedStyle(el);
+                                const bg = s.backgroundColor;
+                                if (isTransparent(bg)) return null;
+                                const h = normHex(toHex(bg));
+                                if (!h || (canvasH && h === canvasH)) return null;
+                                const r = el.getBoundingClientRect();
+                                if (r.width < 40 || r.height < 24) return null;
+                                if (surfaceConflictsWithScheme(h, canvasH)) return null;
+                                return { hex: h, source: sel + ' background' };
+                            }
+                        );
+                    },
+                },
+            ];
+
+            function findPrimaryHoverFromStylesheets() {
+                const hints = [/button/i, /primary/i, /\.primary\b/i, /data-variant/i, /submit/i];
+                for (const sheet of document.styleSheets) {
+                    let rules;
+                    try { rules = sheet.cssRules || sheet.rules; } catch (_) { continue; }
+                    if (!rules) continue;
+                    for (const rule of rules) {
+                        if (rule.type !== CSSRule.STYLE_RULE) continue;
+                        const stext = rule.selectorText || '';
+                        if (!/:hover/.test(stext)) continue;
+                        if (!hints.some((re) => re.test(stext))) continue;
+                        const sty = rule.style;
+                        let bg = sty && sty.backgroundColor;
+                        if (!bg || bg === 'inherit' || bg === 'transparent' || bg === 'rgba(0, 0, 0, 0)') {
+                            const sh = sty && sty.background;
+                            if (sh && sh !== 'none') {
+                                const m = sh.match(/#([0-9a-fA-F]{3,8})\b|rgba?\([^)]+\)/);
+                                if (m) bg = m[0];
+                            }
+                        }
+                        if (bg && bg !== 'inherit' && bg !== 'transparent') {
+                            const h = normHex(toHex(bg));
+                            if (h) return { hex: h, source: `stylesheet:${stext.slice(0, 120)}` };
+                        }
+                    }
+                }
+                return null;
+            }
+
+            for (const step of rolePlan) {
+                let got = trySiteSemanticFirst(step.key);
+                if (!got) got = step.pick();
+                if (!got && step.key === 'color.bg.surface') {
+                    const ch = getCanvasHexLocal();
+                    got = aggregateVisibleHexes(
+                        ['main > div', 'article > div'],
+                        (el, sel) => {
+                            const bg = getComputedStyle(el).backgroundColor;
+                            if (isTransparent(bg)) return null;
+                            const h = normHex(toHex(bg));
+                            if (!h || (ch && h === ch)) return null;
+                            if (surfaceConflictsWithScheme(h, ch)) return null;
+                            return { hex: h, source: sel + ' background' };
+                        }
+                    );
+                }
+                if (got && step.key === 'color.action.primary.hover' && roles['color.action.primary']?.hex === got.hex)
+                    got = null;
+                if (got) {
+                    const method = got.method || 'dom';
+                    const conf = got.confidence != null ? got.confidence : 1;
+                    const ext = got.extractionSource || method;
+                    if (tryClaim(step.key, got.hex, got.source || got.matchedSelector || step.key, method, conf, ext)) continue;
+                }
+
+                const cssFallbacks = {
+                    'color.text.primary': ['--foreground', '--color-foreground'],
+                    'color.text.secondary': ['--muted-foreground', '--color-muted-foreground'],
+                    'color.text.tertiary': ['--color-muted', '--muted-foreground'],
+                    'color.text.disabled': ['--muted-foreground'],
+                    'color.action.primary': ['--primary', '--color-primary'],
+                    'color.feedback.negative': ['--destructive', '--color-destructive', '--error'],
+                    'color.feedback.positive': ['--success', '--color-success'],
+                    'color.border.default': ['--border', '--color-border'],
+                    'color.bg.canvas': ['--background', '--color-background'],
+                    'color.bg.surface': ['--card', '--color-card'],
+                };
+                const cf = cssFallbacks[step.key];
+                if (cf) {
+                    const r = resolveCssVarColor(cf);
+                    if (r && tryClaim(step.key, r.hex, r.source, 'css-variable', 0.9, 'css-variable-inferred-role')) continue;
+                }
+
+                const freqPool = {
+                    'color.text.primary': textMap,
+                    'color.text.secondary': textMap,
+                    'color.text.tertiary': textMap,
+                    'color.text.disabled': textMap,
+                    'color.text.inverse': textMap,
+                    'color.action.primary': accentMap,
+                    'color.action.primary.hover': accentMap,
+                    'color.feedback.positive': textMap,
+                    'color.feedback.negative': textMap,
+                    'color.border.default': borderMap,
+                    'color.bg.canvas': bgMap,
+                    'color.bg.surface': bgMap,
+                }[step.key];
+                if (freqPool) {
+                    for (const [hex, count] of [...freqPool.entries()].sort((a, b) => b[1] - a[1])) {
+                        const h = normHex(hex);
+                        if (!h || claimed.has(h)) continue;
+                        if (step.key === 'color.bg.surface' && surfaceConflictsWithScheme(h, getCanvasHexLocal())) continue;
+                        tryClaim(step.key, h, `frequency(count=${count})`, 'frequency', 0.5, 'frequency-inference');
+                        break;
+                    }
+                }
+            }
+
+            return roles;
+        }
+
+        const colorRoles = extractSemanticColorRoles(colorSchemeInfo, resolvedCssBundle.colors);
+
+        function entryFromRole(roleName, countWeight) {
+            const r = colorRoles[roleName];
+            if (!r) return null;
+            return {
+                hex: r.hex,
+                count: countWeight,
+                role: roleName,
+                sourceSelector: r.sourceSelector,
+                confidence: r.confidence,
+                method: r.method,
+                extractionSource: r.extractionSource,
+            };
+        }
+
+        const colors = {
+            backgrounds: [
+                entryFromRole('color.bg.canvas', 60),
+                entryFromRole('color.bg.surface', 50),
+            ].filter(Boolean),
+            text: [
+                entryFromRole('color.text.primary', 55),
+                entryFromRole('color.text.secondary', 45),
+                entryFromRole('color.text.tertiary', 40),
+                entryFromRole('color.text.disabled', 25),
+                entryFromRole('color.text.inverse', 20),
+            ].filter(Boolean),
+            borders: [entryFromRole('color.border.default', 30)].filter(Boolean),
+            interactive: [
+                entryFromRole('color.action.primary', 50),
+                entryFromRole('color.action.primary.hover', 35),
+                entryFromRole('color.feedback.positive', 28),
+                entryFromRole('color.feedback.negative', 28),
+            ].filter(Boolean),
+            colorRoles,
+        };
 
         // ─── COMPONENTS (Two-phase: Stylesheet Discovery + Visual Fallback) ──────
 
@@ -5750,27 +6514,287 @@
         });
 
         // ─── CSS VARIABLES ───────────────────────────────────────
-        const cssVariables = { colors: {}, sizes: {}, fonts: {}, other: {} };
-        for (const sheet of document.styleSheets) {
-            try {
-                const rules = sheet.cssRules || sheet.rules;
-                if (!rules) continue;
-                for (const rule of rules) {
-                    if (rule.selectorText !== ':root' && rule.selectorText !== 'html') continue;
-                    const style = rule.style;
-                    for (let i = 0; i < style.length; i++) {
-                        const prop = style[i];
-                        if (!prop.startsWith('--')) continue;
-                        const val = style.getPropertyValue(prop).trim();
-                        const name = prop.toLowerCase();
-                        if (/color|bg|background|foreground|primary|secondary|accent|muted|border|ring|destructive|success|warning|error/.test(name)) cssVariables.colors[prop] = val;
-                        else if (/font|family|weight/.test(name)) cssVariables.fonts[prop] = val;
-                        else if (/size|spacing|radius|gap|padding|margin|height|width/.test(name)) cssVariables.sizes[prop] = val;
-                        else cssVariables.other[prop] = val;
+        // Populated from buildResolvedCssVariables() (earlier): concrete values only, no unresolved var() chains.
+        const cssVariables = {
+            colors: resolvedCssBundle.colors,
+            sizes: resolvedCssBundle.sizes,
+            fonts: resolvedCssBundle.fonts,
+            other: resolvedCssBundle.other,
+        };
+
+        // ─── TYPOGRAPHY (DOM roles + merged scale; runs after cssVariables) ───
+        const typography = (function buildDomRoleTypography() {
+            const ignore = '#plukrr-sidebar, #plukrr-picker, #dc-overlay';
+            const rootPx = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+
+            function vis(el) {
+                if (!el || el.closest(ignore)) return false;
+                try {
+                    const r = el.getBoundingClientRect();
+                    return r.width > 0 && r.height > 0;
+                } catch (_) { return false; }
+            }
+            function pxNum(s) {
+                const n = parseFloat(s);
+                return Number.isFinite(n) ? Math.round(n * 100) / 100 : 0;
+            }
+            function modePx(arr) {
+                if (!arr || !arr.length) return 0;
+                const counts = new Map();
+                for (const x of arr) counts.set(x, (counts.get(x) || 0) + 1);
+                return [...counts.entries()].sort((a, b) => b[1] - a[1] || b[0] - a[0])[0][0];
+            }
+            function parseCssLenToPx(val) {
+                if (!val || typeof val !== 'string') return null;
+                const v = val.trim();
+                if (/^[\d.]+px$/i.test(v)) return parseFloat(v);
+                const rem = v.match(/^([\d.]+)rem$/i);
+                if (rem) return parseFloat(rem[1]) * rootPx;
+                const em = v.match(/^([\d.]+)em$/i);
+                if (em) return parseFloat(em[1]) * rootPx;
+                return null;
+            }
+            function collectDomFontSizes() {
+                const set = new Set();
+                let c = 0;
+                for (const el of document.querySelectorAll('*')) {
+                    if (++c > 600) break;
+                    if (el.closest(ignore)) continue;
+                    const fs = pxNum(getComputedStyle(el).fontSize);
+                    if (fs >= 8 && fs <= 200) set.add(fs);
+                }
+                return [...set].sort((a, b) => a - b);
+            }
+            function mergeScale(domSizes) {
+                const s = new Set(domSizes);
+                for (const bucket of [cssVariables.fonts, cssVariables.sizes, cssVariables.other]) {
+                    if (!bucket) continue;
+                    for (const val of Object.values(bucket)) {
+                        const px = parseCssLenToPx(val);
+                        if (px != null && px >= 8 && px <= 200) s.add(Math.round(px * 100) / 100);
                     }
                 }
-            } catch (e) { continue; }
-        }
+                return [...s].sort((a, b) => a - b);
+            }
+            function nearestAtOrBelow(target, scale) {
+                if (!scale.length || !target) return target;
+                const le = scale.filter(x => x <= target + 0.01).sort((a, b) => b - a);
+                return le[0] != null ? le[0] : target;
+            }
+            function snapDownToMaxRatio(upper, lower, scale) {
+                if (!lower || lower <= 0) return upper;
+                const cap = 2 * lower;
+                if (upper <= cap) return upper;
+                const ok = scale.filter(x => x <= cap + 0.01 && x >= lower - 0.01).sort((a, b) => b - a);
+                return ok[0] != null ? ok[0] : cap;
+            }
+            function rowFromEl(roleKey, label, tag, el, preview) {
+                if (!el) return null;
+                const s = getComputedStyle(el);
+                return {
+                    id: `role-${roleKey}`,
+                    role: roleKey,
+                    tag,
+                    label,
+                    category: 'role',
+                    preview: preview || el.textContent?.trim().replace(/\s+/g, ' ').slice(0, 80) || label,
+                    family: cleanFamily(s.fontFamily),
+                    weight: s.fontWeight,
+                    size: s.fontSize,
+                    lineHeight: s.lineHeight,
+                    letterSpacing: s.letterSpacing,
+                    color: toHex(s.color) || s.color,
+                    textTransform: s.textTransform !== 'none' ? s.textTransform : null,
+                    fontStyle: s.fontStyle !== 'normal' ? s.fontStyle : null
+                };
+            }
+            function findClosestEl(selectorList, targetPx) {
+                let best = null, bestD = Infinity;
+                for (const sel of selectorList) {
+                    try {
+                        for (const el of document.querySelectorAll(sel)) {
+                            if (!vis(el)) continue;
+                            const p = pxNum(getComputedStyle(el).fontSize);
+                            const d = Math.abs(p - targetPx);
+                            if (d < bestD) { bestD = d; best = el; }
+                        }
+                    } catch (_) {}
+                }
+                return best;
+            }
+
+            const domSizes = collectDomFontSizes();
+            const fullScale = mergeScale(domSizes);
+
+            const h1Els = [...document.querySelectorAll('h1')].filter(vis);
+            const heroEls = [...document.querySelectorAll('[class*="hero"]')].filter(vis);
+            const h1Px = h1Els.map(el => pxNum(getComputedStyle(el).fontSize));
+            const heroPx = heroEls.map(el => pxNum(getComputedStyle(el).fontSize));
+
+            const displayPxRaw = Math.max(
+                h1Px.length ? Math.max(...h1Px) : 0,
+                heroPx.length ? Math.max(...heroPx) : 0
+            );
+            const h1NonDisplay = h1Px.filter(px => displayPxRaw > 0 && px < displayPxRaw - 0.5);
+            let h1RolePx = h1NonDisplay.length ? modePx(h1NonDisplay) : (h1Px.length ? modePx(h1Px) : displayPxRaw);
+            if (!h1RolePx && displayPxRaw) h1RolePx = displayPxRaw;
+
+            const h2Els = [...document.querySelectorAll('h2')].filter(vis);
+            const h3Els = [...document.querySelectorAll('h3')].filter(vis);
+            const h2PxArr = h2Els.map(el => pxNum(getComputedStyle(el).fontSize)).filter(Boolean);
+            const h3PxArr = h3Els.map(el => pxNum(getComputedStyle(el).fontSize)).filter(Boolean);
+
+            let h2RolePx = h2PxArr.length ? modePx(h2PxArr) : 0;
+            let h3RolePx = h3PxArr.length ? modePx(h3PxArr) : 0;
+
+            if (!h1Px.length && displayPxRaw) h1RolePx = displayPxRaw;
+            if (!h1Px.length && !displayPxRaw) {
+                const bfs = pxNum(getComputedStyle(document.body).fontSize);
+                h1RolePx = Math.max(bfs * 1.15, 16);
+            }
+
+            const mainEl = document.querySelector('main') || document.querySelector('[role="main"]') || document.body;
+            const mainPs = [...mainEl.querySelectorAll('p')].filter(vis).slice(0, 60);
+            const bodyPxArr = mainPs.map(el => pxNum(getComputedStyle(el).fontSize)).filter(Boolean);
+            let bodyRolePx = bodyPxArr.length ? modePx(bodyPxArr) : pxNum(getComputedStyle(document.body).fontSize);
+
+            const smallEls = [...mainEl.querySelectorAll('p, span, small')].filter(el => {
+                if (!vis(el)) return false;
+                const cls = (el.className && el.className.toString) ? el.className.toString() : '';
+                return el.tagName === 'SMALL' || /small|secondary|muted|caption|subtle/i.test(cls);
+            }).slice(0, 50);
+            let bsPxArr = smallEls.map(el => pxNum(getComputedStyle(el).fontSize)).filter(Boolean);
+            let bodySmallPx = 0;
+            if (bsPxArr.length) {
+                let cand = modePx(bsPxArr);
+                if (cand >= bodyRolePx - 0.25) {
+                    const below = bsPxArr.filter(px => px < bodyRolePx - 0.25);
+                    cand = below.length ? modePx(below) : nearestAtOrBelow(bodyRolePx * 0.875, fullScale) || bodyRolePx * 0.875;
+                }
+                bodySmallPx = cand;
+            } else {
+                bodySmallPx = nearestAtOrBelow(bodyRolePx * 0.875, fullScale) || bodyRolePx * 0.875;
+            }
+
+            const capEls = [...mainEl.querySelectorAll('p, span, label')].filter(vis).slice(0, 60);
+            const capPxArr = capEls.map(el => pxNum(getComputedStyle(el).fontSize)).filter(Boolean);
+            let captionPx = capPxArr.length ? Math.min(...capPxArr) : bodySmallPx * 0.92;
+
+            if (!h3PxArr.length) {
+                h3RolePx = nearestAtOrBelow((h1RolePx || bodyRolePx) * 0.88, fullScale) || Math.max(bodyRolePx * 1.08, 14);
+            }
+            if (!h2PxArr.length) {
+                h2RolePx = nearestAtOrBelow(((h1RolePx || displayPxRaw) + h3RolePx) / 2, fullScale)
+                    || (h1RolePx || bodyRolePx) * 0.92 || h3RolePx * 1.08;
+            }
+
+            let displayPx = displayPxRaw || h1RolePx || h2RolePx || bodyRolePx || 16;
+            let vals = [displayPx, h1RolePx || displayPx, h2RolePx || h1RolePx, h3RolePx || h2RolePx, bodyRolePx, bodySmallPx || bodyRolePx * 0.88, captionPx || bodySmallPx * 0.9];
+            vals = vals.map(v => Math.max(v || 0, 8));
+
+            function monotonicDown() {
+                for (let i = 1; i < 7; i++) {
+                    if (vals[i] > vals[i - 1]) vals[i - 1] = vals[i];
+                }
+                for (let i = 5; i >= 0; i--) {
+                    if (vals[i] < vals[i + 1]) vals[i + 1] = vals[i];
+                }
+            }
+            for (let pass = 0; pass < 2; pass++) {
+                monotonicDown();
+                for (let i = 0; i < 6; i++) {
+                    vals[i] = snapDownToMaxRatio(vals[i], vals[i + 1], fullScale);
+                }
+                monotonicDown();
+            }
+
+            const labels = ['Display', 'H1', 'H2', 'H3', 'Body', 'Body Small', 'Caption'];
+            const keys = ['display', 'h1', 'h2', 'h3', 'body', 'bodySmall', 'caption'];
+            const tags = ['h1', 'h1', 'h2', 'h3', 'p', 'p', 'span'];
+
+            const pickDisplay = () => {
+                let best = null, bestPx = -1;
+                for (const el of [...h1Els, ...heroEls]) {
+                    const p = pxNum(getComputedStyle(el).fontSize);
+                    if (p >= vals[0] - 0.5 && p > bestPx) { bestPx = p; best = el; }
+                }
+                return best || h1Els[0] || heroEls[0] || document.querySelector('h1') || document.body;
+            };
+            const pickH1 = () => findClosestEl(['h1'], vals[1]) || h1Els[0];
+            const pickH2 = () => findClosestEl(['h2'], vals[2]) || h2Els[0];
+            const pickH3 = () => findClosestEl(['h3'], vals[3]) || h3Els[0];
+            const pickBody = () => findClosestEl(['main p', 'article p', 'p'], vals[4]) || mainPs[0] || document.body;
+            const pickBodySmall = () => findClosestEl(['main p', 'main span', 'p', 'span'], vals[5]) || smallEls[0] || pickBody();
+            const pickCaption = () => {
+                let best = null, bestDiff = Infinity;
+                for (const el of capEls) {
+                    const p = pxNum(getComputedStyle(el).fontSize);
+                    const d = Math.abs(p - vals[6]);
+                    if (d < bestDiff) { bestDiff = d; best = el; }
+                }
+                return best || capEls[0] || pickBodySmall();
+            };
+
+            const pickers = [pickDisplay, pickH1, pickH2, pickH3, pickBody, pickBodySmall, pickCaption];
+            const roleRows = [];
+            for (let i = 0; i < 7; i++) {
+                const el = pickers[i]() || document.body;
+                const sz = `${Math.round(vals[i] * 100) / 100}px`;
+                const base = rowFromEl(keys[i], labels[i], tags[i], el, null);
+                if (base) {
+                    base.size = sz;
+                    roleRows.push(base);
+                }
+            }
+
+            const supplement = [];
+            for (let hi = 4; hi <= 6; hi++) {
+                const el = document.querySelector(`h${hi}`);
+                if (!el || !vis(el)) continue;
+                const s = getComputedStyle(el);
+                supplement.push({
+                    id: `h${hi}`, label: `Heading ${hi}`, category: 'extra', tag: `h${hi}`,
+                    preview: el.textContent?.trim().replace(/\s+/g, ' ').slice(0, 60) || `Heading ${hi}`,
+                    family: cleanFamily(s.fontFamily), weight: s.fontWeight, size: s.fontSize,
+                    lineHeight: s.lineHeight, letterSpacing: s.letterSpacing, color: toHex(s.color) || s.color,
+                    textTransform: s.textTransform !== 'none' ? s.textTransform : null,
+                    fontStyle: s.fontStyle !== 'normal' ? s.fontStyle : null
+                });
+            }
+            const monoEl = document.querySelector('code, pre, kbd');
+            if (monoEl && vis(monoEl)) {
+                const s = getComputedStyle(monoEl);
+                supplement.push({
+                    id: 'mono', label: 'Code / Monospace', category: 'extra', tag: 'code',
+                    preview: monoEl.textContent?.trim().slice(0, 40) || 'const x = "code";',
+                    family: cleanFamily(s.fontFamily), weight: s.fontWeight, size: s.fontSize,
+                    lineHeight: s.lineHeight, letterSpacing: s.letterSpacing, color: toHex(s.color) || s.color
+                });
+            }
+            const uiBtnEl = document.querySelector('button, [role="button"], .btn, [class*="button"]');
+            if (uiBtnEl && vis(uiBtnEl)) {
+                const s = getComputedStyle(uiBtnEl);
+                supplement.push({
+                    id: 'ui-text', label: 'Button / UI Text', category: 'extra', tag: 'button',
+                    preview: uiBtnEl.textContent?.trim().slice(0, 30) || 'Button',
+                    family: cleanFamily(s.fontFamily), weight: s.fontWeight, size: s.fontSize,
+                    lineHeight: s.lineHeight, letterSpacing: s.letterSpacing, color: toHex(s.color) || s.color,
+                    textTransform: s.textTransform !== 'none' ? s.textTransform : null
+                });
+            }
+            const navLinkEl = document.querySelector('nav a, header a, [role="navigation"] a');
+            if (navLinkEl && vis(navLinkEl)) {
+                const s = getComputedStyle(navLinkEl);
+                supplement.push({
+                    id: 'nav-link', label: 'Nav Link', category: 'extra', tag: 'a',
+                    preview: navLinkEl.textContent?.trim().slice(0, 30) || 'Home',
+                    family: cleanFamily(s.fontFamily), weight: s.fontWeight, size: s.fontSize,
+                    lineHeight: s.lineHeight, letterSpacing: s.letterSpacing, color: toHex(s.color) || s.color
+                });
+            }
+
+            return [...roleRows, ...supplement];
+        })();
 
         // ─── LAYOUT ───────────────────────────────────────
         const layout = { maxWidth: null, containerPadding: null, breakpoints: [], gridColumns: null, gridGap: null, flexLayouts: 0, gridLayouts: 0 };
@@ -5796,19 +6820,161 @@
         }
         layout.flexLayouts = flexCount;
         layout.gridLayouts = gridCount;
-        // Breakpoints from media queries
-        const bpSet = new Set();
-        for (const sheet of document.styleSheets) {
-            try {
-                for (const rule of sheet.cssRules || []) {
+
+        // Canonical breakpoints from @media (min/max-width) — clustered, rule-count filtered, max 3–4 bands.
+        (function extractCanonicalBreakpoints() {
+            const thresholdRuleCount = new Map();
+
+            function countStyleRulesDeep(rules) {
+                let n = 0;
+                if (!rules) return 0;
+                for (const r of rules) {
+                    if (r.type === CSSRule.STYLE_RULE) n++;
+                    else if (r.cssRules) n += countStyleRulesDeep(r.cssRules);
+                }
+                return n;
+            }
+
+            function extractWidthThresholdsPx(mediaText) {
+                const out = [];
+                if (!mediaText || typeof mediaText !== 'string') return out;
+                const mt = mediaText.toLowerCase();
+                const re = /\(\s*(min|max)-width\s*:\s*(\d+)px\s*\)/gi;
+                let m;
+                while ((m = re.exec(mt)) !== null) {
+                    const px = parseInt(m[2], 10);
+                    if (px >= 320 && px <= 2560) out.push(px);
+                }
+                return out;
+            }
+
+            function walkMediaRules(rules) {
+                if (!rules) return;
+                for (const rule of rules) {
                     if (rule.type === CSSRule.MEDIA_RULE) {
-                        const m = (rule.conditionText || rule.media?.mediaText || '').match(/(\d+)px/g);
-                        if (m) m.forEach(v => { const n = parseInt(v); if (n >= 320 && n <= 2560) bpSet.add(n); });
+                        const mq = rule.conditionText || rule.media?.mediaText || '';
+                        const nRules = countStyleRulesDeep(rule.cssRules);
+                        const thresh = extractWidthThresholdsPx(mq);
+                        const uniq = [...new Set(thresh)];
+                        for (const px of uniq) {
+                            thresholdRuleCount.set(px, (thresholdRuleCount.get(px) || 0) + nRules);
+                        }
+                        walkMediaRules(rule.cssRules);
+                    } else if (rule.cssRules) {
+                        walkMediaRules(rule.cssRules);
                     }
                 }
-            } catch (e) { continue; }
-        }
-        layout.breakpoints = [...bpSet].sort((a, b) => a - b);
+            }
+
+            for (const sheet of document.styleSheets) {
+                try { walkMediaRules(sheet.cssRules || []); } catch (_) { /* CORS */ }
+            }
+
+            const sortedPairs = [...thresholdRuleCount.entries()].sort((a, b) => a[0] - b[0]);
+            const clusters = [];
+            for (const [px, cnt] of sortedPairs) {
+                const last = clusters[clusters.length - 1];
+                const onePxStep = last && px - last.maxPx === 1;
+                // Split 996px vs 997px-style pairs (both in upper band); keep 600/601 clustering below.
+                const highBandSplit = onePxStep && last.maxPx >= 900 && px >= 900;
+                if (!last || px > last.rep * 1.1 || highBandSplit) {
+                    clusters.push({ rep: px, minPx: px, maxPx: px, totalRules: cnt });
+                } else {
+                    last.minPx = Math.min(last.minPx, px);
+                    last.maxPx = Math.max(last.maxPx, px);
+                    last.totalRules += cnt;
+                    last.rep = last.minPx;
+                }
+            }
+
+            let kept = clusters.filter((c) => c.totalRules >= 3);
+            kept.sort((a, b) => a.rep - b.rep);
+            while (kept.length > 4) {
+                let drop = 0;
+                for (let i = 1; i < kept.length; i++) {
+                    if (kept[i].totalRules < kept[drop].totalRules) drop = i;
+                }
+                kept.splice(drop, 1);
+            }
+
+            const meta = kept.map((c) => ({
+                thresholdPx: c.rep,
+                styleRules: c.totalRules,
+                clusteredFrom: c.minPx !== c.maxPx ? `${c.minPx}px–${c.maxPx}px` : null,
+            }));
+
+            let T = kept.map((c) => c.rep).sort((a, b) => a - b);
+            if (T.length >= 3 && T[T.length - 1] - T[T.length - 2] <= 2 && T[T.length - 1] <= 1200) {
+                T = T.slice(0, -2).concat(T[T.length - 1]);
+            }
+            layout.breakpoints = T;
+            layout.breakpointMeta = meta;
+
+            const keyFor = (bp) =>
+                bp < 480 ? 'Single column, tight padding'
+                    : bp < 768 ? 'Standard mobile, stacked layout'
+                        : bp < 1024 ? '2-column grids, condensed nav'
+                            : 'Full layout, expanded sections';
+
+            const rows = [];
+            if (T.length === 0) {
+                layout.breakpointRows = [];
+                return;
+            }
+            if (T.length === 1) {
+                const t = T[0];
+                const m0 = kept.find((c) => c.rep === t);
+                rows.push(
+                    { name: 'Mobile', range: `< ${t}px`, anchorThresholds: [], keyChanges: keyFor(400), styleRules: null },
+                    { name: 'Desktop', range: `≥ ${t}px`, anchorThresholds: [{ px: t, styleRules: m0?.totalRules ?? 0 }], keyChanges: keyFor(1024), styleRules: m0?.totalRules ?? 0 },
+                );
+            } else if (T.length === 2) {
+                const t1 = T[0], t2 = T[1];
+                const m1 = kept.find((c) => c.rep === t1);
+                const m2 = kept.find((c) => c.rep === t2);
+                rows.push(
+                    { name: 'Mobile', range: `< ${t1}px`, anchorThresholds: [], keyChanges: keyFor(400), styleRules: null },
+                    { name: 'Tablet', range: `${t1}px – ${t2 - 1}px`, anchorThresholds: [{ px: t1, styleRules: m1?.totalRules ?? 0 }], keyChanges: keyFor(t1), styleRules: m1?.totalRules ?? 0 },
+                    { name: 'Desktop', range: `≥ ${t2}px`, anchorThresholds: [{ px: t2, styleRules: m2?.totalRules ?? 0 }], keyChanges: keyFor(t2), styleRules: m2?.totalRules ?? 0 },
+                );
+            } else {
+                const t1 = T[0], t2 = T[1], t3 = T[2];
+                const m1 = kept.find((c) => c.rep === t1);
+                const m2 = kept.find((c) => c.rep === t2);
+                const m3 = kept.find((c) => c.rep === t3);
+                rows.push(
+                    { name: 'Mobile', range: `< ${t1}px`, anchorThresholds: [], keyChanges: keyFor(400), styleRules: null },
+                    { name: 'Tablet', range: `${t1}px – ${t2 - 1}px`, anchorThresholds: [{ px: t1, styleRules: m1?.totalRules ?? 0 }], keyChanges: keyFor(t1), styleRules: m1?.totalRules ?? 0 },
+                );
+                if (T.length === 3) {
+                    if (t3 > 1400) {
+                        rows.push(
+                            { name: 'Desktop', range: `${t2}px – ${t3 - 1}px`, anchorThresholds: [{ px: t2, styleRules: m2?.totalRules ?? 0 }], keyChanges: keyFor(t2), styleRules: m2?.totalRules ?? 0 },
+                            { name: 'Wide', range: `≥ ${t3}px`, anchorThresholds: [{ px: t3, styleRules: m3?.totalRules ?? 0 }], keyChanges: 'Large screens, full grid', styleRules: m3?.totalRules ?? 0 },
+                        );
+                    } else {
+                        rows.push(
+                            { name: 'Desktop', range: `≥ ${t2}px`, anchorThresholds: [{ px: t2, styleRules: m2?.totalRules ?? 0 }, { px: t3, styleRules: m3?.totalRules ?? 0 }], keyChanges: keyFor(t2), styleRules: (m2?.totalRules ?? 0) + (m3?.totalRules ?? 0) },
+                        );
+                    }
+                } else {
+                    const t4 = T[3];
+                    const m4 = kept.find((c) => c.rep === t4);
+                    if (t4 > 1400) {
+                        rows.push(
+                            { name: 'Desktop', range: `${t2}px – ${t4 - 1}px`, anchorThresholds: [{ px: t2, styleRules: m2?.totalRules ?? 0 }], keyChanges: keyFor(t2), styleRules: m2?.totalRules ?? 0 },
+                            { name: 'Wide', range: `≥ ${t4}px`, anchorThresholds: [{ px: t4, styleRules: m4?.totalRules ?? 0 }], keyChanges: 'Large screens, full grid', styleRules: m4?.totalRules ?? 0 },
+                        );
+                    } else {
+                        rows.push(
+                            { name: 'Desktop', range: `≥ ${t2}px`, anchorThresholds: [{ px: t2, styleRules: m2?.totalRules ?? 0 }, { px: t3, styleRules: m3?.totalRules ?? 0 }, { px: t4, styleRules: m4?.totalRules ?? 0 }], keyChanges: keyFor(t2), styleRules: (m2?.totalRules ?? 0) + (m3?.totalRules ?? 0) + (m4?.totalRules ?? 0) },
+                        );
+                    }
+                }
+            }
+
+            layout.breakpointRows = rows.slice(0, 4);
+        })();
 
         // ─── SEMANTIC TOKEN EXTRACTION ──────────────────────────────────────────────
         // Role-anchored extraction: for each shadcn semantic slot, find the specific
@@ -7298,6 +8464,131 @@
             }
         } catch (_) {}
 
+        // ─── UI component presence (detector-based; drives design-system §4 output) ───
+        function detectPageComponents() {
+            const ign = '#plukrr-sidebar, #plukrr-picker, #dc-overlay';
+            function skip(el) { return el && el.closest(ign); }
+            function q(sel) {
+                try {
+                    return [...document.querySelectorAll(sel)].filter(el => el && !skip(el));
+                } catch (_) { return []; }
+            }
+            function px(n) { return parseFloat(n) || 0; }
+
+            const details = {
+                inputTextField: false,
+                inputTextarea: false
+            };
+
+            const hasButton = q('button, [role="button"], a.btn, a[class*="button"]').length > 0;
+            const inputs = q('input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"])');
+            const textareas = q('textarea');
+            details.inputTextField = inputs.length > 0;
+            details.inputTextarea = textareas.length > 0;
+            const hasInput = details.inputTextField || details.inputTextarea;
+
+            let hasCard = false;
+            let ci = 0;
+            for (const el of document.querySelectorAll('div, section, article, main')) {
+                if (++ci > 450) break;
+                if (skip(el)) continue;
+                const s = getComputedStyle(el);
+                const pad = Math.max(px(s.paddingTop), px(s.paddingLeft));
+                const hasShadow = s.boxShadow && s.boxShadow !== 'none';
+                const hasBorder = px(s.borderTopWidth) > 0 || px(s.borderLeftWidth) > 0;
+                const txt = (el.textContent || '').trim();
+                if (pad >= 12 && txt.length >= 8 && (hasShadow || hasBorder)) {
+                    hasCard = true;
+                    break;
+                }
+            }
+
+            const hasNavigation = q('nav, [role="navigation"], header nav, header [role="navigation"]').length > 0
+                || (q('header a[href]').length >= 2);
+
+            const hasLink = q('a[href]').filter(el => {
+                const r = el.getAttribute('role');
+                if (r === 'button' || r === 'tab') return false;
+                return !/btn|button/i.test(el.className?.toString?.() || '');
+            }).length > 0;
+
+            const hasBadge = q('[class*="badge"], [class*="Badge"], [data-badge], [class*="chip"], [class*="Chip"]').length > 0;
+            const hasAvatar = q('[class*="avatar"], [class*="Avatar"], [data-avatar], img[class*="rounded-full"]').length > 0;
+
+            const hasDialog = q('[role="dialog"], [role="alertdialog"], [aria-modal="true"], dialog, .modal, [class*="modal"], [class*="Modal"], [class*="Dialog"], [class*="dialog"]').length > 0;
+
+            const hasAccordion = q(
+                '[class*="accordion"], [class*="Accordion"], [data-radix-accordion], [data-radix-collapsible], details, summary, ' +
+                '[data-state][data-orientation], section[id*="faq"], section[class*="faq"], [id*="accordion"]'
+            ).length > 0;
+
+            const hasTable = q('table, [role="table"], [role="grid"]').length > 0;
+
+            let hasToast = q('.toast, [class*="toast"], .snackbar, [class*="snackbar"], [data-sonner-toast]').length > 0;
+            if (!hasToast) {
+                for (const el of q('[role="status"], [role="alert"]')) {
+                    const s = getComputedStyle(el);
+                    if (s.position === 'fixed' || s.position === 'sticky') { hasToast = true; break; }
+                }
+            }
+
+            const hasSwitch = q('[role="switch"]').length > 0;
+            const hasCheckbox = q('input[type="checkbox"], [role="checkbox"]').length > 0;
+            const hasRadio = q('input[type="radio"], [role="radio"]').length > 0;
+            const hasTabs = q('[role="tablist"], [role="tab"]').length > 0;
+            const hasTooltip = q('[role="tooltip"], .tooltip, [class*="tooltip"], [class*="Tooltip"]').length > 0;
+
+            const hasDrawer = q('[data-vaul-drawer], [class*="drawer"], [class*="Drawer"], [data-drawer], [class*="sheet"][class*="side"]').length > 0;
+
+            let hasSidebar = q('aside[class*="sidebar"], [class*="Sidebar"], nav[class*="sidebar"]').length > 0;
+            if (!hasSidebar) {
+                for (const nav of q('aside, nav')) {
+                    const s = getComputedStyle(nav);
+                    const r = nav.getBoundingClientRect();
+                    const flexCol = (s.flexDirection === 'column' || s.display === 'flex' && s.flexDirection !== 'row');
+                    if (r.width > 0 && r.width < 320 && r.height > 400 && flexCol) { hasSidebar = true; break; }
+                }
+            }
+
+            const hasPopover = q('[data-radix-popover-content], [data-state][class*="Popover"], [role="dialog"][class*="popover"]').length > 0;
+            const hasDropdown = q('[role="menu"], [data-radix-dropdown-menu-content], [role="listbox"]').length > 0;
+            const hasSelect = q('select, [role="combobox"]').length > 0;
+
+            const hasAlert = q('[role="alert"]:not([class*="toast"]):not(.toast)').length > 0;
+            const hasContextMenu = q('[role="menu"][id]').length > 0;
+
+            const detectedIds = [];
+            const push = (id, cond) => { if (cond) detectedIds.push(id); };
+
+            push('button', hasButton);
+            push('input', hasInput);
+            push('card', hasCard);
+            push('navigation', hasNavigation);
+            push('link', hasLink);
+            push('badge', hasBadge);
+            push('avatar', hasAvatar);
+            push('dialog', hasDialog);
+            push('accordion', hasAccordion);
+            push('table', hasTable);
+            push('toast', hasToast);
+            push('switch', hasSwitch);
+            push('checkbox', hasCheckbox);
+            push('radio', hasRadio);
+            push('tabs', hasTabs);
+            push('tooltip', hasTooltip);
+            push('drawer', hasDrawer);
+            push('sidebar', hasSidebar);
+            push('popover', hasPopover);
+            push('dropdown', hasDropdown);
+            push('select', hasSelect);
+            push('alert', hasAlert);
+            push('context_menu', hasContextMenu);
+
+            return { detectedIds, details };
+        }
+
+        const componentDetection = detectPageComponents();
+
         return {
             pageUrl: window.location.href,
             pageTitle: document.title,
@@ -7309,7 +8600,10 @@
             shadows,
             cssVariables,
             layout,
-            semanticTokens
+            semanticTokens,
+            colorScheme: colorSchemeInfo,
+            componentDetection,
+            extractionWarnings: resolvedCssBundle.warnings,
         };
     }
 
