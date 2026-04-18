@@ -5,7 +5,7 @@
   <title>Plukrr - Sign In</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Nanum+Pen+Script&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Nanum+Pen+Script&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>
     * {
       box-sizing: border-box;
@@ -16,15 +16,16 @@
     :root {
       --bg: #f7f5f2;
       --card: #ffffff;
-      --line: #e6e1d9;
-      --text: #1f1f1f;
-      --muted: #6b6b6b;
+      --line: #e8e4de;
+      --line-hover: #d6cec2;
+      --text: #1a1714;
+      --muted: #8a857d;
       --accent: #ff5b7f;
-      --shadow: 0 10px 30px rgba(30, 20, 10, 0.08);
+      --shadow: 0 2px 12px rgba(0, 0, 0, 0.04);
     }
     
     body {
-      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
       background: var(--bg);
       min-height: 100vh;
       display: flex;
@@ -136,7 +137,7 @@
       width: 100%;
       padding: 10px 12px;
       font-size: 15px;
-      background: #ffffff;
+      background: var(--card);
       border: 1px solid var(--line);
       border-radius: 12px;
       color: var(--text);
@@ -151,10 +152,10 @@
     }
     
     .form-input:focus {
-      border-color: #d6cec2;
+      border-color: var(--line-hover);
       box-shadow: 0 0 0 3px rgba(255, 91, 127, 0.12);
     }
-    
+
     .form-input:disabled {
       opacity: 0.6;
       cursor: not-allowed;
@@ -174,7 +175,7 @@
       text-align: center;
       font-size: 16px;
       font-weight: 600;
-      background: #ffffff;
+      background: var(--card);
       border: 1px solid var(--line);
       border-radius: 12px;
       color: var(--text);
@@ -183,7 +184,7 @@
     }
     
     .otp-input:focus {
-      border-color: #d6cec2;
+      border-color: var(--line-hover);
       box-shadow: 0 0 0 3px rgba(255, 91, 127, 0.12);
     }
     
@@ -196,8 +197,8 @@
       padding: 10px 16px;
       font-size: 14px;
       font-weight: 600;
-      color: #ffffff;
-      background: #1f1f1f;
+      color: var(--card);
+      background: var(--text);
       border: none;
       border-radius: 999px;
       cursor: pointer;
@@ -209,7 +210,7 @@
       height: 40px;
       line-height: 21px;
     }
-    
+
     .btn-primary:hover {
       transform: translateY(-1px);
       box-shadow: 0 6px 16px rgba(31, 31, 31, 0.2);
@@ -232,7 +233,7 @@
       font-size: 14px;
       font-weight: 600;
       color: var(--text);
-      background: #ffffff;
+      background: var(--card);
       border: 1px solid var(--line);
       border-radius: 999px;
       cursor: pointer;
@@ -243,14 +244,14 @@
     }
     
     .btn-secondary:hover {
-      border-color: #d6cec2;
+      border-color: var(--line-hover);
     }
     
     .spinner {
       width: 20px;
       height: 20px;
       border: 2px solid rgba(31, 31, 31, 0.15);
-      border-top-color: #1f1f1f;
+      border-top-color: var(--text);
       border-radius: 50%;
       animation: spin 0.8s linear infinite;
     }
@@ -302,7 +303,7 @@
       width: 80px;
       height: 80px;
       margin: 0;
-      background: #ffffff;
+      background: var(--card);
       border-radius: 50%;
       border: 1px solid var(--line);
       display: flex;
@@ -331,7 +332,7 @@
     .error-message {
       display: none;
       padding: 12px 16px;
-      background: #ffffff;
+      background: var(--card);
       border: 1px solid var(--line);
       border-radius: 12px;
       color: var(--text);
@@ -350,7 +351,7 @@
       text-align: center;
       margin-bottom: 0;
       padding: 12px 16px;
-      background: #ffffff;
+      background: var(--card);
       border: 1px solid var(--line);
       border-radius: 12px;
     }

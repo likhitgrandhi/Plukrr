@@ -5,7 +5,7 @@
   <meta charset="UTF-8">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Nanum+Pen+Script&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Nanum+Pen+Script&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>
     * {
       box-sizing: border-box;
@@ -14,18 +14,21 @@
     :root {
       --bg: #f7f5f2;
       --card: #ffffff;
-      --line: #e6e1d9;
-      --text: #1f1f1f;
-      --muted: #6b6b6b;
+      --line: #e8e4de;
+      --line-subtle: #f0ede8;
+      --line-hover: #d6cec2;
+      --text: #1a1714;
+      --muted: #8a857d;
+      --muted-light: #9a9a9a;
       --accent: #ff5b7f;
-      --shadow: 0 2px 6px rgba(30, 20, 10, 0.08);
+      --shadow: 0 2px 12px rgba(0, 0, 0, 0.04);
     }
 
     body {
       width: 360px;
       min-height: 200px;
       padding: 20px;
-      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
       margin: 0;
       background: var(--bg);
       color: var(--text);
@@ -90,7 +93,7 @@
 
     .header .version {
       font-size: 10px;
-      color: #9a9a9a;
+      color: var(--muted-light);
       font-weight: 400;
     }
 
@@ -123,9 +126,9 @@
     }
 
     .sub-badge.free {
-      background: #f1f1f1;
-      border: 1px solid #e0e0e0;
-      color: #6b6b6b;
+      background: var(--line-subtle);
+      border: 1px solid var(--line);
+      color: var(--muted);
     }
 
     .sub-badge.pro {
@@ -192,7 +195,7 @@
       padding: 6px 12px;
       font-size: 11px;
       font-weight: 600;
-      color: #1f1f1f;
+      color: var(--text);
       background: #ffd27a;
       border: none;
       border-radius: 999px;
@@ -239,8 +242,8 @@
       align-items: center;
       justify-content: center;
       gap: 8px;
-      background: #1f1f1f;
-      color: #ffffff;
+      background: var(--text);
+      color: var(--card);
       border: none;
       border-radius: 999px;
       padding: 10px 18px;
@@ -284,8 +287,8 @@
 
     .action-btn:hover,
     .account-link:hover {
-      border-color: #d6cec2;
-      box-shadow: 0 4px 10px rgba(30, 20, 10, 0.12);
+      border-color: var(--line-hover);
+      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.10);
       transform: translateY(-1px);
     }
 
@@ -300,8 +303,8 @@
 
     .action-btn.locked .action-right::before {
       content: "PRO";
-      background: #f1f1f1;
-      color: #6b6b6b;
+      background: var(--line-subtle);
+      color: var(--muted);
       font-size: 11px;
       font-weight: 700;
       padding: 3px 8px;
@@ -324,7 +327,7 @@
     .action-icon {
       width: 20px;
       height: 20px;
-      stroke: #2f2f2f;
+      stroke: var(--text);
       fill: none;
       stroke-width: 2;
       flex-shrink: 0;
@@ -332,19 +335,19 @@
 
     .action-icon.filled {
       stroke: none;
-      fill: #2f2f2f;
+      fill: var(--text);
     }
 
     .action-right {
       display: flex;
       align-items: center;
       gap: 8px;
-      color: #9b9b9b;
+      color: var(--muted-light);
     }
 
     .action-pill {
-      background: #f1f1f1;
-      color: #6b6b6b;
+      background: var(--line-subtle);
+      color: var(--muted);
       font-size: 12px;
       font-weight: 600;
       padding: 4px 8px;
@@ -358,7 +361,7 @@
     .action-help-icon {
       width: 18px;
       height: 18px;
-      stroke: #9b9b9b;
+      stroke: var(--muted-light);
       fill: none;
       stroke-width: 2;
     }
@@ -393,13 +396,13 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      color: #6b6b6b;
+      color: var(--muted);
       box-shadow: var(--shadow);
     }
 
     .btn-icon:hover {
-      border-color: #d6cec2;
-      color: #3b3b3b;
+      border-color: var(--line-hover);
+      color: var(--text);
     }
 
     .btn-icon svg {

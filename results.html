@@ -16,13 +16,14 @@
     :root {
       --bg: #ffffff;
       --card: #ffffff;
-      --line: #efefef;
-      --text: #1f1f1f;
-      --muted: #6b6b6b;
-      --accent: #FC0FC0;
-      --accent-soft: #ffe6f6;
-      --accent-strong: #a1007a;
-      --shadow: 0 12px 30px rgba(20, 20, 20, 0.08);
+      --line: #e8e4de;
+      --text: #1a1714;
+      --muted: #8a857d;
+      --muted-light: #9a9a9a;
+      --accent: #ff5b7f;
+      --accent-soft: #ffe8ed;
+      --accent-strong: #cc2952;
+      --shadow: 0 2px 12px rgba(0, 0, 0, 0.04);
     }
     
     body {
@@ -52,7 +53,7 @@
       font-size: 34px;
       font-weight: 400;
       margin: 0;
-      color: #FC0FC0;
+      color: var(--accent);
       font-family: "Nanum Pen Script", "Google Sans", "Segoe UI", Arial, sans-serif;
     }
 
@@ -235,16 +236,16 @@
     }
     
     .btn-primary {
-      background: #1f1f1f;
-      color: #ffffff;
+      background: var(--text);
+      color: var(--card);
     }
-    
+
     .btn-primary:hover {
       background: #111111;
     }
     
     .btn-secondary {
-      background: #ffffff;
+      background: var(--card);
       color: var(--text);
       border: 1px solid var(--line);
     }
@@ -312,7 +313,7 @@
     }
     
     .stat-label {
-      color: #9a9a9a;
+      color: var(--muted-light);
       margin-bottom: 2px;
     }
     
@@ -474,7 +475,7 @@
       border-radius: 6px;
       font-size: 11px;
       font-weight: 400;
-      color: #9a9a9a;
+      color: var(--muted-light);
       cursor: pointer;
       transition: all 0.15s ease;
     }
@@ -492,12 +493,12 @@
     .empty-state {
       text-align: center;
       padding: 60px 20px;
-      color: #9a9a9a;
+      color: var(--muted-light);
     }
     
     .empty-state h2 {
       font-size: 18px;
-      color: #6b6b6b;
+      color: var(--muted);
       margin-bottom: 8px;
     }
     
@@ -562,7 +563,7 @@
     
     .css-option-desc {
       font-size: 11px;
-      color: #9a9a9a;
+      color: var(--muted-light);
     }
     
     .existing-css-input {
@@ -686,7 +687,7 @@
     
     .adapt-header-text p {
       font-size: 12px;
-      color: #6b6b6b;
+      color: var(--muted);
       margin: 0;
     }
     
@@ -708,7 +709,7 @@
       cursor: pointer;
       font-size: 13px;
       font-weight: 400;
-      color: #6b6b6b;
+      color: var(--muted);
       transition: all 0.2s ease;
     }
     
@@ -755,7 +756,7 @@
     }
     
     .adapt-textarea::placeholder {
-      color: #9a9a9a;
+      color: var(--muted-light);
     }
     
     .adapt-actions {
@@ -885,7 +886,7 @@
     }
     
     .mapping-from {
-      color: #9a9a9a;
+      color: var(--muted-light);
       font-family: "Google Sans", "Segoe UI", Arial, sans-serif;
       flex: 1;
     }
@@ -1073,7 +1074,7 @@
       padding: 2px 8px;
       border-radius: 10px;
       background: #f1f1f1;
-      color: #6b6b6b;
+      color: var(--muted);
       font-weight: 400;
     }
     
@@ -1397,7 +1398,7 @@
     
     .shadcn-building-step {
       font-size: 12px;
-      color: #9a9a9a;
+      color: var(--muted-light);
     }
     
     .shadcn-error {
@@ -1474,7 +1475,7 @@
       border: none;
       font-size: 24px;
       cursor: pointer;
-      color: #9a9a9a;
+      color: var(--muted-light);
       padding: 4px;
     }
     
@@ -1510,7 +1511,7 @@
     
     .form-hint {
       font-size: 12px;
-      color: #9a9a9a;
+      color: var(--muted-light);
       margin-top: 8px;
       line-height: 1.4;
     }
@@ -1605,7 +1606,7 @@
     
     .extraction-subtitle {
       font-size: 14px;
-      color: #6b6b6b;
+      color: var(--muted);
       margin-bottom: 24px;
     }
     
@@ -1655,7 +1656,7 @@
       background: #f7f7f7;
       border-radius: 8px;
       font-size: 12px;
-      color: #6b6b6b;
+      color: var(--muted);
     }
     
     .extraction-element-count strong {
@@ -1665,7 +1666,7 @@
     .extraction-tip {
       margin-top: 20px;
       font-size: 12px;
-      color: #9a9a9a;
+      color: var(--muted-light);
       font-style: italic;
     }
   </style>
@@ -1897,7 +1898,7 @@ container: .container, .wrapper, .box"></textarea>
                 <span class="preview-badge" id="previewBadge" style="display: none;">0 matches</span>
               </div>
               <div id="mappingList">
-                <div style="color: #9a9a9a; text-align: center; padding: 20px; font-size: 12px;">
+                <div style="color: var(--muted-light); text-align: center; padding: 20px; font-size: 12px;">
                   Paste your CSS above and click "Analyze & Adapt" to see what can be mapped.
                 </div>
               </div>
