@@ -26,6 +26,91 @@
     let editHistory = []; // Array of { element, selector, originalStyles, changes: [] }
     let debounceTimers = {}; // For debouncing input handlers
 
+    // Freeze screen state
+    let isFrozen = false;
+    let freezeOverlay = null;
+    let freezeBadge = null;
+    let freezeStyleEl = null;
+
+    function activateFreezeScreen() {
+        if (isFrozen) return;
+        isFrozen = true;
+
+        freezeOverlay = document.createElement('div');
+        freezeOverlay.setAttribute('data-plucker-freeze', 'true');
+        freezeOverlay.style.cssText = `
+            position: fixed !important;
+            inset: 0 !important;
+            z-index: 2147483646 !important;
+            background: transparent !important;
+            pointer-events: all !important;
+            cursor: crosshair !important;
+        `;
+        freezeOverlay.addEventListener('click', deactivateFreezeScreen);
+        document.body.appendChild(freezeOverlay);
+
+        freezeStyleEl = document.createElement('style');
+        freezeStyleEl.setAttribute('data-plucker-freeze', 'true');
+        freezeStyleEl.textContent = `
+            [role="alert"], [aria-live], [class*="toast"], [class*="Toast"],
+            [class*="notification"], [class*="Notification"], [class*="snack"], [class*="Snack"] {
+                animation-play-state: paused !important;
+                opacity: 1 !important;
+                transition: none !important;
+            }
+        `;
+        document.head.appendChild(freezeStyleEl);
+
+        freezeBadge = document.createElement('div');
+        freezeBadge.setAttribute('data-plucker-freeze', 'true');
+        freezeBadge.style.cssText = `
+            position: fixed !important;
+            top: 12px !important;
+            left: 50% !important;
+            transform: translateX(-50%) !important;
+            z-index: 2147483647 !important;
+            background: #1e40af !important;
+            color: #fff !important;
+            padding: 4px 12px !important;
+            border-radius: 20px !important;
+            font-size: 11px !important;
+            font-weight: 600 !important;
+            font-family: system-ui, sans-serif !important;
+            pointer-events: none !important;
+            letter-spacing: 0.04em !important;
+            white-space: nowrap !important;
+        `;
+        freezeBadge.textContent = '❄ FROZEN — click anywhere to unfreeze';
+        document.body.appendChild(freezeBadge);
+
+        chrome.runtime.sendMessage({ type: 'FREEZE_STATE_CHANGED', frozen: true });
+    }
+
+    function deactivateFreezeScreen() {
+        if (!isFrozen) return;
+        isFrozen = false;
+
+        freezeOverlay?.remove();
+        freezeOverlay = null;
+        freezeBadge?.remove();
+        freezeBadge = null;
+        freezeStyleEl?.remove();
+        freezeStyleEl = null;
+
+        chrome.runtime.sendMessage({ type: 'FREEZE_STATE_CHANGED', frozen: false });
+    }
+
+    function toggleFreezeScreen() {
+        isFrozen ? deactivateFreezeScreen() : activateFreezeScreen();
+    }
+
+    document.addEventListener('keydown', (e) => {
+        if (e.altKey && (e.key === 'f' || e.key === 'F')) {
+            e.preventDefault();
+            toggleFreezeScreen();
+        }
+    });
+
     function createOverlay() {
         if (document.getElementById('ai-design-copier-overlay')) {
             overlay = document.getElementById('ai-design-copier-overlay');
@@ -4189,7 +4274,21 @@
         { index: 8,  stepKey: 'heading',          label: 'Heading',                prompt: 'Click a <strong>Heading</strong>',                  sub: 'An h1, h2, or page title',                   auto: false, skippable: false },
         { index: 9,  stepKey: 'bodyText',         label: 'Body Text',              prompt: 'Click a <strong>Paragraph or Body Text</strong>',   sub: 'Normal content text',                        auto: false, skippable: false },
         { index: 10, stepKey: 'destructive',      label: 'Danger Button',          prompt: 'Click a <strong>Delete / Danger Button</strong>',   sub: 'Red or warning action button',               auto: false, skippable: true  },
-        { index: 11, stepKey: 'accent',           label: 'Link / Accent',          prompt: 'Click a <strong>Link or Accent Element</strong>',   sub: 'An inline link or highlighted text',         auto: false, skippable: true  },
+        { index: 11, stepKey: 'accent',           label: 'Link / Accent',          prompt: 'Click a <strong>Link or Accent Element</strong>',        sub: 'An inline link or highlighted text',                        auto: false, skippable: true  },
+        { index: 12, stepKey: 'avatar',           label: 'Avatar',                 prompt: 'Click an <strong>Avatar</strong>',                        sub: 'A profile picture or user icon',                            auto: false, skippable: true  },
+        { index: 13, stepKey: 'checkbox',         label: 'Checkbox',               prompt: 'Click a <strong>Checkbox</strong>',                       sub: 'A checkable input element',                                 auto: false, skippable: true  },
+        { index: 14, stepKey: 'radio',            label: 'Radio Button',           prompt: 'Click a <strong>Radio Button</strong>',                   sub: 'A radio/option input element',                              auto: false, skippable: true  },
+        { index: 15, stepKey: 'switch',           label: 'Switch / Toggle',        prompt: 'Click a <strong>Switch or Toggle</strong>',               sub: 'An on/off toggle control',                                  auto: false, skippable: true  },
+        { index: 16, stepKey: 'select',           label: 'Select',                 prompt: 'Click a <strong>Select / Dropdown Input</strong>',        sub: 'A native or custom select/combobox element',                auto: false, skippable: true  },
+        { index: 17, stepKey: 'table',            label: 'Table',                  prompt: 'Click a <strong>Table or Data Grid</strong>',             sub: 'Click any cell, row, or the table container',               auto: false, skippable: true  },
+        { index: 18, stepKey: 'accordion',        label: 'Accordion',              prompt: 'Click an <strong>Accordion Header</strong>',              sub: 'A collapsible section toggle',                              auto: false, skippable: true  },
+        { index: 19, stepKey: 'alert',            label: 'Alert',                  prompt: 'Click an <strong>Alert or Banner</strong>',               sub: 'An info, success, warning, or error message block',         auto: false, skippable: true  },
+        { index: 20, stepKey: 'toast',            label: 'Toast',                  prompt: 'Click a <strong>Toast Notification</strong>',             sub: 'Pause first, trigger a toast, then click it',               auto: false, skippable: true  },
+        { index: 21, stepKey: 'tooltip',          label: 'Tooltip',                prompt: 'Click a <strong>Tooltip</strong>',                        sub: 'Pause first, hover to reveal the tooltip, then click',      auto: false, skippable: true  },
+        { index: 22, stepKey: 'dropdown',         label: 'Dropdown Menu',          prompt: 'Click a <strong>Dropdown Menu Item</strong>',             sub: 'Pause first, open the menu, then click a menu item',        auto: false, skippable: true  },
+        { index: 23, stepKey: 'contextMenu',      label: 'Context Menu',           prompt: 'Click a <strong>Context Menu Item</strong>',              sub: 'Pause first, right-click to open, then click an item',      auto: false, skippable: true  },
+        { index: 24, stepKey: 'drawer',           label: 'Drawer / Modal',         prompt: 'Click a <strong>Drawer or Modal</strong>',                sub: 'Pause first, open the drawer or modal, then click inside',  auto: false, skippable: true  },
+        { index: 25, stepKey: 'sidebarPanel',     label: 'Sidebar Panel',          prompt: 'Click a <strong>Sidebar Panel</strong>',                  sub: 'A collapsible or slide-in content panel',                   auto: false, skippable: true  },
     ];
 
     let _dsGuidedClickHandler = null;
@@ -4301,7 +4400,7 @@
             removeDsBuilderPanel();
             if (overlay) overlay.style.display = 'none';
             _dsRemoveGuidedClickHandler();
-            chrome.runtime.sendMessage({ type: 'DS_BUILDER_CANCELLED' });
+            chrome.runtime.sendMessage({ type: 'DS_STEP_SELECTION_CANCELLED' });
         });
 
         if (paused) {
@@ -4335,6 +4434,7 @@
         document.getElementById('plukrr-ds-builder-panel')?.remove();
         document.getElementById('plkr-ds-builder-style')?.remove();
         _dsRemoveGuidedClickHandler();
+        if (overlay) overlay.style.display = 'none';
         _dsPausedStep = null;
         _dsPausedIndex = null;
     }
@@ -4532,6 +4632,174 @@
                 ring: toH(s.color),
             };
         }
+        if (key === 'pageBackground') {
+            return {
+                background: _dsToHex(resolveBackground(el)) || '#FFFFFF',
+                foreground: toH(s.color),
+            };
+        }
+        if (key === 'avatar') {
+            const bg = surfaceBg(el);
+            return {
+                avatarBackground: bg,
+                avatarBorderRadius: s.borderRadius,
+                avatarBorderColor: s.borderTopWidth !== '0px' ? toH(s.borderTopColor) : null,
+                avatarBorderWidth: s.borderTopWidth !== '0px' ? s.borderTopWidth : null,
+                avatarSize: el.offsetWidth > 0 ? `${el.offsetWidth}px` : (s.width !== 'auto' ? s.width : null),
+                avatarBoxShadow: nonNone(s.boxShadow),
+            };
+        }
+        if (key === 'checkbox') {
+            const bg = surfaceBg(el);
+            return {
+                checkboxBackground: bg,
+                checkboxBorderColor: toH(s.borderTopColor),
+                checkboxBorderWidth: s.borderTopWidth !== '0px' ? s.borderTopWidth : null,
+                checkboxBorderRadius: s.borderRadius,
+                checkboxSize: el.offsetWidth > 0 ? `${el.offsetWidth}px` : (s.width !== 'auto' ? s.width : null),
+            };
+        }
+        if (key === 'radio') {
+            const bg = surfaceBg(el);
+            return {
+                radioBackground: bg,
+                radioBorderColor: toH(s.borderTopColor),
+                radioBorderWidth: s.borderTopWidth !== '0px' ? s.borderTopWidth : null,
+                radioSize: el.offsetWidth > 0 ? `${el.offsetWidth}px` : (s.width !== 'auto' ? s.width : null),
+            };
+        }
+        if (key === 'switch') {
+            const bg = surfaceBg(el);
+            return {
+                switchBackground: bg,
+                switchBorderRadius: s.borderRadius,
+                switchWidth: s.width !== 'auto' ? s.width : null,
+                switchHeight: s.height !== 'auto' ? s.height : null,
+            };
+        }
+        if (key === 'select') {
+            const bg = surfaceBg(el);
+            return {
+                selectBackground: bg,
+                selectBorderColor: toH(s.borderTopColor),
+                selectBorderRadius: s.borderRadius,
+                selectBorderWidth: s.borderTopWidth !== '0px' ? s.borderTopWidth : null,
+                selectHeight: s.height !== 'auto' ? s.height : null,
+                selectPaddingTop: s.paddingTop !== '0px' ? s.paddingTop : null,
+                selectPaddingRight: s.paddingRight !== '0px' ? s.paddingRight : null,
+                selectFontSize: s.fontSize,
+            };
+        }
+        if (key === 'table') {
+            const bg = surfaceBg(el);
+            return {
+                tableBackground: bg,
+                tableBorderColor: toH(s.borderTopColor),
+                tableBorderWidth: s.borderTopWidth !== '0px' ? s.borderTopWidth : null,
+                tableCellPaddingTop: s.paddingTop !== '0px' ? s.paddingTop : null,
+                tableCellPaddingRight: s.paddingRight !== '0px' ? s.paddingRight : null,
+                tableFontSize: s.fontSize,
+            };
+        }
+        if (key === 'accordion') {
+            const bg = surfaceBg(el);
+            return {
+                accordionBackground: bg,
+                accordionBorderColor: toH(s.borderTopColor),
+                accordionBorderRadius: s.borderRadius,
+                accordionHeaderFontWeight: s.fontWeight,
+                accordionHeaderFontSize: s.fontSize,
+                accordionPaddingTop: s.paddingTop !== '0px' ? s.paddingTop : null,
+                accordionPaddingRight: s.paddingRight !== '0px' ? s.paddingRight : null,
+            };
+        }
+        if (key === 'alert') {
+            const bg = surfaceBg(el);
+            return {
+                alertBackground: bg,
+                alertForeground: toH(s.color),
+                alertBorderColor: toH(s.borderTopColor),
+                alertBorderRadius: s.borderRadius,
+                alertBorderWidth: s.borderTopWidth !== '0px' ? s.borderTopWidth : null,
+                alertPaddingTop: s.paddingTop !== '0px' ? s.paddingTop : null,
+                alertPaddingRight: s.paddingRight !== '0px' ? s.paddingRight : null,
+            };
+        }
+        if (key === 'toast') {
+            const bg = surfaceBg(el);
+            return {
+                toastBackground: bg,
+                toastForeground: toH(s.color),
+                toastBorderRadius: s.borderRadius,
+                toastBorderColor: s.borderTopWidth !== '0px' ? toH(s.borderTopColor) : null,
+                toastBoxShadow: nonNone(s.boxShadow),
+                toastPaddingTop: s.paddingTop !== '0px' ? s.paddingTop : null,
+                toastPaddingRight: s.paddingRight !== '0px' ? s.paddingRight : null,
+                toastFontSize: s.fontSize,
+            };
+        }
+        if (key === 'tooltip') {
+            const bg = surfaceBg(el);
+            return {
+                tooltipBackground: bg,
+                tooltipForeground: toH(s.color),
+                tooltipBorderRadius: s.borderRadius,
+                tooltipFontSize: s.fontSize,
+                tooltipPaddingTop: s.paddingTop !== '0px' ? s.paddingTop : null,
+                tooltipPaddingRight: s.paddingRight !== '0px' ? s.paddingRight : null,
+                tooltipBoxShadow: nonNone(s.boxShadow),
+            };
+        }
+        if (key === 'dropdown') {
+            const bg = surfaceBg(el);
+            return {
+                dropdownBackground: bg,
+                dropdownForeground: toH(s.color),
+                dropdownBorderColor: s.borderTopWidth !== '0px' ? toH(s.borderTopColor) : null,
+                dropdownBorderRadius: s.borderRadius,
+                dropdownBoxShadow: nonNone(s.boxShadow),
+                dropdownItemFontSize: s.fontSize,
+                dropdownPaddingTop: s.paddingTop !== '0px' ? s.paddingTop : null,
+                dropdownPaddingRight: s.paddingRight !== '0px' ? s.paddingRight : null,
+            };
+        }
+        if (key === 'contextMenu') {
+            const bg = surfaceBg(el);
+            return {
+                contextMenuBackground: bg,
+                contextMenuForeground: toH(s.color),
+                contextMenuBorderColor: s.borderTopWidth !== '0px' ? toH(s.borderTopColor) : null,
+                contextMenuBorderRadius: s.borderRadius,
+                contextMenuBoxShadow: nonNone(s.boxShadow),
+                contextMenuFontSize: s.fontSize,
+                contextMenuPaddingTop: s.paddingTop !== '0px' ? s.paddingTop : null,
+                contextMenuPaddingRight: s.paddingRight !== '0px' ? s.paddingRight : null,
+            };
+        }
+        if (key === 'drawer') {
+            const bg = surfaceBg(el);
+            return {
+                drawerBackground: bg,
+                drawerForeground: toH(s.color),
+                drawerBorderRadius: s.borderRadius,
+                drawerBorderColor: s.borderTopWidth !== '0px' ? toH(s.borderTopColor) : null,
+                drawerBoxShadow: nonNone(s.boxShadow),
+                drawerPaddingTop: s.paddingTop !== '0px' ? s.paddingTop : null,
+                drawerPaddingRight: s.paddingRight !== '0px' ? s.paddingRight : null,
+            };
+        }
+        if (key === 'sidebarPanel') {
+            const bg = surfaceBg(el);
+            return {
+                sidebarPanelBackground: bg,
+                sidebarPanelForeground: toH(s.color),
+                sidebarPanelBorderColor: s.borderTopWidth !== '0px' ? toH(s.borderTopColor) : null,
+                sidebarPanelWidth: s.width !== 'auto' ? s.width : null,
+                sidebarPanelBoxShadow: nonNone(s.boxShadow),
+                sidebarPanelPaddingTop: s.paddingTop !== '0px' ? s.paddingTop : null,
+                sidebarPanelPaddingRight: s.paddingRight !== '0px' ? s.paddingRight : null,
+            };
+        }
         return {};
     }
 
@@ -4578,6 +4846,45 @@
             }
         }
 
+        const isFormControl = stepKey === 'checkbox' || stepKey === 'radio' || stepKey === 'switch' || stepKey === 'select';
+        const isOverlay = stepKey === 'tooltip' || stepKey === 'dropdown' || stepKey === 'contextMenu' || stepKey === 'drawer' || stepKey === 'toast' || stepKey === 'sidebarPanel';
+        const isAvatar = stepKey === 'avatar';
+
+        if (isFormControl) {
+            let cur = el;
+            while (cur && cur !== document.body) {
+                const tag = cur.tagName?.toLowerCase();
+                if (tag === 'input' || tag === 'select') return cur;
+                const role = cur.getAttribute('role');
+                if (role === 'checkbox' || role === 'radio' || role === 'switch' || role === 'combobox' || role === 'listbox') return cur;
+                const cs = window.getComputedStyle(cur);
+                if (cs.borderTopWidth && cs.borderTopWidth !== '0px' && cur !== el) return cur;
+                cur = cur.parentElement;
+            }
+        }
+
+        if (isOverlay) {
+            let cur = el;
+            while (cur && cur !== document.body) {
+                const role = cur.getAttribute('role');
+                if (role === 'tooltip' || role === 'dialog' || role === 'alertdialog' || role === 'menu' || role === 'listbox') return cur;
+                if (!_dsIsTransparent(window.getComputedStyle(cur).backgroundColor)) return cur;
+                cur = cur.parentElement;
+            }
+        }
+
+        if (isAvatar) {
+            let cur = el;
+            while (cur && cur !== document.body) {
+                if (cur.tagName?.toLowerCase() === 'img') return cur;
+                const cs = window.getComputedStyle(cur);
+                const br = parseFloat(cs.borderRadius);
+                if (br >= 50 || cs.borderRadius === '50%') return cur;
+                if (!_dsIsTransparent(cs.backgroundColor)) return cur;
+                cur = cur.parentElement;
+            }
+        }
+
         return el;
     }
 
@@ -4607,13 +4914,13 @@
         const bodyS = window.getComputedStyle(document.body);
         const htmlS = window.getComputedStyle(document.documentElement);
         const bg = !_dsIsTransparent(bodyS.backgroundColor) ? bodyS.backgroundColor
-                 : (!_dsIsTransparent(htmlS.backgroundColor) ? htmlS.backgroundColor : null);
+                 : (!_dsIsTransparent(htmlS.backgroundColor) ? htmlS.backgroundColor
+                 : 'rgb(255, 255, 255)');
         const fg = !_dsIsTransparent(bodyS.color) ? bodyS.color : null;
         const styles = {
-            background: _dsToHex(bg) || null,
+            background: _dsToHex(bg) || '#FFFFFF',
             foreground: _dsToHex(fg) || null,
         };
-        _dsBuilderCompletedSteps.push(stepDef.label);
         chrome.runtime.sendMessage({ type: 'DS_STEP_COMPLETED', stepKey: stepDef.stepKey, styles, stepIndex });
     }
 
@@ -4623,6 +4930,12 @@
 
 
     chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+        if (request.action === 'TOGGLE_FREEZE') {
+            toggleFreezeScreen();
+            sendResponse({ status: 'ok', frozen: isFrozen });
+            return true;
+        }
+
         // Style injection commands
         if (request.action === 'INJECT_STYLES') {
             const success = injectStyles(request.css);
@@ -4733,7 +5046,6 @@
 
         if (request.action === 'CANCEL_DS_BUILDER') {
             removeDsBuilderPanel();
-            cancelSelection();
             sendResponse({ status: 'cancelled' });
             return true;
         }

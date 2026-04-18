@@ -14,6 +14,7 @@ let cachedScreenshot = null; // JPEG data URL, shared across all detail views in
 let dsBuilderData = null;
 let currentDsStep = 0;
 let dsBuilderPaused = false;
+let pageFrozen = false;
 /** URLs from the multi-page prompt; re-used when the user clicks Refresh. */
 let sessionAdditionalScanUrls = [];
 
@@ -627,8 +628,32 @@ function renderTopbar(mode, title) {
                     <svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg>Back
                 </button>
                 <span class="topbar-title" style="font-size:15px;">${escHtml(title || '')}</span>
+            </div>
+            <div class="topbar-right">
+                <button class="icon-btn${pageFrozen ? ' icon-btn--freeze-active' : ''}" id="freezeBtn"
+                    title="${pageFrozen ? 'Unfreeze screen (Alt+F)' : 'Freeze screen (Alt+F)'}">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="12" y1="2" x2="12" y2="22"/>
+                        <line x1="2" y1="12" x2="22" y2="12"/>
+                        <line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/>
+                        <line x1="19.07" y1="4.93" x2="4.93" y2="19.07"/>
+                        <circle cx="12" cy="12" r="2"/>
+                        <line x1="12" y1="2" x2="10" y2="5"/>
+                        <line x1="12" y1="2" x2="14" y2="5"/>
+                        <line x1="12" y1="22" x2="10" y2="19"/>
+                        <line x1="12" y1="22" x2="14" y2="19"/>
+                        <line x1="2" y1="12" x2="5" y2="10"/>
+                        <line x1="2" y1="12" x2="5" y2="14"/>
+                        <line x1="22" y1="12" x2="19" y2="10"/>
+                        <line x1="22" y1="12" x2="19" y2="14"/>
+                    </svg>
+                </button>
             </div>`;
         document.getElementById('backBtn').addEventListener('click', goBack);
+        document.getElementById('freezeBtn')?.addEventListener('click', async () => {
+            const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+            if (tab?.id) chrome.tabs.sendMessage(tab.id, { action: 'TOGGLE_FREEZE' });
+        });
     }
 }
 
@@ -1408,6 +1433,19 @@ function setupMainListeners() {
         if (message.type === 'DS_BUILDER_FINISHED') {
             finalizeDsBuilder();
         }
+        if (message.type === 'FREEZE_STATE_CHANGED') {
+            pageFrozen = message.frozen;
+            const btn = document.getElementById('freezeBtn');
+            if (btn) {
+                btn.classList.toggle('icon-btn--freeze-active', message.frozen);
+                btn.title = message.frozen ? 'Unfreeze screen (Alt+F)' : 'Freeze screen (Alt+F)';
+            }
+            return;
+        }
+        if (message.type === 'DS_STEP_SELECTION_CANCELLED') {
+            renderDsBuilderSidebar();
+            return;
+        }
         if (message.type === 'DS_BUILDER_CANCELLED') {
             dsBuilderData = null;
             currentDsStep = 0;
@@ -1449,7 +1487,7 @@ function handleGetDesignMd() {
 // DS BUILDER (GUIDED MODE)
 // ============================================
 
-const DS_BUILDER_TOTAL_STEPS = 12;
+const DS_BUILDER_TOTAL_STEPS = 26;
 
 // Maps each step to the semantic token key to display in the sidebar progress list
 const DS_STEP_DISPLAY = [
@@ -1465,11 +1503,29 @@ const DS_STEP_DISPLAY = [
     { stepKey: 'bodyText',        label: 'Body Text',        valueKey: 'bodyFontFamily' },
     { stepKey: 'destructive',     label: 'Danger Button',    valueKey: 'destructive' },
     { stepKey: 'accent',          label: 'Link / Accent',    valueKey: 'accent' },
+    { stepKey: 'avatar',          label: 'Avatar',           valueKey: 'avatarBackground' },
+    { stepKey: 'checkbox',        label: 'Checkbox',         valueKey: 'checkboxBackground' },
+    { stepKey: 'radio',           label: 'Radio Button',     valueKey: 'radioBackground' },
+    { stepKey: 'switch',          label: 'Switch / Toggle',  valueKey: 'switchBackground' },
+    { stepKey: 'select',          label: 'Select',           valueKey: 'selectBackground' },
+    { stepKey: 'table',           label: 'Table',            valueKey: 'tableBackground' },
+    { stepKey: 'accordion',       label: 'Accordion',        valueKey: 'accordionBackground' },
+    { stepKey: 'alert',           label: 'Alert',            valueKey: 'alertBackground' },
+    { stepKey: 'toast',           label: 'Toast',            valueKey: 'toastBackground' },
+    { stepKey: 'tooltip',         label: 'Tooltip',          valueKey: 'tooltipBackground' },
+    { stepKey: 'dropdown',        label: 'Dropdown Menu',    valueKey: 'dropdownBackground' },
+    { stepKey: 'contextMenu',     label: 'Context Menu',     valueKey: 'contextMenuBackground' },
+    { stepKey: 'drawer',          label: 'Drawer / Modal',   valueKey: 'drawerBackground' },
+    { stepKey: 'sidebarPanel',    label: 'Sidebar Panel',    valueKey: 'sidebarPanelBackground' },
 ];
 
 async function handleCreateDs() {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     if (!tab) { showStatus('error', 'No active tab found.'); return; }
+
+    // Clean up any lingering overlay or selection state from previous operations
+    chrome.tabs.sendMessage(tab.id, { action: 'CANCEL_DS_BUILDER' }, () => chrome.runtime.lastError);
+    chrome.tabs.sendMessage(tab.id, { action: 'CANCEL_SELECTION' }, () => chrome.runtime.lastError);
 
     // Seed from existing auto-scan data so colors/typography/spacing/layout are populated
     // even if the user skips those DS Builder steps.
@@ -1500,24 +1556,40 @@ async function handleCreateDs() {
         components:   [],
     };
 
+    currentDsStep = -1;
+    dsBuilderPaused = false;
+
     showBottomBar(false);
     renderTopbar('detail', 'Build DS');
     renderDsBuilderSidebar();
 
-    currentDsStep = 0;
     saveDsBuilderState();
-    chrome.tabs.sendMessage(tab.id, { action: 'START_DS_BUILDER', stepIndex: 0 }, () => chrome.runtime.lastError);
+}
+
+async function handleDsSelectStep(stepIndex) {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!tab) { showStatus('error', 'No active tab found.'); return; }
+    currentDsStep = stepIndex;
+    dsBuilderPaused = false;
+    renderDsBuilderSidebar();
+    chrome.tabs.sendMessage(tab.id, { action: 'START_DS_BUILDER', stepIndex, fresh: true }, () => chrome.runtime.lastError);
+}
+
+async function handleDsCancelSelectStep() {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (tab) chrome.tabs.sendMessage(tab.id, { action: 'CANCEL_DS_BUILDER' }, () => chrome.runtime.lastError);
+    currentDsStep = -1;
+    renderDsBuilderSidebar();
 }
 
 function accumulateStep(stepKey, styles, stepIndex) {
     if (!dsBuilderData) return;
     const st = dsBuilderData.semanticTokens;
 
-    // Track step status
-    dsBuilderData.stepStatuses[stepKey] = styles ? 'completed' : 'skipped';
     dsBuilderPaused = false;
 
     if (styles) {
+        dsBuilderData.stepStatuses[stepKey] = 'completed';
         // Write each style value into semanticTokens
         for (const [k, v] of Object.entries(styles)) {
             if (v) st[k] = { value: v, source: 'user-verified', confidence: 1, stepKey };
@@ -1554,18 +1626,14 @@ function accumulateStep(stepKey, styles, stepIndex) {
             dsBuilderData.colors.borders.push({ hex: styles.border, count: 10 });
         }
     }
+    // If styles is null (skip was clicked), keep the step as pending (no status set)
 
-    const nextIndex = stepIndex + 1;
-    if (nextIndex >= DS_BUILDER_TOTAL_STEPS) {
-        finalizeDsBuilder();
-        return;
-    }
-
-    currentDsStep = nextIndex;
+    // Return to free-selection list — don't auto-advance
+    currentDsStep = -1;
     saveDsBuilderState();
     renderDsBuilderSidebar();
     chrome.tabs.query({ active: true, currentWindow: true }, ([tab]) => {
-        if (tab) chrome.tabs.sendMessage(tab.id, { action: 'START_DS_BUILDER', stepIndex: nextIndex }, () => chrome.runtime.lastError);
+        if (tab) chrome.tabs.sendMessage(tab.id, { action: 'CANCEL_DS_BUILDER' }, () => chrome.runtime.lastError);
     });
 }
 
@@ -1826,9 +1894,8 @@ function buildScanDataFromDsBuilderData(dsb) {
 
 async function saveDsBuilderState() {
     try {
-        // Only persist if the user has completed at least one step — avoids
-        // the sidebar reopening on the DS Builder view when it was closed at step 0.
-        if (dsBuilderData && currentDsStep > 0) {
+        // Only persist after at least one step has been manually completed.
+        if (dsBuilderData && Object.keys(dsBuilderData.stepStatuses || {}).length > 0) {
             await chrome.storage.local.set({ dsBuilderState: { data: dsBuilderData, step: currentDsStep } });
         } else {
             await chrome.storage.local.remove('dsBuilderState');
@@ -1842,18 +1909,11 @@ async function restoreDsBuilderState() {
         if (!result.dsBuilderState) return false;
         const saved = result.dsBuilderState;
         dsBuilderData = saved.data;
-        currentDsStep = saved.step || 0;
-        dsBuilderPaused = true; // always restore in paused state
+        currentDsStep = -1; // No step active on restore — user clicks Select to pick
+        dsBuilderPaused = false;
         showBottomBar(false);
         renderTopbar('detail', 'Build DS');
         renderDsBuilderSidebar();
-        // Re-inject panel in paused state on the current tab
-        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-        if (tab) {
-            setTimeout(() => {
-                chrome.tabs.sendMessage(tab.id, { action: 'START_DS_BUILDER', stepIndex: currentDsStep, fresh: true, paused: true }, () => chrome.runtime.lastError);
-            }, 600);
-        }
         return true;
     } catch (_) { return false; }
 }
@@ -1878,48 +1938,67 @@ function renderDsBuilderSidebar() {
 
     const st = dsBuilderData.semanticTokens;
     const statuses = dsBuilderData.stepStatuses;
-    const doneCount = Object.keys(statuses).length;
+
+    const doneCount = DS_STEP_DISPLAY.filter(step => {
+        const status = statuses[step.stepKey];
+        const val = st[step.valueKey]?.value;
+        return status === 'completed' || (val && status !== 'skipped');
+    }).length;
     const pct = Math.round((doneCount / DS_BUILDER_TOTAL_STEPS) * 100);
+
+    function _dsValHtml(val, colorTint) {
+        if (!val) return '';
+        if (/^#[0-9a-fA-F]{6}$/.test(val)) {
+            return `<span style="display:inline-flex;align-items:center;gap:3px"><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:${val};border:1px solid rgba(0,0,0,.1);flex-shrink:0"></span><span style="color:${colorTint};font-size:10px">${val}</span></span>`;
+        }
+        const name = val.split(',')[0].replace(/["']/g, '').trim().slice(0, 16);
+        return `<span style="color:${colorTint};font-size:10px">${name}</span>`;
+    }
 
     const rows = DS_STEP_DISPLAY.map((step, i) => {
         const status = statuses[step.stepKey];
-        const isCurrent = (i === currentDsStep) && !status;
-        const val = st[step.valueKey]?.value;
+        const tokenEntry = st[step.valueKey];
+        const val = tokenEntry?.value;
+        const isActivelySelecting = (i === currentDsStep);
 
-        let icon, valueHtml, iconColor, labelColor;
+        let icon, iconColor, labelColor, valueHtml, actionHtml;
 
-        if (status === 'completed') {
-            icon = '✓'; iconColor = '#10b981'; labelColor = '#111827';
-            if (val && /^#[0-9a-fA-F]{6}$/.test(val)) {
-                valueHtml = `<span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:${val};border:1px solid rgba(0,0,0,.1);vertical-align:middle;margin-right:4px"></span><span style="color:#6b7280;font-size:10px">${val}</span>`;
-            } else if (val) {
-                const name = val.split(',')[0].replace(/["']/g, '').trim().slice(0, 14);
-                valueHtml = `<span style="color:#6b7280;font-size:10px">${name}</span>`;
+        if (isActivelySelecting) {
+            if (dsBuilderPaused) {
+                icon = '⏸'; iconColor = '#f59e0b'; labelColor = '#111827';
+                valueHtml = `<span style="color:#f59e0b;font-size:10px;font-weight:600">paused</span>`;
             } else {
-                valueHtml = `<span style="color:#6b7280;font-size:10px">captured</span>`;
+                icon = '→'; iconColor = '#10b981'; labelColor = '#111827';
+                valueHtml = `<span style="color:#10b981;font-size:10px;font-weight:600">selecting…</span>`;
             }
+            actionHtml = `<button class="ds-cancel-btn" style="font-size:10px;color:#dc2626;background:none;border:none;cursor:pointer;padding:2px 6px;border-radius:4px;white-space:nowrap">Cancel</button>`;
+        } else if (status === 'completed') {
+            icon = '✓'; iconColor = '#10b981'; labelColor = '#111827';
+            valueHtml = val ? _dsValHtml(val, '#6b7280') : `<span style="color:#6b7280;font-size:10px">captured</span>`;
+            actionHtml = `<button class="ds-select-btn" data-idx="${i}" style="font-size:10px;color:#6b7280;background:none;border:1px solid #e5e7eb;cursor:pointer;padding:2px 8px;border-radius:4px;white-space:nowrap">Reselect</button>`;
+        } else if (val && status !== 'skipped') {
+            // Auto-extracted from page scan
+            icon = '◎'; iconColor = '#3b82f6'; labelColor = '#111827';
+            valueHtml = _dsValHtml(val, '#3b82f6') || `<span style="color:#3b82f6;font-size:10px">auto</span>`;
+            actionHtml = `<button class="ds-select-btn" data-idx="${i}" style="font-size:10px;color:#3b82f6;background:none;border:1px solid #bfdbfe;cursor:pointer;padding:2px 8px;border-radius:4px;white-space:nowrap">Reselect</button>`;
         } else if (status === 'skipped') {
             icon = '—'; iconColor = '#d1d5db'; labelColor = '#9ca3af';
             valueHtml = `<span style="color:#d1d5db;font-size:10px">skipped</span>`;
-        } else if (isCurrent) {
-            icon = dsBuilderPaused ? '⏸' : '→';
-            iconColor = dsBuilderPaused ? '#f59e0b' : '#10b981';
-            labelColor = '#111827';
-            valueHtml = dsBuilderPaused
-                ? `<span style="color:#f59e0b;font-size:10px;font-weight:600">paused</span>`
-                : `<span style="color:#10b981;font-size:10px;font-weight:600">selecting…</span>`;
+            actionHtml = `<button class="ds-select-btn" data-idx="${i}" style="font-size:10px;color:#6b7280;background:none;border:1px solid #e5e7eb;cursor:pointer;padding:2px 8px;border-radius:4px;white-space:nowrap">Select</button>`;
         } else {
-            icon = '○'; iconColor = '#e5e7eb'; labelColor = '#9ca3af';
-            valueHtml = '';
+            icon = '○'; iconColor = '#d1d5db'; labelColor = '#9ca3af';
+            valueHtml = `<span style="color:#d1d5db;font-size:10px">not found</span>`;
+            actionHtml = `<button class="ds-select-btn" data-idx="${i}" style="font-size:10px;color:#fff;background:#111827;border:none;cursor:pointer;padding:2px 8px;border-radius:4px;font-weight:500;white-space:nowrap">Select</button>`;
         }
 
-        return `<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid #f3f4f6">
-            <span style="width:14px;text-align:center;font-size:12px;color:${iconColor};flex-shrink:0">${icon}</span>
+        return `<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid #f3f4f6">
+            <span style="width:14px;text-align:center;font-size:11px;color:${iconColor};flex-shrink:0">${icon}</span>
             <span style="flex:1;font-size:12px;color:${labelColor}">${step.label}</span>
-            <span style="flex-shrink:0">${valueHtml}</span>
+            <span style="display:inline-flex;align-items:center;gap:6px;flex-shrink:0">${valueHtml}${actionHtml}</span>
         </div>`;
     }).join('');
 
+    const canGenerate = doneCount > 0;
     ca.innerHTML = `
         <div style="padding:14px">
             <div style="font-size:11px;color:#6b7280;margin-bottom:6px">${doneCount} of ${DS_BUILDER_TOTAL_STEPS} steps complete</div>
@@ -1927,17 +2006,19 @@ function renderDsBuilderSidebar() {
                 <div style="background:#10b981;height:4px;border-radius:4px;width:${pct}%;transition:width .3s"></div>
             </div>
             <div>${rows}</div>
-            ${doneCount > 0 ? `
             <div style="display:flex;gap:8px;margin-top:14px">
-                <button id="sidebarDsGenerate" style="flex:1;background:#10b981;color:#fff;border:none;border-radius:7px;padding:9px 0;font-size:12px;font-weight:600;cursor:pointer">Generate DS</button>
+                <button id="sidebarDsGenerate" style="flex:1;background:${canGenerate ? '#10b981' : '#e5e7eb'};color:${canGenerate ? '#fff' : '#9ca3af'};border:none;border-radius:7px;padding:9px 0;font-size:12px;font-weight:600;cursor:${canGenerate ? 'pointer' : 'default'}" ${canGenerate ? '' : 'disabled'}>Generate DS</button>
                 <button id="sidebarDsStop" style="background:#fee2e2;color:#dc2626;border:none;border-radius:7px;padding:9px 14px;font-size:12px;font-weight:500;cursor:pointer">Stop</button>
-            </div>` : `
-            <div style="margin-top:12px;padding:10px;background:#f0fdf4;border-radius:8px;font-size:11px;color:#059669">
-                <strong>Tip:</strong> Pause the selection on the panel to navigate to another page. The walkthrough resumes automatically.
-            </div>`}
+            </div>
         </div>`;
 
+    ca.querySelectorAll('.ds-select-btn').forEach(btn => {
+        btn.addEventListener('click', () => handleDsSelectStep(parseInt(btn.dataset.idx)));
+    });
+    ca.querySelector('.ds-cancel-btn')?.addEventListener('click', () => handleDsCancelSelectStep());
+
     document.getElementById('sidebarDsGenerate')?.addEventListener('click', () => {
+        if (!canGenerate) return;
         chrome.tabs.query({ active: true, currentWindow: true }, ([tab]) => {
             if (tab) chrome.tabs.sendMessage(tab.id, { action: 'CANCEL_DS_BUILDER' }, () => chrome.runtime.lastError);
         });
@@ -1948,9 +2029,9 @@ function renderDsBuilderSidebar() {
             if (tab) chrome.tabs.sendMessage(tab.id, { action: 'CANCEL_DS_BUILDER' }, () => chrome.runtime.lastError);
         });
         dsBuilderData = null;
-        currentDsStep = 0;
+        currentDsStep = -1;
         dsBuilderPaused = false;
-        saveDsBuilderState(); // clears storage
+        saveDsBuilderState();
         showBottomBar(true);
         if (scanData) renderOverview(scanData, scanData.pageUrl);
         else renderTopbar('overview');
