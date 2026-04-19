@@ -1721,7 +1721,10 @@ function renderDsBuilderSidebar() {
                 <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M2 5l2.5 2.5L8 3" stroke="#fff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
             </div>`;
             if (isAddingThis) {
-                btnHtml = `<span style="font-size:10px;color:#10b981;font-weight:600;white-space:nowrap">adding V${stepVariants.length + 1}…</span>`;
+                btnHtml = `<div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">
+                    <span style="font-size:10px;color:#10b981;font-weight:600;white-space:nowrap">adding V${stepVariants.length + 1}…</span>
+                    <button class="ds-step-cancel-btn" data-step="${i}" style="font-size:10px;padding:3px 8px;border-radius:5px;border:1px solid #d1d5db;background:#fff;color:#6b7280;cursor:pointer;font-weight:500;white-space:nowrap">✕ Cancel</button>
+                </div>`;
             } else if (isReselectingThis) {
                 btnHtml = `<div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">
                     <span style="font-size:10px;color:#d97706;font-weight:600;white-space:nowrap">selecting…</span>

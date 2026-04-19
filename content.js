@@ -4179,7 +4179,7 @@
         { index: 0,  stepKey: 'primaryButton',   label: 'Primary Button',    prompt: 'Click a <strong>Primary Button</strong>',                sub: 'The main CTA or submit button',              auto: false, skippable: false },
         { index: 1,  stepKey: 'secondaryButton', label: 'Secondary Button',  prompt: 'Click a <strong>Secondary Button</strong>',               sub: 'Outlined or ghost button variant',            auto: false, skippable: true  },
         { index: 2,  stepKey: 'input',           label: 'Input Field',       prompt: 'Click an <strong>Input Field</strong>',                   sub: 'Any text input or search box',               auto: false, skippable: false },
-        { index: 3,  stepKey: 'pageBackground',  label: 'Page Background',   prompt: 'Reading <strong>page background</strong>…',              sub: 'Auto-detected from document body',            auto: true,  skippable: false },
+        { index: 3,  stepKey: 'pageBackground',  label: 'Page Background',   prompt: 'Click the <strong>page background</strong>',             sub: 'Any background area or the main page surface', auto: false, skippable: false },
         { index: 4,  stepKey: 'card',            label: 'Card',              prompt: 'Click a <strong>Card or Surface</strong>',                sub: 'A raised or bordered content area',           auto: false, skippable: true  },
         { index: 5,  stepKey: 'muted',           label: 'Muted Surface',     prompt: 'Click a <strong>Muted / Secondary Surface</strong>',      sub: 'A subtle background or secondary panel',      auto: false, skippable: true  },
         { index: 6,  stepKey: 'navigation',      label: 'Navigation',        prompt: 'Click the <strong>Navigation Bar or Sidebar</strong>',    sub: 'The main nav or side menu',                   auto: false, skippable: true  },
@@ -4205,12 +4205,17 @@
     ];
 
     let _dsGuidedClickHandler = null;
+    let _dsEscapeHandler = null;
 
     function _dsRemoveGuidedClickHandler() {
         if (_dsGuidedClickHandler) {
             document.removeEventListener('click', _dsGuidedClickHandler, true);
             document.removeEventListener('mousemove', handleMouseMove);
             _dsGuidedClickHandler = null;
+        }
+        if (_dsEscapeHandler) {
+            document.removeEventListener('keydown', _dsEscapeHandler);
+            _dsEscapeHandler = null;
         }
     }
 
@@ -4314,6 +4319,13 @@
                 inputPaddingRight: s.paddingRight,
                 inputFontSize: s.fontSize,
                 inputFontFamily: s.fontFamily,
+            };
+        }
+        if (key === 'pageBackground') {
+            const bg = surfaceBg(el);
+            return {
+                background: bg,
+                foreground: toH(window.getComputedStyle(document.body).color) || null,
             };
         }
         if (key === 'card') {
@@ -4612,6 +4624,7 @@
     }
 
     function startGuidedStep(stepDef, stepIndex) {
+        _dsRemoveGuidedClickHandler();
         createOverlay();
         document.addEventListener('mousemove', handleMouseMove);
 
@@ -4629,7 +4642,18 @@
             const styles = extractGuidedStyles(el, stepDef);
             chrome.runtime.sendMessage({ type: 'DS_STEP_COMPLETED', stepKey: stepDef.stepKey, styles, stepIndex });
         };
+
+        _dsEscapeHandler = function(e) {
+            if (e.key === 'Escape') {
+                e.preventDefault();
+                _dsRemoveGuidedClickHandler();
+                cancelSelection();
+                chrome.runtime.sendMessage({ type: 'DS_BUILDER_CANCELLED' });
+            }
+        };
+
         document.addEventListener('click', _dsGuidedClickHandler, true);
+        document.addEventListener('keydown', _dsEscapeHandler);
     }
 
     function autoCaptureBodyStep(stepDef, stepIndex) {
