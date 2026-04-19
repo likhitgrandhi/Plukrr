@@ -16,12 +16,19 @@ let currentDsStep = -1;
 let dsBuilderPaused = false;
 let isAddingVariantFor = null; // stepKey string while adding a new variant, null otherwise
 let isReselectingFor = null;  // stepKey string while reselecting a completed step, null otherwise
+let _dsActiveTabId = null;    // tab ID that most recently received START_DS_BUILDER, for cleanup on close
 
 // ============================================
 // INIT
 // ============================================
 
 document.addEventListener('DOMContentLoaded', () => initSidebar());
+
+window.addEventListener('unload', () => {
+    if (_dsActiveTabId !== null && currentDsStep >= 0) {
+        chrome.tabs.sendMessage(_dsActiveTabId, { action: 'CANCEL_DS_BUILDER' }, () => chrome.runtime.lastError);
+    }
+});
 
 async function initSidebar() {
     try {
@@ -1795,6 +1802,7 @@ function renderDsBuilderSidebar() {
             renderDsBuilderSidebar();
             const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
             if (!tab) return;
+            _dsActiveTabId = tab.id;
             try { await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['content.js'] }); } catch (_) {}
             chrome.tabs.sendMessage(tab.id, { action: 'START_DS_BUILDER', stepIndex, stepKey: DS_STEP_DISPLAY[stepIndex].stepKey, fresh: true }, () => chrome.runtime.lastError);
         });
@@ -1840,6 +1848,7 @@ function renderDsBuilderSidebar() {
             renderDsBuilderSidebar();
             const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
             if (!tab) return;
+            _dsActiveTabId = tab.id;
             try { await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['content.js'] }); } catch (_) {}
             chrome.tabs.sendMessage(tab.id, { action: 'START_DS_BUILDER', stepIndex, stepKey, fresh: true }, () => chrome.runtime.lastError);
         });
