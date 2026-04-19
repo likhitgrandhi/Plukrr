@@ -132,7 +132,7 @@ export default function Gallery() {
     <div className="gallery-root">
       {/* Top Nav */}
       <header className="gallery-topnav">
-        <span className="gallery-logo">
+        <button className="gallery-logo" onClick={() => navigate('/')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, color: 'inherit', display: 'flex', alignItems: 'center' }}>
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 170 50" height="40" aria-label="Plukrr">
             <path fill="currentColor" d="m2 4.7h16.1c8.8 0 16.3 3.8 16.3 13.2 0 6.7-4.1 13.4-14.4 13.4h-6v5.3c0 3.9 0.7 6.5 2.4 8.8 0.3 0.5 0.3 1.1-0.2 1.1h-13.8c-0.5 0.1-0.5-0.6-0.2-1.1 1.6-2.6 2.2-5.5 2.2-8.8v-21.9c0-3.6-0.8-6.3-2.2-8.7-0.3-0.7-0.3-1.3-0.2-1.3zm12 3.2v20.2h2.5c4.3 0 6.8-3.3 6.8-10.2 0-6.2-2.7-10-7-10h-2.3z"/>
             <path fill="currentColor" d="m35.4 5.9 11.4-3.9c0.7-0.2 0.8 0.1 0.8 0.6v34.8c0 3.8 0.5 5.9 1.9 8.2 0.3 0.5 0.2 0.9-0.2 0.9h-13.7c-0.5 0-0.5-0.4-0.2-0.9 1.1-2.2 1.8-4.8 1.8-8.2v-23c0-3.6-0.7-5.5-2.1-7.5-0.4-0.4-0.2-0.9 0.3-1z"/>
@@ -141,7 +141,7 @@ export default function Gallery() {
             <path fill="currentColor" d="m117.3 19.6 10.3-3.5c0.8-0.3 1 0.1 1.1 0.6l0.3 6.3c1.5-3.8 4.2-7.1 8.2-7.1 3.2 0 5.7 1.8 5.8 5.1 0.1 3-2.1 6.6-5 6.6-0.7 0-2.1-0.1-2.1-0.9-0.1-1.6-1-3.7-2.8-3.6-2.1 0.2-3.3 2.4-3.3 6.3v8.9c0 3.1 0.7 5.5 2.2 7.3 0.4 0.6 0.4 0.9 0 1h-14c-0.4 0-0.4-0.6 0-1.3 1.1-1.9 1.5-4.3 1.5-7v-10.1c0-3.6-0.9-5.6-2.4-7.7-0.3-0.4-0.3-0.7 0.2-0.9z"/>
             <path fill="currentColor" d="m144.2 19.4 9.8-3.4c0.5-0.1 1-0.1 1.1 0.7l0.4 6.5c1.5-3.8 4.1-7.2 8-7.3 3.1-0.1 5.3 1.9 5.4 4.9 0 2.8-2 6.8-4.9 6.8-0.6 0-2-0.1-2-0.8-0.1-1.7-1-3.8-2.8-3.7-2.3 0.1-3 2.5-2.9 6.3v9.3c0 3.1 0.6 5.2 2 6.8 0.3 0.4 0.2 1-0.2 1h-13.4c-0.5 0-0.6-0.4-0.2-1.1 1.1-2 1.9-4.3 1.9-7.5v-10.1c0-2.9-0.8-5-2.5-7.3-0.5-0.6-0.3-0.8 0.3-1.1z"/>
           </svg>
-        </span>
+        </button>
         <div className="gallery-nav-right">
           <button className="gallery-new-btn" onClick={() => navigate('/admin/new')}>
             <svg width="12" height="12" viewBox="0 0 12 12" fill="none">

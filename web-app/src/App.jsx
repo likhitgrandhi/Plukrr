@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './contexts/AuthContext';
+import Home from './pages/Home/Home';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import Gallery from './pages/Gallery/Gallery';
@@ -10,7 +11,8 @@ function App() {
     <AuthProvider>
       <BrowserRouter>
         <Routes>
-          <Route path="/" element={<Gallery />} />
+          <Route path="/" element={<Home />} />
+          <Route path="/gallery" element={<Gallery />} />
           <Route path="/admin/new" element={<AdminNew />} />
           <Route path="/login" element={<Login />} />
           <Route path="/dashboard" element={<Dashboard />} />
