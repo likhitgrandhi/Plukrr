@@ -14,6 +14,7 @@ let cachedScreenshot = null; // JPEG data URL, shared across all detail views in
 let dsBuilderData = null;
 let currentDsStep = -1;
 let dsBuilderPaused = false;
+let isAddingVariantFor = null; // stepKey string while adding a new variant, null otherwise
 
 // ============================================
 // INIT
@@ -29,9 +30,7 @@ async function initSidebar() {
         renderLoadingScreen('Scanning page…');
         setupMainListeners();
         await loadSubscription();
-        // Restore an in-progress DS Builder session if one was saved
-        const restored = await restoreDsBuilderState();
-        if (!restored) await scanCurrentTab();
+        await scanCurrentTab();
     } catch (e) {
         console.error('[Sidebar] Init error:', e);
         renderAuthScreen();
@@ -913,12 +912,12 @@ function showBottomBar(show) {
     document.getElementById('bottomBar').classList.toggle('visible', show);
 }
 
-function _reinjectDsBuilder(tabId) {
-    if (currentDsStep < 0) return; // no active step to reinject
-    // Re-inject in PAUSED state — user navigated to a new page, let them find the element first
-    setTimeout(() => {
-        chrome.tabs.sendMessage(tabId, { action: 'START_DS_BUILDER', stepIndex: currentDsStep, stepKey: DS_STEP_DISPLAY[currentDsStep]?.stepKey, fresh: true, paused: true }, () => chrome.runtime.lastError);
-    }, 400);
+async function _reinjectDsBuilder(tabId) {
+    if (!dsBuilderData) return;
+    currentDsStep = -1;
+    dsBuilderPaused = false;
+    saveDsBuilderState();
+    renderDsBuilderSidebar();
 }
 
 function setupMainListeners() {
@@ -948,7 +947,8 @@ function setupMainListeners() {
     // DS Builder messages from content script
     chrome.runtime.onMessage.addListener((message) => {
         if (message.type === 'DS_STEP_COMPLETED') {
-            accumulateStep(message.stepKey, message.styles, message.stepIndex);
+            const isAddVariant = isAddingVariantFor === message.stepKey;
+            accumulateStep(message.stepKey, message.styles, message.stepIndex, isAddVariant);
         }
         if (message.type === 'DS_BUILDER_PAUSED') {
             dsBuilderPaused = true;
@@ -958,12 +958,12 @@ function setupMainListeners() {
             finalizeDsBuilder();
         }
         if (message.type === 'DS_BUILDER_CANCELLED') {
-            dsBuilderData = null;
+            // X on the bottom widget = cancel current step selection, go back to the component list
+            // Do NOT wipe dsBuilderData — the user's captured steps must be preserved
             currentDsStep = -1;
             dsBuilderPaused = false;
-            saveDsBuilderState(); // clears storage
-            showBottomBar(true);
-            if (scanData) renderOverview(scanData, scanData.pageUrl);
+            saveDsBuilderState();
+            renderDsBuilderSidebar();
         }
     });
 }
@@ -997,22 +997,36 @@ function handleGetDesignMd() {
 // DS BUILDER (GUIDED MODE)
 // ============================================
 
-const DS_BUILDER_TOTAL_STEPS = 12;
+const DS_BUILDER_TOTAL_STEPS = 26;
 
 // Maps each step to the semantic token key to display in the sidebar progress list
 const DS_STEP_DISPLAY = [
-    { stepKey: 'primaryButton',   label: 'Button · Primary',     fills: 'Button Primary',                      valueKey: 'primary' },
-    { stepKey: 'secondaryButton', label: 'Button · Secondary',   fills: 'Button Secondary, Button Group',      valueKey: 'secondary' },
-    { stepKey: 'destructive',     label: 'Button · Destructive', fills: 'Button Destructive',                  valueKey: 'destructive' },
-    { stepKey: 'input',           label: 'Input',                fills: 'Input, Text Area',                    valueKey: 'border' },
-    { stepKey: 'navigation',      label: 'Navigation Menu',      fills: 'Navigation Menu, Menu Bar, Sidebar',  valueKey: 'sidebar' },
-    { stepKey: 'card',            label: 'Card',                 fills: 'Card',                                valueKey: 'card' },
-    { stepKey: 'badge',           label: 'Badge',                fills: 'Badge',                               valueKey: 'badgeFontSize' },
-    { stepKey: 'accent',          label: 'Links',                fills: 'Links',                               valueKey: 'accent' },
-    { stepKey: 'muted',           label: 'Muted Surface',        fills: 'Accordion, Alert, Context Menu',      valueKey: 'muted' },
-    { stepKey: 'pageBackground',  label: 'Page Background',      fills: 'Background, Dialog, Drawer',          valueKey: 'background' },
-    { stepKey: 'heading',         label: 'Heading',              fills: 'Typography — Headings',               valueKey: 'headingFontFamily' },
-    { stepKey: 'bodyText',        label: 'Body Text',            fills: 'Typography — Body',                   valueKey: 'bodyFontFamily' },
+    { stepKey: 'primaryButton',   label: 'Primary Button',     fills: 'Button Primary',                     valueKey: 'primary' },
+    { stepKey: 'secondaryButton', label: 'Secondary Button',   fills: 'Button Secondary, Button Group',     valueKey: 'secondary' },
+    { stepKey: 'input',           label: 'Input Field',        fills: 'Input, Text Area',                   valueKey: 'border' },
+    { stepKey: 'pageBackground',  label: 'Page Background',    fills: 'Background, Dialog, Drawer',         valueKey: 'background' },
+    { stepKey: 'card',            label: 'Card',               fills: 'Card',                               valueKey: 'card' },
+    { stepKey: 'muted',           label: 'Muted Surface',      fills: 'Accordion, Alert, Context Menu',     valueKey: 'muted' },
+    { stepKey: 'navigation',      label: 'Navigation',         fills: 'Navigation Menu, Menu Bar, Sidebar', valueKey: 'sidebar' },
+    { stepKey: 'badge',           label: 'Badge / Tag',        fills: 'Badge, Chip, Label',                 valueKey: 'badgeFontSize' },
+    { stepKey: 'heading',         label: 'Heading',            fills: 'Typography — Headings',              valueKey: 'headingFontFamily' },
+    { stepKey: 'bodyText',        label: 'Body Text',          fills: 'Typography — Body',                  valueKey: 'bodyFontFamily' },
+    { stepKey: 'destructive',     label: 'Danger Button',      fills: 'Delete, Warning, Error Actions',     valueKey: 'destructive' },
+    { stepKey: 'accent',          label: 'Link / Accent',      fills: 'Links, Highlighted Text',            valueKey: 'accent' },
+    { stepKey: 'avatar',          label: 'Avatar',             fills: 'User Avatar, Profile Image',         valueKey: 'avatarBg' },
+    { stepKey: 'checkbox',        label: 'Checkbox',           fills: 'Checkbox, Multi-select',             valueKey: 'checkboxBorderColor' },
+    { stepKey: 'radio',           label: 'Radio Button',       fills: 'Radio, Single-select',               valueKey: 'radioBorderColor' },
+    { stepKey: 'switch',          label: 'Switch / Toggle',    fills: 'Toggle, On-Off Switch',              valueKey: 'switchBg' },
+    { stepKey: 'select',          label: 'Select',             fills: 'Dropdown Select, Combobox',          valueKey: 'selectBg' },
+    { stepKey: 'table',           label: 'Table',              fills: 'Data Table, Grid',                   valueKey: 'tableHeaderBg' },
+    { stepKey: 'accordion',       label: 'Accordion',          fills: 'Accordion, Collapsible',             valueKey: 'accordionBg' },
+    { stepKey: 'alert',           label: 'Alert',              fills: 'Alert, Banner, Callout',             valueKey: 'alertBg' },
+    { stepKey: 'toast',           label: 'Toast',              fills: 'Toast, Snackbar, Notification',      valueKey: 'toastBg' },
+    { stepKey: 'tooltip',         label: 'Tooltip',            fills: 'Tooltip, Popover Hint',              valueKey: 'tooltipBg' },
+    { stepKey: 'dropdown',        label: 'Dropdown Menu',      fills: 'Dropdown, Popover Menu',             valueKey: 'popover' },
+    { stepKey: 'contextMenu',     label: 'Context Menu',       fills: 'Right-click Menu',                   valueKey: 'contextMenuBg' },
+    { stepKey: 'drawerModal',     label: 'Drawer / Modal',     fills: 'Modal Dialog, Side Drawer',          valueKey: 'dialogBg' },
+    { stepKey: 'sidebarPanel',    label: 'Sidebar Panel',      fills: 'Side Panel, Sheet',                  valueKey: 'sheetBg' },
 ];
 
 async function handleCreateDs() {
@@ -1041,29 +1055,255 @@ async function handleCreateDs() {
         shadows:      scanData?.shadows      ? [...scanData.shadows]      : [],
         layout:       scanData?.layout       ? { ...scanData.layout }     : {},
         components:   [],
+        stepVariants:  {},
+        activeVariants: {},
     };
+
+    preSeedDsBuilderFromScan(dsBuilderData, scanData);
 
     showBottomBar(false);
     renderTopbar('detail', 'Build DS');
-    renderDsBuilderSidebar();
-
     currentDsStep = -1;
-    saveDsBuilderState();
+    // Clear any stale saved session — state is only persisted once the user
+    // actually clicks a Select card, so opening Create DS fresh never restores Build DS on reload.
+    chrome.storage.local.remove('dsBuilderState').catch(() => {});
+    renderDsBuilderSidebar();
 }
 
-function accumulateStep(stepKey, styles, stepIndex) {
-    if (!dsBuilderData) return;
-    const st = dsBuilderData.semanticTokens;
+function preSeedDsBuilderFromScan(dsb, scan) {
+    if (!scan?.semanticTokens) return;
+    const st = {};
+    for (const [k, v] of Object.entries(scan.semanticTokens)) {
+        if (v?.value) st[k] = v.value;
+    }
 
-    // Track step status
+    function seed(stepKey, primaryKey, tokens) {
+        if (!tokens[primaryKey]) return;
+        const snap = {};
+        for (const [k, v] of Object.entries(tokens)) {
+            if (v) snap[k] = v;
+        }
+        dsb.stepVariants[stepKey] = [{ label: 'Variant 1', tokens: snap }];
+        dsb.activeVariants[stepKey] = 0;
+        dsb.stepStatuses[stepKey] = 'completed';
+    }
+
+    seed('pageBackground', 'background', {
+        background: st.background,
+        foreground: st.foreground,
+    });
+    seed('primaryButton', 'primary', {
+        primary: st.primary,
+        primaryForeground: st.primaryForeground,
+        primaryBorderRadius: st.primaryBorderRadius,
+        primaryPaddingTop: st.primaryPaddingTop,
+        primaryPaddingRight: st.primaryPaddingRight,
+        primaryFontSize: st.primaryFontSize,
+        primaryFontWeight: st.primaryFontWeight,
+        primaryFontFamily: st.primaryFontFamily,
+        primaryLetterSpacing: st.primaryLetterSpacing,
+        primaryTextTransform: st.primaryTextTransform,
+        primaryBoxShadow: st.primaryBoxShadow,
+    });
+    seed('secondaryButton', 'secondary', {
+        secondary: st.secondary,
+        secondaryForeground: st.secondaryForeground,
+        secondaryBorderColor: st.secondaryBorderColor,
+        secondaryBorderRadius: st.secondaryBorderRadius,
+    });
+    seed('destructive', 'destructive', {
+        destructive: st.destructive,
+        destructiveForeground: st.destructiveForeground,
+    });
+    seed('input', 'border', {
+        border: st.border,
+        inputBg: st.inputBg,
+        inputHeight: st.inputHeight,
+        inputBorderRadius: st.inputBorderRadius,
+        inputPaddingTop: st.inputPaddingTop,
+        inputPaddingRight: st.inputPaddingRight,
+        inputFontSize: st.inputFontSize,
+    });
+    seed('card', 'card', {
+        card: st.card,
+        cardForeground: st.cardForeground,
+        cardBorderRadius: st.cardBorderRadius,
+        cardBorderColor: st.cardBorderColor,
+        cardBoxShadow: st.cardBoxShadow,
+        cardPaddingTop: st.cardPaddingTop,
+        cardPaddingRight: st.cardPaddingRight,
+        cardGap: st.cardGap,
+    });
+    seed('badge', 'badgeFontSize', {
+        badgeBackground: st.badgeBg,
+        badgeForeground: st.badgeForeground,
+        badgeBorderRadius: st.badgeBorderRadius,
+        badgeFontSize: st.badgeFontSize,
+        badgeFontWeight: st.badgeFontWeight,
+        badgePaddingTop: st.badgePaddingTop,
+        badgePaddingRight: st.badgePaddingRight,
+        badgeBorderColor: st.badgeBorderColor,
+    });
+    seed('navigation', 'sidebar', {
+        sidebar: st.sidebar,
+        sidebarForeground: st.sidebarForeground,
+    });
+    seed('muted', 'muted', {
+        muted: st.muted,
+        mutedForeground: st.mutedForeground,
+    });
+    seed('accent', 'accent', {
+        accent: st.accent,
+        ring: st.ring,
+    });
+    seed('heading', 'headingFontFamily', {
+        headingFontFamily: st.headingFontFamily,
+        h1FontSize: st.h1FontSize,
+        h1FontWeight: st.h1FontWeight,
+        h1LineHeight: st.h1LineHeight,
+        h1LetterSpacing: st.h1LetterSpacing,
+        h1Color: st.h1Color,
+    });
+    seed('bodyText', 'bodyFontFamily', {
+        bodyFontFamily: st.bodyFontFamily,
+        bodyFontSize: st.bodyFontSize,
+        bodyLineHeight: st.bodyLineHeight,
+        bodyLetterSpacing: st.bodyLetterSpacing,
+    });
+    seed('avatar', 'avatarBg', {
+        avatarBg: st.avatarBg,
+        avatarBorderRadius: st.avatarBorderRadius,
+        avatarSize: st.avatarSize,
+        avatarBorderColor: st.avatarBorderColor,
+    });
+    seed('checkbox', 'checkboxBorderColor', {
+        checkboxBorderColor: st.checkboxBorderColor,
+        checkboxBorderRadius: st.checkboxBorderRadius,
+        checkboxSize: st.checkboxSize,
+    });
+    seed('radio', 'radioBorderColor', {
+        radioBorderColor: st.radioBorderColor,
+        radioBorderRadius: st.radioBorderRadius,
+        radioSize: st.radioSize,
+        radioAccentColor: st.radioAccentColor,
+    });
+    seed('switch', 'switchBg', {
+        switchBg: st.switchBg,
+        switchBorderRadius: st.switchBorderRadius,
+        switchWidth: st.switchWidth,
+        switchHeight: st.switchHeight,
+    });
+    seed('select', 'selectBg', {
+        selectBg: st.selectBg,
+        selectBorderRadius: st.selectBorderRadius,
+        selectBorderColor: st.selectBorderColor,
+        selectHeight: st.selectHeight,
+    });
+    seed('table', 'tableHeaderBg', {
+        tableBg: st.tableBg,
+        tableBorderColor: st.tableBorderColor,
+        tableHeaderBg: st.tableHeaderBg,
+        tableHeaderForeground: st.tableHeaderForeground,
+        tableHeaderFontWeight: st.tableHeaderFontWeight,
+        tableHeaderPaddingTop: st.tableHeaderPaddingTop,
+        tableHeaderPaddingRight: st.tableHeaderPaddingRight,
+        tableCellForeground: st.tableCellForeground,
+        tableCellPaddingTop: st.tableCellPaddingTop,
+    });
+    seed('accordion', 'accordionBg', {
+        accordionBg: st.accordionBg,
+        accordionBorderColor: st.accordionBorderColor,
+        accordionTriggerForeground: st.accordionTriggerForeground,
+        accordionTriggerFontWeight: st.accordionTriggerFontWeight,
+        accordionTriggerPaddingTop: st.accordionTriggerPaddingTop,
+        accordionTriggerPaddingRight: st.accordionTriggerPaddingRight,
+    });
+    seed('alert', 'alertBg', {
+        alertBg: st.alertBg,
+        alertForeground: st.alertForeground,
+        alertBorderColor: st.alertBorderColor,
+        alertBorderRadius: st.alertBorderRadius,
+        alertPaddingTop: st.alertPaddingTop,
+        alertPaddingRight: st.alertPaddingRight,
+        alertBoxShadow: st.alertBoxShadow,
+    });
+    seed('toast', 'toastBg', {
+        toastBg: st.toastBg,
+        toastForeground: st.toastForeground,
+        toastBorderColor: st.toastBorderColor,
+        toastBorderRadius: st.toastBorderRadius,
+        toastBoxShadow: st.toastBoxShadow,
+    });
+    seed('tooltip', 'tooltipBg', {
+        tooltipBg: st.tooltipBg,
+        tooltipForeground: st.tooltipForeground,
+        tooltipBorderRadius: st.tooltipBorderRadius,
+        tooltipFontSize: st.tooltipFontSize,
+        tooltipPaddingTop: st.tooltipPaddingTop,
+        tooltipPaddingRight: st.tooltipPaddingRight,
+        tooltipBoxShadow: st.tooltipBoxShadow,
+    });
+    seed('dropdown', 'popover', {
+        popover: st.popover,
+        popoverForeground: st.popoverForeground,
+        popoverBorderRadius: st.popoverBorderRadius,
+        popoverBoxShadow: st.popoverBoxShadow,
+        popoverBorderColor: st.popoverBorderColor,
+    });
+    seed('drawerModal', 'dialogBg', {
+        dialogBg: st.dialogBg,
+        dialogForeground: st.dialogForeground,
+        dialogBorderRadius: st.dialogBorderRadius,
+        dialogBoxShadow: st.dialogBoxShadow,
+        dialogPaddingTop: st.dialogPaddingTop,
+        dialogPaddingRight: st.dialogPaddingRight,
+    });
+    seed('sidebarPanel', 'sheetBg', {
+        sheetBg: st.sheetBg,
+        sheetForeground: st.sheetForeground,
+        sheetBorderColor: st.sheetBorderColor,
+    });
+
+    rebuildSemanticTokens();
+}
+
+function accumulateStep(stepKey, styles, stepIndex, isAddVariant = false) {
+    if (!dsBuilderData) return;
+
     dsBuilderData.stepStatuses[stepKey] = styles ? 'completed' : 'skipped';
     dsBuilderPaused = false;
 
     if (styles) {
-        // Write each style value into semanticTokens
+        // Build a raw token snapshot { key: rawValue }
+        const tokenSnapshot = {};
         for (const [k, v] of Object.entries(styles)) {
-            if (v) st[k] = { value: v, source: stepKey };
+            if (v) tokenSnapshot[k] = v;
         }
+
+        // Store into stepVariants
+        if (!dsBuilderData.stepVariants) dsBuilderData.stepVariants = {};
+        if (!dsBuilderData.activeVariants) dsBuilderData.activeVariants = {};
+        if (!dsBuilderData.stepVariants[stepKey]) dsBuilderData.stepVariants[stepKey] = [];
+
+        if (isAddVariant) {
+            const newIdx = dsBuilderData.stepVariants[stepKey].length;
+            dsBuilderData.stepVariants[stepKey].push({ label: `Variant ${newIdx + 1}`, tokens: tokenSnapshot });
+            dsBuilderData.activeVariants[stepKey] = newIdx;
+        } else {
+            const activeIdx = dsBuilderData.activeVariants[stepKey] ?? 0;
+            if (dsBuilderData.stepVariants[stepKey].length === 0) {
+                dsBuilderData.stepVariants[stepKey].push({ label: 'Variant 1', tokens: tokenSnapshot });
+                dsBuilderData.activeVariants[stepKey] = 0;
+            } else {
+                dsBuilderData.stepVariants[stepKey][activeIdx] = {
+                    ...dsBuilderData.stepVariants[stepKey][activeIdx],
+                    tokens: tokenSnapshot,
+                };
+            }
+        }
+
+        // Sync flat semanticTokens from active variants
+        rebuildSemanticTokens();
 
         // Special cases: also populate fallback arrays
         if (stepKey === 'pageBackground') {
@@ -1096,10 +1336,24 @@ function accumulateStep(stepKey, styles, stepIndex) {
         }
     }
 
+    isAddingVariantFor = null;
     currentDsStep = -1;
     dsBuilderPaused = false;
     saveDsBuilderState();
     renderDsBuilderSidebar();
+}
+
+function rebuildSemanticTokens() {
+    if (!dsBuilderData?.stepVariants) return;
+    const st = dsBuilderData.semanticTokens;
+    for (const [stepKey, variants] of Object.entries(dsBuilderData.stepVariants)) {
+        const idx = dsBuilderData.activeVariants?.[stepKey] ?? 0;
+        const variant = variants[idx];
+        if (!variant) continue;
+        for (const [k, v] of Object.entries(variant.tokens)) {
+            if (v) st[k] = { value: v, source: stepKey };
+        }
+    }
 }
 
 function buildScanDataFromDsBuilderData(dsb) {
@@ -1334,6 +1588,19 @@ function buildScanDataFromDsBuilderData(dsb) {
         if (linkProps) components.push({ category: 'link', label: 'Link / Accent', properties: linkProps });
     }
 
+    // Build componentVariants: steps with 2+ variants captured
+    const componentVariants = {};
+    for (const [stepKey, variants] of Object.entries(dsb.stepVariants || {})) {
+        if (variants.length > 1) {
+            const stepDef = DS_STEP_DISPLAY.find(s => s.stepKey === stepKey);
+            componentVariants[stepKey] = {
+                label: stepDef?.label || stepKey,
+                variants,
+                activeIndex: dsb.activeVariants?.[stepKey] ?? 0,
+            };
+        }
+    }
+
     return {
         pageUrl:        dsb.pageUrl,
         pageTitle:      dsb.pageTitle,
@@ -1346,6 +1613,7 @@ function buildScanDataFromDsBuilderData(dsb) {
         shadows:        dsb.shadows,
         layout:         dsb.layout,
         components,
+        componentVariants,
     };
 }
 
@@ -1367,20 +1635,17 @@ async function restoreDsBuilderState() {
         if (!result.dsBuilderState) return false;
         const saved = result.dsBuilderState;
         dsBuilderData = saved.data;
-        currentDsStep = saved.step ?? -1;
-        dsBuilderPaused = currentDsStep >= 0; // only paused if a step was active
+        if (!dsBuilderData.stepStatuses || Object.keys(dsBuilderData.stepStatuses).length === 0) {
+            await chrome.storage.local.remove('dsBuilderState');
+            return false;
+        }
+        if (!dsBuilderData.stepVariants) dsBuilderData.stepVariants = {};
+        if (!dsBuilderData.activeVariants) dsBuilderData.activeVariants = {};
+        currentDsStep = -1;
+        dsBuilderPaused = false;
         showBottomBar(false);
         renderTopbar('detail', 'Build DS');
         renderDsBuilderSidebar();
-        // Re-inject panel in paused state on the current tab (only if a step was active)
-        if (currentDsStep >= 0) {
-            const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-            if (tab) {
-                setTimeout(() => {
-                    chrome.tabs.sendMessage(tab.id, { action: 'START_DS_BUILDER', stepIndex: currentDsStep, stepKey: DS_STEP_DISPLAY[currentDsStep]?.stepKey, fresh: true, paused: true }, () => chrome.runtime.lastError);
-                }, 600);
-            }
-        }
         return true;
     } catch (_) { return false; }
 }
@@ -1409,15 +1674,32 @@ function renderDsBuilderSidebar() {
 
     const cards = DS_STEP_DISPLAY.map((step, i) => {
         const status = statuses[step.stepKey];
-        const isSelecting = (i === currentDsStep) && !status;
+        const isSelectingStep = (i === currentDsStep) && !status;
         const val = st[step.valueKey]?.value;
 
         const isDone = status === 'completed';
         const isSkipped = status === 'skipped';
 
+        const stepVariants = dsBuilderData.stepVariants?.[step.stepKey] || [];
+        const activeIdx = dsBuilderData.activeVariants?.[step.stepKey] ?? 0;
+        const isAddingThis = isDone && isAddingVariantFor === step.stepKey && i === currentDsStep;
+
         let swatchHtml = '';
         if (isDone && val && /^#[0-9a-fA-F]{6}$/i.test(val)) {
             swatchHtml = `<span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:${val};border:1px solid rgba(0,0,0,.12);vertical-align:middle;margin-right:3px;flex-shrink:0"></span>`;
+        }
+
+        let pillsHtml = '';
+        if (isDone && stepVariants.length > 1) {
+            pillsHtml = `<div style="display:flex;gap:3px;margin-top:5px;flex-wrap:wrap">` +
+                stepVariants.map((_, vi) =>
+                    `<button class="ds-variant-pill" data-step-key="${step.stepKey}" data-variant-idx="${vi}"
+                        style="font-size:9px;padding:2px 6px;border-radius:4px;cursor:pointer;font-weight:600;line-height:1.4;
+                               border:1px solid ${vi === activeIdx ? '#10b981' : '#d1d5db'};
+                               background:${vi === activeIdx ? '#10b981' : '#fff'};
+                               color:${vi === activeIdx ? '#fff' : '#6b7280'}">V${vi + 1}</button>`
+                ).join('') +
+            `</div>`;
         }
 
         let cardBg, cardBorder, btnHtml, badgeHtml;
@@ -1427,28 +1709,39 @@ function renderDsBuilderSidebar() {
             badgeHtml = `<div style="width:18px;height:18px;border-radius:50%;background:#10b981;display:flex;align-items:center;justify-content:center;flex-shrink:0">
                 <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M2 5l2.5 2.5L8 3" stroke="#fff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
             </div>`;
-            btnHtml = `<button data-step="${i}" class="ds-card-btn ds-card-reselect" style="font-size:10px;padding:4px 8px;border-radius:5px;border:1px solid #10b981;background:#fff;color:#10b981;cursor:pointer;font-weight:500;white-space:nowrap">Re-select</button>`;
+            if (isAddingThis) {
+                btnHtml = `<span style="font-size:10px;color:#10b981;font-weight:600;white-space:nowrap">adding V${stepVariants.length + 1}…</span>`;
+            } else {
+                btnHtml = `<div style="display:flex;flex-direction:column;gap:3px;align-items:flex-end">
+                    <button data-step="${i}" class="ds-card-btn ds-card-reselect" style="font-size:10px;padding:4px 8px;border-radius:5px;border:1px solid #10b981;background:#fff;color:#10b981;cursor:pointer;font-weight:500;white-space:nowrap">Re-select</button>
+                    <button data-step="${i}" class="ds-add-variant-btn" data-step-key="${step.stepKey}" style="font-size:10px;padding:4px 8px;border-radius:5px;border:1px solid #10b981;background:#f0fdf4;color:#10b981;cursor:pointer;font-weight:500;white-space:nowrap">+ Variant</button>
+                </div>`;
+            }
         } else if (isSkipped) {
             cardBg = '#fafafa'; cardBorder = '#e5e7eb';
             badgeHtml = `<div style="width:18px;height:18px;border-radius:50%;background:#e5e7eb;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:9px;color:#9ca3af">—</div>`;
             btnHtml = `<button data-step="${i}" class="ds-card-btn" style="font-size:10px;padding:4px 8px;border-radius:5px;border:1px solid #d1d5db;background:#fff;color:#6b7280;cursor:pointer;font-weight:500;white-space:nowrap">Select</button>`;
-        } else if (isSelecting) {
+        } else if (isSelectingStep) {
             cardBg = '#fffbeb'; cardBorder = '#fde68a';
             badgeHtml = `<div style="width:18px;height:18px;border-radius:50%;background:#f59e0b;display:flex;align-items:center;justify-content:center;flex-shrink:0">
                 <svg width="8" height="8" viewBox="0 0 8 8"><circle cx="4" cy="4" r="3" fill="#fff"/></svg>
             </div>`;
-            btnHtml = `<span style="font-size:10px;color:#d97706;font-weight:600">selecting…</span>`;
+            btnHtml = `<div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">
+                <span style="font-size:10px;color:#d97706;font-weight:600">selecting…</span>
+                <button class="ds-step-cancel-btn" data-step="${i}" style="font-size:10px;padding:3px 8px;border-radius:5px;border:1px solid #d1d5db;background:#fff;color:#6b7280;cursor:pointer;font-weight:500;white-space:nowrap">✕ Cancel</button>
+            </div>`;
         } else {
             cardBg = '#fff'; cardBorder = '#e5e7eb';
             badgeHtml = `<div style="width:18px;height:18px;border-radius:50%;border:1.5px solid #d1d5db;flex-shrink:0"></div>`;
             btnHtml = `<button data-step="${i}" class="ds-card-btn" style="font-size:10px;padding:4px 8px;border-radius:5px;border:none;background:#111827;color:#fff;cursor:pointer;font-weight:500;white-space:nowrap">Select</button>`;
         }
 
-        return `<div style="background:${cardBg};border:1px solid ${cardBorder};border-radius:9px;padding:10px 12px;display:flex;align-items:center;gap:10px">
+        return `<div style="background:${cardBg};border:1px solid ${cardBorder};border-radius:9px;padding:10px 12px;display:flex;align-items:${isDone && stepVariants.length > 1 ? 'flex-start' : 'center'};gap:10px">
             ${badgeHtml}
             <div style="flex:1;min-width:0">
                 <div style="font-size:12px;font-weight:600;color:#111827;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${step.label}</div>
                 <div style="font-size:10px;color:${isDone ? '#10b981' : '#9ca3af'};margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${isDone && val ? (swatchHtml + (/^#[0-9a-fA-F]{6}$/i.test(val) ? val : /^rgba/.test(val) ? val : val.split(',')[0].replace(/["']/g,'').trim().slice(0,18))) : isDone ? 'captured' : step.fills}</div>
+                ${pillsHtml}
             </div>
             <div style="flex-shrink:0">${btnHtml}</div>
         </div>`;
@@ -1481,15 +1774,58 @@ function renderDsBuilderSidebar() {
         </div>`;
 
     ca.querySelectorAll('.ds-card-btn').forEach(btn => {
-        btn.addEventListener('click', () => {
+        btn.addEventListener('click', async () => {
             const stepIndex = parseInt(btn.dataset.step, 10);
             if (currentDsStep === stepIndex && !statuses[DS_STEP_DISPLAY[stepIndex].stepKey]) return;
+            isAddingVariantFor = null;
+            currentDsStep = stepIndex;
+            dsBuilderPaused = false;
+            saveDsBuilderState();
+            renderDsBuilderSidebar();
+            const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+            if (!tab) return;
+            try { await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['content.js'] }); } catch (_) {}
+            chrome.tabs.sendMessage(tab.id, { action: 'START_DS_BUILDER', stepIndex, stepKey: DS_STEP_DISPLAY[stepIndex].stepKey, fresh: true }, () => chrome.runtime.lastError);
+        });
+    });
+
+    ca.querySelectorAll('.ds-step-cancel-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            chrome.tabs.query({ active: true, currentWindow: true }, ([tab]) => {
+                if (tab) chrome.tabs.sendMessage(tab.id, { action: 'CANCEL_DS_BUILDER' }, () => chrome.runtime.lastError);
+            });
+            currentDsStep = -1;
+            dsBuilderPaused = false;
+            saveDsBuilderState();
+            renderDsBuilderSidebar();
+        });
+    });
+
+    ca.querySelectorAll('.ds-variant-pill').forEach(pill => {
+        pill.addEventListener('click', () => {
+            const stepKey = pill.dataset.stepKey;
+            const vi = parseInt(pill.dataset.variantIdx, 10);
+            if (!dsBuilderData) return;
+            if (!dsBuilderData.activeVariants) dsBuilderData.activeVariants = {};
+            dsBuilderData.activeVariants[stepKey] = vi;
+            rebuildSemanticTokens();
+            saveDsBuilderState();
+            renderDsBuilderSidebar();
+        });
+    });
+
+    ca.querySelectorAll('.ds-add-variant-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const stepIndex = parseInt(btn.dataset.step, 10);
+            const stepKey = btn.dataset.stepKey;
+            if (currentDsStep === stepIndex && isAddingVariantFor === stepKey) return;
+            isAddingVariantFor = stepKey;
             currentDsStep = stepIndex;
             dsBuilderPaused = false;
             saveDsBuilderState();
             renderDsBuilderSidebar();
             chrome.tabs.query({ active: true, currentWindow: true }, ([tab]) => {
-                if (tab) chrome.tabs.sendMessage(tab.id, { action: 'START_DS_BUILDER', stepIndex, stepKey: DS_STEP_DISPLAY[stepIndex].stepKey, fresh: true }, () => chrome.runtime.lastError);
+                if (tab) chrome.tabs.sendMessage(tab.id, { action: 'START_DS_BUILDER', stepIndex, stepKey, fresh: true }, () => chrome.runtime.lastError);
             });
         });
     });
@@ -2366,18 +2702,28 @@ function generateShadcnThemeMd(data) {
 // Populated by auto-scan (performQuickScan → extractSemanticTokens).
 // DS Builder enriches the same keys with exact computed values.
 // ─────────────────────────────────────────────────────────────────────────────
-function generateComponentsTable(st) {
-    // Clean a raw token value — returns the value or '—'
+function computeContrastRatio(hex1, hex2) {
+    function lum(hex) {
+        if (!hex || hex.length < 7) return 0;
+        const rgb = parseInt(hex.replace('#', ''), 16);
+        const r = (rgb >> 16) / 255, g = ((rgb >> 8) & 0xff) / 255, b = (rgb & 0xff) / 255;
+        const lin = c => c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+        return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
+    }
+    const l1 = lum(hex1), l2 = lum(hex2);
+    const [hi, lo] = l1 > l2 ? [l1, l2] : [l2, l1];
+    return ((hi + 0.05) / (lo + 0.05)).toFixed(1);
+}
+
+function generateComponentsBlocks(st) {
     function v(key) {
         const raw = st[key]?.value;
         if (!raw || raw === 'none' || raw === '0px' || raw === 'normal' || raw === 'transparent') return '—';
-        // Reject fully transparent rgba
         const a = (raw.match(/rgba\(\s*\d+,\s*\d+,\s*\d+,\s*([\d.]+)\s*\)/) || [])[1];
         if (a !== undefined && parseFloat(a) < 0.05) return '—';
         return raw;
     }
 
-    // Build "Xpx Ypx" padding string from two token keys
     function pad(topKey, rightKey) {
         const t = v(topKey), r = v(rightKey);
         if (t !== '—' && r !== '—') return `${t} ${r}`;
@@ -2386,878 +2732,686 @@ function generateComponentsTable(st) {
         return '—';
     }
 
-    // Combine font-weight + letter-spacing + text-transform into "Other"
-    function otherTypo(...keys) {
-        return keys.map(k => v(k)).filter(x => x !== '—').join(', ') || '—';
+    function bullet(label, value) {
+        if (!value || value === '—') return '';
+        return `- **${label}:** \`${escMd(value)}\`\n`;
     }
 
-    // Render a single table row
-    // Columns: Component | Variant | Bg | Text | TextSize | LabelSize | Padding | Margin | Shadow | BorderColor | BorderStroke | BorderRadius | IconColor | IconSize | Size | Other
-    function row(comp, variant, bg, text, textSize, labelSize, padding, margin, shadow, borderColor, borderStroke, borderRadius, iconColor, iconSize, size, other) {
-        const cells = [comp, variant, bg, text, textSize, labelSize, padding, margin, shadow, borderColor, borderStroke, borderRadius, iconColor, iconSize, size, other]
-            .map(c => escMd(c || '—'));
-        return `| ${cells.join(' | ')} |\n`;
+    function fontSpec(...keys) {
+        const parts = keys.map(k => v(k)).filter(x => x !== '—');
+        return parts.length ? parts.join(' / ') : '—';
     }
+
+    function borderStr(colorKey, widthKey) {
+        const color = v(colorKey);
+        if (color === '—') return 'none';
+        const width = v(widthKey);
+        return `${width !== '—' ? width : '1px'} solid ${color}`;
+    }
+
+    function block(title, fields) {
+        const lines = fields.map(([label, value]) => bullet(label, value)).filter(Boolean);
+        if (!lines.length) return '';
+        return `### ${title}\n\n${lines.join('')}- **States:** *Capture via Create DS flow — hover/focus states not auto-extracted*\n\n`;
+    }
+
+    const detected = {
+        buttonPrimary:     v('primary') !== '—',
+        buttonSecondary:   v('secondary') !== '—',
+        buttonDestructive: v('destructive') !== '—',
+        input:             v('border') !== '—' || v('inputBg') !== '—',
+        card:              v('card') !== '—',
+        navigation:        v('sidebar') !== '—' || v('headerBg') !== '—',
+        avatar:            v('avatarBg') !== '—',
+        badge:             v('badgeBackground') !== '—' || v('badgeFontSize') !== '—',
+        link:              v('accent') !== '—',
+        checkbox:          v('checkboxBorderColor') !== '—',
+        radio:             v('radioBorderColor') !== '—',
+        switch_:           v('switchBg') !== '—',
+        select:            v('selectBg') !== '—',
+        table:             v('tableHeaderBg') !== '—',
+        modal:             v('dialogBg') !== '—',
+        toast:             v('toastBg') !== '—',
+        tooltip:           v('tooltipBg') !== '—',
+        accordion:         v('accordionBg') !== '—',
+        alert:             v('alertBg') !== '—',
+        sidebar:           v('sheetBg') !== '—',
+        contextMenu:       v('contextMenuBg') !== '—',
+        dropdown:          v('popover') !== '—',
+    };
+
+    const notDetectedLabels = {
+        buttonPrimary:     'Button — Primary',
+        buttonSecondary:   'Button — Secondary',
+        buttonDestructive: 'Button — Destructive',
+        input:             'Input / Text Field',
+        card:              'Card',
+        navigation:        'Navigation',
+        avatar:            'Avatar',
+        badge:             'Badge / Tag',
+        link:              'Link',
+        checkbox:          'Checkbox',
+        radio:             'Radio Button',
+        switch_:           'Switch / Toggle',
+        select:            'Select',
+        table:             'Table',
+        modal:             'Modal / Dialog',
+        toast:             'Toast',
+        tooltip:           'Tooltip',
+        accordion:         'Accordion',
+        alert:             'Alert',
+        sidebar:           'Sidebar Panel',
+        contextMenu:       'Context Menu',
+        dropdown:          'Popover / Dropdown',
+    };
 
     let md = '';
-    md += `| Component | Variant / Notes | Background Color | Text Color | Text Size | Label Size | Padding | Margin | Shadow | Border Color | Border Stroke | Border Radius | Icon Color | Icon Size | Size | Other |\n`;
-    md += `|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|\n`;
 
-    // ── Buttons ──────────────────────────────────────────────────────────────
-    md += row('**Button**', 'Primary',
-        v('primary'), v('primaryForeground'), v('primaryFontSize'), '—',
-        pad('primaryPaddingTop','primaryPaddingRight'), '—',
-        v('primaryBoxShadow'), v('primaryBorderColor'), v('primaryBorderWidth'),
-        v('primaryBorderRadius'), v('primaryForeground'), '—', v('primaryHeight'),
-        otherTypo('primaryFontWeight','primaryTextTransform')
-    );
-    md += row('**Button**', 'Secondary',
-        v('secondary'), v('secondaryForeground'), '—', '—',
-        pad('secondaryPaddingTop','secondaryPaddingRight'), '—',
-        v('secondaryBoxShadow'), v('secondaryBorderColor'), v('secondaryBorderWidth'),
-        v('secondaryBorderRadius'), v('secondaryForeground'), '—', v('secondaryHeight'), '—'
-    );
-    md += row('**Button**', 'Destructive',
-        v('destructive'), v('destructiveForeground'), v('destructiveFontSize'), '—',
-        pad('destructivePaddingTop','destructivePaddingRight'), '—',
-        v('destructiveBoxShadow'), '—', '—',
-        v('destructiveBorderRadius'), v('destructiveForeground'), '—', v('destructiveHeight'),
-        otherTypo('destructiveFontWeight')
-    );
+    if (detected.buttonPrimary) {
+        md += block('Button — Primary', [
+            ['Background', v('primary')],
+            ['Foreground', v('primaryForeground')],
+            ['Padding', pad('primaryPaddingTop', 'primaryPaddingRight')],
+            ['Radius', v('primaryBorderRadius')],
+            ['Font', fontSpec('primaryFontSize', 'primaryFontWeight', 'primaryFontFamily')],
+            ['Border', borderStr('primaryBorderColor', 'primaryBorderWidth')],
+            ['Shadow', v('primaryBoxShadow')],
+            ['Min height', v('primaryHeight')],
+        ]);
+    }
 
-    // ── Aspect Ratio ─────────────────────────────────────────────────────────
-    md += row('**Aspect Ratio**', '—', '—', '—', '—', '—', '—', '—', '—', '—', '—', '—', '—', '—', '—', '—');
+    if (detected.buttonSecondary) {
+        md += block('Button — Secondary', [
+            ['Background', v('secondary')],
+            ['Foreground', v('secondaryForeground')],
+            ['Padding', pad('secondaryPaddingTop', 'secondaryPaddingRight')],
+            ['Radius', v('secondaryBorderRadius')],
+            ['Font', fontSpec('primaryFontSize', 'primaryFontWeight', 'primaryFontFamily')],
+            ['Border', borderStr('secondaryBorderColor', 'secondaryBorderWidth')],
+            ['Shadow', v('secondaryBoxShadow')],
+            ['Min height', v('secondaryHeight')],
+        ]);
+    }
 
-    // ── Navigation Menu ──────────────────────────────────────────────────────
-    md += row('**Navigation Menu**', 'Top Bar',
-        v('headerBg'), v('sidebarForeground'), v('navLinkFontSize'), '—',
-        pad('navLinkPaddingTop','navLinkPaddingRight'), '—',
-        v('headerBoxShadow'), v('headerBorderColor'), '—', '—',
-        v('navLinkForeground'), '—', v('headerHeight'), '—'
-    );
+    if (detected.buttonDestructive) {
+        md += block('Button — Destructive', [
+            ['Background', v('destructive')],
+            ['Foreground', v('destructiveForeground')],
+            ['Padding', pad('destructivePaddingTop', 'destructivePaddingRight')],
+            ['Radius', v('destructiveBorderRadius')],
+            ['Font', fontSpec('destructiveFontSize', 'destructiveFontWeight')],
+            ['Shadow', v('destructiveBoxShadow')],
+            ['Min height', v('destructiveHeight')],
+        ]);
+    }
 
-    // ── Input ────────────────────────────────────────────────────────────────
-    md += row('**Input**', 'Text Field',
-        v('inputBg'), v('foreground'), v('inputFontSize'), '—',
-        pad('inputPaddingTop','inputPaddingRight'), '—', '—',
-        v('border'), v('inputBorderWidth'),
-        v('inputBorderRadius'), '—', '—', v('inputHeight'), '—'
-    );
+    if (detected.input) {
+        md += block('Input — Text Field', [
+            ['Background', v('inputBg')],
+            ['Border', borderStr('border', 'inputBorderWidth')],
+            ['Radius', v('inputBorderRadius')],
+            ['Padding', pad('inputPaddingTop', 'inputPaddingRight')],
+            ['Foreground', v('foreground')],
+            ['Font', fontSpec('inputFontSize')],
+            ['Min height', v('inputHeight')],
+        ]);
+    }
 
-    // ── Avatar ───────────────────────────────────────────────────────────────
-    md += row('**Avatar**', '—',
-        v('avatarBg'), '—', '—', '—', '—', '—', '—',
-        v('avatarBorderColor'), '—',
-        v('avatarBorderRadius'), '—', '—', v('avatarSize'), '—'
-    );
+    if (detected.card) {
+        md += block('Card', [
+            ['Background', v('card')],
+            ['Foreground', v('cardForeground')],
+            ['Border', borderStr('cardBorderColor', 'cardBorderWidth')],
+            ['Radius', v('cardBorderRadius')],
+            ['Padding', pad('cardPaddingTop', 'cardPaddingRight')],
+            ['Shadow', v('cardBoxShadow')],
+        ]);
+    }
 
-    // ── Badge ────────────────────────────────────────────────────────────────
-    md += row('**Badge**', '—',
-        v('badgeBackground'), v('badgeForeground'), v('badgeFontSize'), '—',
-        pad('badgePaddingTop','badgePaddingRight'), '—', '—',
-        v('badgeBorderColor'), '—',
-        v('badgeBorderRadius'), v('badgeForeground'), '—', '—',
-        otherTypo('badgeFontWeight')
-    );
+    if (detected.navigation) {
+        md += block('Navigation — Top Bar', [
+            ['Background', v('headerBg')],
+            ['Height', v('headerHeight')],
+            ['Item color', v('navLinkForeground')],
+            ['Active item color', v('sidebarForeground')],
+            ['Border', v('headerBorderColor') !== '—' ? `1px solid ${v('headerBorderColor')}` : 'none'],
+            ['Shadow', v('headerBoxShadow')],
+        ]);
+    }
 
-    // ── Links ────────────────────────────────────────────────────────────────
-    md += row('**Links**', '—',
-        '—', v('accent'), '—', '—', '—', '—', '—', '—', '—', '—',
-        v('accent'), '—', '—',
-        v('accentTextDecoration') !== '—' ? `decoration: ${v('accentTextDecoration')}` : '—'
-    );
+    if (detected.avatar) {
+        md += block('Avatar', [
+            ['Background', v('avatarBg')],
+            ['Border', v('avatarBorderColor') !== '—' ? `1px solid ${v('avatarBorderColor')}` : 'none'],
+            ['Radius', v('avatarBorderRadius')],
+            ['Size', v('avatarSize')],
+        ]);
+    }
 
-    // ── Checkbox ─────────────────────────────────────────────────────────────
-    md += row('**Checkbox**', '—',
-        '—', '—', '—', '—', '—', '—', '—',
-        v('checkboxBorderColor'), '—',
-        v('checkboxBorderRadius'), v('checkboxAccentColor'), '—', v('checkboxSize'), '—'
-    );
+    if (detected.badge) {
+        md += block('Badge / Tag', [
+            ['Background', v('badgeBackground')],
+            ['Foreground', v('badgeForeground')],
+            ['Padding', pad('badgePaddingTop', 'badgePaddingRight')],
+            ['Radius', v('badgeBorderRadius')],
+            ['Font', fontSpec('badgeFontSize', 'badgeFontWeight')],
+            ['Border', v('badgeBorderColor') !== '—' ? `1px solid ${v('badgeBorderColor')}` : 'none'],
+        ]);
+    }
 
-    // ── Context Menu ─────────────────────────────────────────────────────────
-    md += row('**Context Menu**', '—',
-        v('popover'), v('popoverForeground'), '—', '—', '—', '—',
-        v('popoverBoxShadow'), v('popoverBorderColor'), '—',
-        v('popoverBorderRadius'), '—', '—', '—', '—'
-    );
+    if (detected.link) {
+        md += block('Link', [
+            ['Color', v('accent')],
+            ['Underline', v('accentTextDecoration')],
+        ]);
+    }
 
-    // ── Button Group ─────────────────────────────────────────────────────────
-    md += row('**Button Group**', '—',
-        v('secondary'), v('secondaryForeground'), '—', '—',
-        pad('secondaryPaddingTop','secondaryPaddingRight'), '—', '—',
-        v('secondaryBorderColor'), v('secondaryBorderWidth'),
-        v('secondaryBorderRadius'), '—', '—', '—', '—'
-    );
+    if (detected.checkbox) {
+        md += block('Checkbox', [
+            ['Accent color', v('checkboxAccentColor')],
+            ['Border', v('checkboxBorderColor') !== '—' ? `1px solid ${v('checkboxBorderColor')}` : '—'],
+            ['Radius', v('checkboxBorderRadius')],
+            ['Size', v('checkboxSize')],
+        ]);
+    }
 
-    // ── Calendar ─────────────────────────────────────────────────────────────
-    md += row('**Calendar**', '—',
-        v('popover'), v('popoverForeground'), '—', '—', '—', '—',
-        v('popoverBoxShadow'), v('popoverBorderColor'), '—',
-        v('popoverBorderRadius'), '—', '—', '—', '—'
-    );
+    if (detected.radio) {
+        md += block('Radio Button', [
+            ['Accent color', v('radioAccentColor')],
+            ['Border', v('radioBorderColor') !== '—' ? `1px solid ${v('radioBorderColor')}` : '—'],
+            ['Radius', v('radioBorderRadius')],
+            ['Size', v('radioSize')],
+        ]);
+    }
 
-    // ── Card ─────────────────────────────────────────────────────────────────
-    md += row('**Card**', '—',
-        v('card'), v('cardForeground'), '—', '—',
-        pad('cardPaddingTop','cardPaddingRight'), '—',
-        v('cardBoxShadow'), v('cardBorderColor'), v('cardBorderWidth'),
-        v('cardBorderRadius'), '—', '—', '—', '—'
-    );
+    if (detected.switch_) {
+        md += block('Switch / Toggle', [
+            ['Background (on)', v('switchBg')],
+            ['Radius', v('switchBorderRadius')],
+            ['Height', v('switchHeight')],
+            ['Width', v('switchWidth')],
+        ]);
+    }
 
-    // ── Accordion ────────────────────────────────────────────────────────────
-    md += row('**Accordion**', '—',
-        v('accordionBg'), v('accordionTriggerForeground'), v('accordionTriggerFontSize'), '—',
-        pad('accordionTriggerPaddingTop','accordionTriggerPaddingRight'), '—', '—',
-        v('accordionBorderColor'), '—', '—', '—', '—', '—',
-        otherTypo('accordionTriggerFontWeight')
-    );
+    if (detected.select) {
+        md += block('Select', [
+            ['Background', v('selectBg')],
+            ['Foreground', v('selectForeground')],
+            ['Border', borderStr('selectBorderColor', 'selectBorderWidth')],
+            ['Radius', v('selectBorderRadius')],
+            ['Height', v('selectHeight')],
+        ]);
+    }
 
-    // ── Alert ────────────────────────────────────────────────────────────────
-    md += row('**Alert**', '—',
-        v('alertBg'), v('alertForeground'), v('alertFontSize'), '—',
-        pad('alertPaddingTop','alertPaddingRight'), '—',
-        v('alertBoxShadow'), v('alertBorderColor'), '—',
-        v('alertBorderRadius'), '—', '—', '—', '—'
-    );
+    if (detected.table) {
+        md += `### Table\n\n`;
+        md += `**Header row:**\n`;
+        md += bullet('Background', v('tableHeaderBg'));
+        md += bullet('Foreground', v('tableHeaderForeground'));
+        md += bullet('Font', fontSpec('tableHeaderFontSize', 'tableHeaderFontWeight'));
+        md += bullet('Padding', pad('tableHeaderPaddingTop', 'tableHeaderPaddingRight'));
+        md += bullet('Border', v('tableBorderColor') !== '—' ? `1px solid ${v('tableBorderColor')}` : 'none');
+        md += `\n**Data row:**\n`;
+        md += bullet('Background', v('tableBg'));
+        md += bullet('Foreground', v('tableCellForeground'));
+        md += bullet('Font size', v('tableFontSize'));
+        md += bullet('Padding', pad('tableCellPaddingTop', 'tableCellPaddingRight'));
+        md += `\n- **States:** *Capture via Create DS flow — hover/focus states not auto-extracted*\n\n`;
+    }
 
-    // ── Alert Dialog ─────────────────────────────────────────────────────────
-    md += row('**Alert Dialog**', '—',
-        v('dialogBg'), v('dialogForeground'), '—', '—',
-        pad('dialogPaddingTop','dialogPaddingRight'), '—',
-        v('dialogBoxShadow'), '—', '—',
-        v('dialogBorderRadius'), '—', '—', '—', '—'
-    );
+    if (detected.modal) {
+        md += block('Modal / Dialog', [
+            ['Background', v('dialogBg')],
+            ['Foreground', v('dialogForeground')],
+            ['Radius', v('dialogBorderRadius')],
+            ['Padding', pad('dialogPaddingTop', 'dialogPaddingRight')],
+            ['Shadow', v('dialogBoxShadow')],
+        ]);
+    }
 
-    // ── Command ──────────────────────────────────────────────────────────────
-    md += row('**Command**', '—',
-        v('popover'), v('popoverForeground'), '—', '—', '—', '—',
-        v('popoverBoxShadow'), v('popoverBorderColor'), '—',
-        v('popoverBorderRadius'), '—', '—', '—', '—'
-    );
+    if (detected.toast) {
+        md += block('Toast', [
+            ['Background', v('toastBg')],
+            ['Foreground', v('toastForeground')],
+            ['Border', v('toastBorderColor') !== '—' ? `1px solid ${v('toastBorderColor')}` : 'none'],
+            ['Radius', v('toastBorderRadius')],
+            ['Padding', pad('toastPaddingTop', 'toastPaddingRight')],
+            ['Shadow', v('toastBoxShadow')],
+            ['Font size', v('toastFontSize')],
+        ]);
+    }
 
-    // ── Table ────────────────────────────────────────────────────────────────
-    md += row('**Table**', 'Header',
-        v('tableHeaderBg'), v('tableHeaderForeground'), v('tableHeaderFontSize'), '—',
-        pad('tableHeaderPaddingTop','tableHeaderPaddingRight'), '—', '—',
-        v('tableBorderColor'), '—', '—', '—', '—', '—',
-        otherTypo('tableHeaderFontWeight')
-    );
-    md += row('**Table**', 'Cell',
-        v('tableBg'), v('tableCellForeground'), v('tableFontSize'), '—',
-        pad('tableCellPaddingTop','tableCellPaddingRight'), '—', '—',
-        v('tableBorderColor'), '—', '—', '—', '—', '—', '—'
-    );
+    if (detected.tooltip) {
+        md += block('Tooltip', [
+            ['Background', v('tooltipBg')],
+            ['Foreground', v('tooltipForeground')],
+            ['Radius', v('tooltipBorderRadius')],
+            ['Padding', pad('tooltipPaddingTop', 'tooltipPaddingRight')],
+            ['Shadow', v('tooltipBoxShadow')],
+            ['Font size', v('tooltipFontSize')],
+        ]);
+    }
 
-    // ── Dialog ───────────────────────────────────────────────────────────────
-    md += row('**Dialog**', '—',
-        v('dialogBg'), v('dialogForeground'), '—', '—',
-        pad('dialogPaddingTop','dialogPaddingRight'), '—',
-        v('dialogBoxShadow'), '—', '—',
-        v('dialogBorderRadius'), '—', '—', '—', '—'
-    );
+    if (detected.accordion) {
+        md += block('Accordion', [
+            ['Background', v('accordionBg')],
+            ['Trigger foreground', v('accordionTriggerForeground')],
+            ['Border', v('accordionBorderColor') !== '—' ? `1px solid ${v('accordionBorderColor')}` : 'none'],
+            ['Padding', pad('accordionTriggerPaddingTop', 'accordionTriggerPaddingRight')],
+            ['Font', fontSpec('accordionTriggerFontSize', 'accordionTriggerFontWeight')],
+        ]);
+    }
 
-    // ── Drawer ───────────────────────────────────────────────────────────────
-    md += row('**Drawer**', '—',
-        v('sheetBg'), v('sheetForeground'), '—', '—', '—', '—', '—',
-        v('sheetBorderColor'), '—', '—', '—', '—', '—', '—'
-    );
+    if (detected.alert) {
+        md += block('Alert', [
+            ['Background', v('alertBg')],
+            ['Foreground', v('alertForeground')],
+            ['Border', v('alertBorderColor') !== '—' ? `1px solid ${v('alertBorderColor')}` : 'none'],
+            ['Radius', v('alertBorderRadius')],
+            ['Padding', pad('alertPaddingTop', 'alertPaddingRight')],
+            ['Shadow', v('alertBoxShadow')],
+            ['Font size', v('alertFontSize')],
+        ]);
+    }
 
-    // ── Hover Card ───────────────────────────────────────────────────────────
-    md += row('**Hover Card**', '—',
-        v('popover'), v('popoverForeground'), '—', '—', '—', '—',
-        v('popoverBoxShadow'), v('popoverBorderColor'), '—',
-        v('popoverBorderRadius'), '—', '—', '—', '—'
-    );
+    if (detected.sidebar) {
+        md += block('Sidebar Panel', [
+            ['Background', v('sheetBg')],
+            ['Foreground', v('sheetForeground')],
+            ['Border', v('sheetBorderColor') !== '—' ? `1px solid ${v('sheetBorderColor')}` : 'none'],
+        ]);
+    }
 
-    // ── Menu Bar ─────────────────────────────────────────────────────────────
-    md += row('**Menu Bar**', '—',
-        v('headerBg'), v('sidebarForeground'), v('navLinkFontSize'), '—',
-        pad('navLinkPaddingTop','navLinkPaddingRight'), '—',
-        v('headerBoxShadow'), v('headerBorderColor'), '—', '—',
-        v('navLinkForeground'), '—', v('headerHeight'), '—'
-    );
+    if (detected.contextMenu) {
+        md += block('Context Menu', [
+            ['Background', v('contextMenuBg')],
+            ['Foreground', v('contextMenuForeground')],
+            ['Border', v('contextMenuBorderColor') !== '—' ? `1px solid ${v('contextMenuBorderColor')}` : 'none'],
+        ]);
+    }
 
-    // ── Pop-over ─────────────────────────────────────────────────────────────
-    md += row('**Pop-over**', '—',
-        v('popover'), v('popoverForeground'), '—', '—', '—', '—',
-        v('popoverBoxShadow'), v('popoverBorderColor'), '—',
-        v('popoverBorderRadius'), '—', '—', '—', '—'
-    );
+    if (detected.dropdown) {
+        md += block('Popover / Dropdown', [
+            ['Background', v('popover')],
+            ['Foreground', v('popoverForeground')],
+            ['Border', v('popoverBorderColor') !== '—' ? `1px solid ${v('popoverBorderColor')}` : 'none'],
+            ['Radius', v('popoverBorderRadius')],
+            ['Shadow', v('popoverBoxShadow')],
+        ]);
+    }
 
-    // ── Radio Button ─────────────────────────────────────────────────────────
-    md += row('**Radio Button**', '—',
-        '—', '—', '—', '—', '—', '—', '—', '—', '—', '—',
-        v('radioAccentColor'), '—', '—', '—'
-    );
+    const missing = Object.entries(detected)
+        .filter(([, det]) => !det)
+        .map(([key]) => notDetectedLabels[key]);
 
-    // ── Sidebar ──────────────────────────────────────────────────────────────
-    md += row('**Sidebar**', 'Default',
-        v('sidebar'), v('sidebarForeground'), '—', '—',
-        pad('sidebarItemPaddingTop','sidebarItemPaddingRight'), '—', '—',
-        v('sidebarBorderColor'), '—', '—', '—', '—', v('sidebarWidth'), '—'
-    );
-    md += row('**Sidebar**', 'Active Item',
-        v('sidebarPrimary'), v('sidebarPrimaryForeground'), '—', '—', '—', '—', '—', '—', '—',
-        v('sidebarItemBorderRadius'), '—', '—', '—',
-        otherTypo('sidebarItemFontWeight')
-    );
+    if (missing.length) {
+        md += `### ⚠ Not detected on scanned pages\n\n`;
+        md += `The following components were not found. Use **Create Design System** to capture them:\n\n`;
+        missing.forEach(label => { md += `- ${label}\n`; });
+        md += `\n`;
+    }
 
-    // ── Toast ────────────────────────────────────────────────────────────────
-    md += row('**Toast**', '—',
-        v('toastBg'), v('toastForeground'), v('toastFontSize'), '—',
-        pad('toastPaddingTop','toastPaddingRight'), '—',
-        v('toastBoxShadow'), v('toastBorderColor'), '—',
-        v('toastBorderRadius'), '—', '—', '—', '—'
-    );
-
-    // ── Switch ───────────────────────────────────────────────────────────────
-    md += row('**Switch**', '—',
-        v('switchBg'), '—', '—', '—', '—', '—', '—', '—', '—',
-        v('switchBorderRadius'), '—', '—',
-        v('switchHeight'), '—'
-    );
-
-    // ── Tabs ─────────────────────────────────────────────────────────────────
-    md += row('**Tabs**', 'List',
-        v('tabsBg'), v('tabInactiveForeground'), '—', '—',
-        pad('tabsPaddingTop','tabsPaddingTop'), '—', '—', '—', '—',
-        v('tabsBorderRadius'), '—', '—', '—', '—'
-    );
-    md += row('**Tabs**', 'Active Tab',
-        v('tabActiveBg'), v('tabActiveForeground'), '—', '—', '—', '—', '—', '—', '—',
-        v('tabActiveBorderRadius'), '—', '—', '—',
-        otherTypo('tabActiveFontWeight')
-    );
-
-    // ── Text Area ────────────────────────────────────────────────────────────
-    md += row('**Text Area**', '—',
-        v('inputBg'), v('foreground'), v('inputFontSize'), '—',
-        pad('inputPaddingTop','inputPaddingRight'), '—', '—',
-        v('border'), v('inputBorderWidth'),
-        v('inputBorderRadius'), '—', '—', '—', '—'
-    );
-
-    // ── Tooltip ──────────────────────────────────────────────────────────────
-    md += row('**Tooltip**', '—',
-        v('tooltipBg'), v('tooltipForeground'), v('tooltipFontSize'), '—',
-        pad('tooltipPaddingTop','tooltipPaddingRight'), '—',
-        v('tooltipBoxShadow'), '—', '—',
-        v('tooltipBorderRadius'), '—', '—', '—', '—'
-    );
-
-    md += `\n`;
     return md;
 }
 
 function generateDesignMarkdown(data) {
     const domain = (() => { try { return new URL(data.pageUrl).hostname; } catch (_) { return data.pageUrl || 'Unknown'; } })();
-    const title = data.pageTitle || domain;
+    const title  = data.pageTitle || domain;
+    const date   = new Date().toISOString().split('T')[0];
 
-    // ── Pre-compute atoms ──────────────────────────────────
-    // Filter #000000 from backgrounds — it is nearly always a browser default,
-    // not a real design decision. Valid dark canvases use near-black, not pure black.
-    const bgs        = (data.colors?.backgrounds || []).filter(c => c.hex?.toUpperCase() !== '#000000');
-    const texts      = data.colors?.text        || [];
-    const interacts  = data.colors?.interactive || [];
-    const borders    = data.colors?.borders     || [];
-    const typo       = data.typography          || [];
-    const components = data.components          || [];
-    const layout     = data.layout              || {};
-    const spacing    = data.spacing             || {};
-    const radii      = data.radii               || [];
-    const shadows    = data.shadows             || [];
-    const cssVars    = data.cssVariables        || {};
+    const bgs       = (data.colors?.backgrounds || []).filter(c => c.hex?.toUpperCase() !== '#000000');
+    const texts     = data.colors?.text        || [];
+    const interacts = data.colors?.interactive || [];
+    const borders   = data.colors?.borders     || [];
+    const typo      = data.typography          || [];
+    const layout    = data.layout              || {};
+    const spacing   = data.spacing             || {};
+    const radii     = data.radii               || [];
+    const shadows   = data.shadows             || [];
+    const cssVars   = data.cssVariables        || {};
+    const st        = data.semanticTokens      || {};
 
-    const families   = [...new Set(typo.map(t => t.family))];
-    const weights    = [...new Set(typo.map(t => String(t.weight)).filter(Boolean))];
-    const transforms = [...new Set(typo.map(t => t.textTransform).filter(Boolean))];
+    const families = [...new Set(typo.map(t => t.family).filter(Boolean))];
+    const weights  = [...new Set(typo.map(t => String(t.weight)).filter(Boolean))];
 
-    // Theme inference
-    // Dark-mode detection — use a weighted multi-signal approach:
-    //
-    // Signal 1 (strongest): Primary TEXT color luminance.
-    //   Light text (luminance > 0.55) → dark-mode. Dark text → light-mode.
-    //   Text color is the most reliable indicator because it must contrast the background.
-    //
-    // Signal 2: Background majority vote (top-3 only — avoids footer/nav pollution).
-    //   Count dark bg colors among the 3 most frequent background colors.
-    //
-    // Signal 3: Top-counted background color (bgs are sorted by frequency desc).
-    //   Only used as a tiebreaker.
-    //
-    // Final verdict: 2-of-3 signals must agree on "dark" to call dark-mode.
-    const topBgs         = bgs.slice(0, 3);
-    const darkBgCountTop = topBgs.filter(c => !isLightHex(c.hex)).length;
-    const bgSignal       = darkBgCountTop >= 2; // majority of top-3 backgrounds are dark
-    const textSignal     = texts.length > 0 && isLightHex(texts[0].hex); // primary text is light
-    const primaryBgDark  = bgs.length > 0 && !isLightHex(bgs[0].hex);
-    const darkSignals    = [bgSignal, textSignal, primaryBgDark].filter(Boolean).length;
-    const isDark         = darkSignals >= 2; // require at least 2 of 3 signals to agree
-    const isFlat         = shadows.length === 0;
-    const hasRounding    = radii.some(r => { const v = parseFloat(r.value); return v > 4 && v < 500; });
-    const hasPill        = radii.some(r => parseFloat(r.value) >= 500 || r.value === '50%' || r.value === '100%');
-    const densityLabel   = spacing.scale?.length > 6 ? 'rich' : spacing.scale?.length > 3 ? 'moderate' : 'minimal';
-    const modeLabel      = isDark ? 'dark-mode' : 'light-mode';
-    const depthLabel     = isFlat ? 'flat / no elevation' : `${shadows.length}-level elevation system`;
-    const shapeLabel     = hasPill ? 'pill-shaped elements' : hasRounding ? 'rounded corners' : 'sharp / rectangular';
+    // Dark mode detection — same multi-signal approach
+    const topBgs        = bgs.slice(0, 3);
+    const darkBgCount   = topBgs.filter(c => !isLightHex(c.hex)).length;
+    const bgSignal      = darkBgCount >= 2;
+    const textSignal    = texts.length > 0 && isLightHex(texts[0].hex);
+    const primaryBgDark = bgs.length > 0 && !isLightHex(bgs[0].hex);
+    const darkSignals   = [bgSignal, textSignal, primaryBgDark].filter(Boolean).length;
+    const isDark        = darkSignals >= 2;
+    const isFlat        = shadows.length === 0;
+    const hasPill       = radii.some(r => parseFloat(r.value) >= 500 || r.value === '50%' || r.value === '100%');
+    const hasRounding   = radii.some(r => { const px = parseFloat(r.value); return px > 4 && px < 500; });
+    const modeLabel     = isDark ? 'dark-mode' : 'light-mode';
+    const depthLabel    = isFlat ? 'flat / no elevation' : `${shadows.length}-level shadow system`;
 
-    // Semantic color naming helper
-    function semanticName(hex, role, index) {
-        const names = {
-            backgrounds: ['Canvas', 'Surface', 'Overlay', 'Muted Surface', 'Sunken'],
-            text:        ['Primary Text', 'Secondary Text', 'Muted Text', 'Disabled Text', 'Inverse Text'],
-            interactive: ['Accent', 'Primary Action', 'Secondary Action', 'Focus Ring', 'Hover State'],
-            borders:     ['Border Default', 'Border Subtle', 'Border Strong', 'Divider', 'Outline'],
-        };
-        return (names[role] || [])[index] || `${role.charAt(0).toUpperCase() + role.slice(1)} ${index + 1}`;
+    // Spacing base unit
+    const spaceScale = (spacing.scale || []).map(v => typeof v === 'number' ? v : parseFloat(v)).filter(n => n > 0);
+    const spaceBase  = spacing.baseUnit || (spaceScale.length ? [...spaceScale].sort((a, b) => a - b)[0] : 4);
+
+    // Radius defaults
+    const sortedRadii   = [...radii].sort((a, b) => parseFloat(a.value) - parseFloat(b.value));
+    const defaultRadius = sortedRadii.find(r => parseFloat(r.value) > 0)?.value || sortedRadii[0]?.value || '4px';
+
+    // Accent color
+    const accentHex = st.accent?.value || interacts[0]?.hex;
+
+    // Component detection for confidence score
+    function vSt(key) {
+        const raw = st[key]?.value;
+        if (!raw || raw === 'none' || raw === '0px' || raw === 'normal' || raw === 'transparent') return false;
+        const a = (raw.match(/rgba\(\s*\d+,\s*\d+,\s*\d+,\s*([\d.]+)\s*\)/) || [])[1];
+        return !(a !== undefined && parseFloat(a) < 0.05);
     }
+
+    const detectedCount = [
+        vSt('primary'), vSt('secondary'), vSt('destructive'),
+        vSt('border') || vSt('inputBg'), vSt('card'),
+        vSt('sidebar') || vSt('headerBg'),
+        vSt('avatarBg'), vSt('badgeBackground') || vSt('badgeFontSize'),
+        vSt('accent'), vSt('checkboxBorderColor'), vSt('radioBorderColor'),
+        vSt('switchBg'), vSt('selectBg'), vSt('tableHeaderBg'),
+        vSt('dialogBg'), vSt('toastBg'), vSt('tooltipBg'),
+        vSt('accordionBg'), vSt('alertBg'), vSt('sheetBg'),
+        vSt('contextMenuBg'), vSt('popover'),
+    ].filter(Boolean).length;
+    const totalExpected = 22;
+    const confidencePct = Math.round((detectedCount / totalExpected) * 100);
+
+    // DS override count (tokens captured via Build DS, not auto-scan)
+    const dsOverrides = Object.values(st).filter(t => t?.source && t.source !== 'auto-scan').length;
 
     let md = '';
 
-    // ══════════════════════════════════════════════════════
-    // HEADER
-    // ══════════════════════════════════════════════════════
+    // ── HEADER ────────────────────────────────────────────────────────────────
     md += `# Design System — ${escMd(title)}\n\n`;
-    md += `> Extracted from: \`${escMd(data.pageUrl || domain)}\`\n\n`;
+    md += `> Source: \`${escMd(data.pageUrl || domain)}\` · Extracted: \`${date}\` · Pages scanned: 1\n`;
+    md += `> Confidence: **${confidencePct}%** — components marked \`⚠\` need manual verification via Create Design System flow.\n\n`;
     md += `---\n\n`;
 
-    // ══════════════════════════════════════════════════════
-    // 1. VISUAL THEME & ATMOSPHERE
-    // ══════════════════════════════════════════════════════
-    md += `## 1. Visual Theme & Atmosphere\n\n`;
-
-    // Narrative paragraph built from real signals
-    const fontDesc   = families.length ? `**${families.join(' / ')}**` : 'a system font stack';
-    const bgDesc     = bgs[0] ? `(\`${bgs[0].hex}\`)` : '';
-    const shapeDesc  = hasPill ? 'pill-shaped interactive elements' : hasRounding ? 'softly rounded corners' : 'sharp, rectangular forms';
-    const depthDesc  = isFlat ? 'flat surfaces with no elevation' : `a ${shadows.length}-level shadow system`;
-    const weightDesc = weights.length === 1 ? `a single weight (${weights[0]})` : weights.length === 2 ? `two weights (${weights.join(' / ')})` : `${weights.length} weights (${weights.join(', ')})`;
-    const trackDesc  = typo.some(t => t.letterSpacing && t.letterSpacing !== 'normal' && t.letterSpacing !== '0px') ? ' with deliberate letter-spacing as a stylistic signature' : '';
-    const transformDesc = transforms.includes('uppercase') ? ' Uppercase text-transform is applied systematically as a formal voice.' : '';
-
-    const bgDescInline = bgDesc ? ` ${bgDesc}` : '';
-    md += `${escMd(title)} is a ${modeLabel} interface built on ${fontDesc} typography${trackDesc}. The canvas is ${isDark ? 'dark' : 'light'}${bgDescInline}, with ${shapeDesc} and ${depthDesc}. `;
-    md += `Typography uses ${weightDesc} to create hierarchy.${transformDesc} `;
-    md += `The spacing system is ${densityLabel} with ${spacing.scale?.length || 0} defined steps.\n\n`;
-
-    if (interacts.length || bgs.length > 1) {
-        const accentHex = interacts[0]?.hex;
-        if (accentHex) md += `The accent color (\`${accentHex}\`) drives interactive elements — buttons, links, and focus states — creating a consistent action signal throughout the interface.\n\n`;
+    // ── 1. FINGERPRINT ────────────────────────────────────────────────────────
+    md += `## 1. Fingerprint\n\n`;
+    {
+        const parts = [`${escMd(title)} is a **${modeLabel}** interface.`];
+        if (bgs[0])     parts.push(`Canvas \`${bgs[0].hex}\`,`);
+        if (texts[0])   parts.push(`primary text \`${texts[0].hex}\`,`);
+        if (accentHex)  parts.push(`accent \`${accentHex}\`.`);
+        if (families.length) parts.push(`Typography: \`${families[0]}\`${weights.length ? ` with weights ${weights.join(', ')}` : ''}.`);
+        parts.push(`Base spacing unit \`${spaceBase}px\`, default radius \`${defaultRadius}\`.`);
+        parts.push(`Depth: **${depthLabel}**.`);
+        md += parts.join(' ') + '\n\n';
     }
+    md += `---\n\n`;
 
-    md += `**Key Characteristics:**\n`;
-    if (bgs[0]) md += `- ${isDark ? 'Dark' : 'Light'} canvas (\`${bgs[0].hex}\`) — the primary background surface\n`;
-    if (texts[0]) md += `- Primary text \`${texts[0].hex}\`${texts[1] ? `, secondary \`${texts[1].hex}\`` : ''}\n`;
-    if (interacts[0]) md += `- Accent / action color: \`${interacts[0].hex}\`\n`;
-    if (borders[0]) md += `- Border: \`${borders[0].hex}\`\n`;
-    if (families.length) md += `- Font: ${families.map(f => `\`${f}\``).join(' + ')}\n`;
-    md += `- Weight system: ${weightDesc}\n`;
-    if (transforms.length) md += `- Text transform: \`${transforms.join(' / ')}\`\n`;
-    md += `- Shape: ${shapeLabel}\n`;
-    md += `- Depth: ${depthLabel}\n`;
-    md += `- Spacing: ${densityLabel} (${spacing.scale?.length || 0} steps, base ${spacing.baseUnit || '?'}px)\n`;
-    if (components.length) md += `- ${components.length} component type(s) detected\n`;
+    // ── 2. TOKENS ─────────────────────────────────────────────────────────────
+    md += `## 2. Tokens\n\n`;
+
+    // Color table
+    md += `### Color\n\n`;
+    md += `| Token | Value | Role |\n`;
+    md += `|-------|-------|------|\n`;
+    const colorRows = [
+        ['color.bg.canvas',         bgs[0]?.hex,                                                              'Page background'],
+        ['color.bg.surface',        st.card?.value || bgs[1]?.hex,                                            'Cards, panels, raised surfaces'],
+        ['color.bg.muted',          st.muted?.value || bgs[2]?.hex,                                           'Subtle fills, hover states'],
+        ['color.text.primary',      texts[0]?.hex,                                                            'Headings, body'],
+        ['color.text.secondary',    texts[1]?.hex,                                                            'Supporting text, metadata'],
+        ['color.text.disabled',     texts[3]?.hex || texts[2]?.hex,                                           'Disabled states'],
+        ['color.text.inverse',      isDark ? texts.find(t => !isLightHex(t.hex))?.hex : texts.find(t => isLightHex(t.hex))?.hex, 'Text on accent backgrounds'],
+        ['color.action.primary',    accentHex,                                                                'CTAs, links, focus rings'],
+        ['color.feedback.negative', st.destructive?.value,                                                   'Errors, destructive actions'],
+        ['color.border.default',    borders[0]?.hex,                                                          'Card/input borders, dividers'],
+        ['color.border.strong',     borders[1]?.hex,                                                          'Emphasized borders'],
+    ];
+    for (const [token, value, role] of colorRows) {
+        if (!value || value === 'transparent' || value === 'none') continue;
+        md += `| \`${token}\` | \`${escMd(value)}\` | ${role} |\n`;
+    }
     md += `\n`;
 
-    // Design token reference in hierarchical dot-notation format — matches how
-    // tokens are consumed in code (Tailwind, CSS-in-JS, design tools)
-    const st = data.semanticTokens || {};
-    const tokenRows = [];
-    if (bgs[0])       tokenRows.push([`color.surface.base`,    bgs[0].hex]);
-    if (bgs[1])       tokenRows.push([`color.surface.raised`,  bgs[1].hex]);
-    if (texts[0])     tokenRows.push([`color.text.primary`,    texts[0].hex]);
-    if (texts[1])     tokenRows.push([`color.text.secondary`,  texts[1].hex]);
-    if (interacts[0]) tokenRows.push([`color.action.primary`,  interacts[0].hex]);
-    if (borders[0])   tokenRows.push([`color.border.default`,  borders[0].hex]);
-    const stPrimary = st.primary?.value;
-    const stDestructive = st.destructive?.value;
-    const stMuted = st.muted?.value;
-    if (stPrimary && !tokenRows.find(r => r[1] === stPrimary))
-        tokenRows.push([`color.action.accent`, stPrimary]);
-    if (stDestructive) tokenRows.push([`color.action.destructive`, stDestructive]);
-    if (stMuted)       tokenRows.push([`color.surface.muted`,  stMuted]);
-    const sortedR = [...radii].sort((a, b) => parseFloat(a.value) - parseFloat(b.value));
-    const rSizes = ['xs','sm','md','lg','xl','2xl'];
-    sortedR.slice(0, 6).forEach((r, i) => tokenRows.push([`radius.${rSizes[i]}`, r.value]));
-    const typoSizes = [...new Set(typo.map(t => t.size).filter(Boolean))].sort((a, b) => parseFloat(a) - parseFloat(b));
-    const tSizes = ['xs','sm','md','lg','xl','2xl'];
-    typoSizes.slice(0, 6).forEach((s, i) => tokenRows.push([`font.size.${tSizes[i]}`, s]));
-    if (spacing.scale?.length) {
-        spacing.scale.slice(0, 8).forEach((s, i) => tokenRows.push([`space.${i + 1}`, `${s}px`]));
-    }
-    if (tokenRows.length) {
-        md += `**Design Tokens**\n\n`;
-        md += `| Token | Value |\n|-------|-------|\n`;
-        tokenRows.forEach(([k, v]) => { md += `| \`${k}\` | \`${escMd(v)}\` |\n`; });
-        md += `\n`;
-    }
-
-    // ══════════════════════════════════════════════════════
-    // 2. COLOR PALETTE & ROLES
-    // ══════════════════════════════════════════════════════
-    md += `## 2. Color Palette & Roles\n\n`;
-
-    // Primary / canvas colors
-    if (bgs.length) {
-        md += `### Primary & Background\n\n`;
-        bgs.forEach((c, i) => {
-            const name = semanticName(c.hex, 'backgrounds', i);
-            md += `- **${name}** (\`${c.hex}\`): ${i === 0 ? 'Page background / canvas' : i === 1 ? 'Card / surface background' : 'Overlay / muted surface'}\n`;
-        });
-        md += `\n`;
-    }
-
-    // Text colors
-    if (texts.length) {
-        md += `### Text\n\n`;
-        texts.forEach((c, i) => {
-            const name = semanticName(c.hex, 'text', i);
-            md += `- **${name}** (\`${c.hex}\`): ${i === 0 ? 'Headings and primary body text' : i === 1 ? 'Secondary / supporting text' : 'Muted / disabled text'}\n`;
-        });
-        md += `\n`;
-    }
-
-    // Interactive / accent colors
-    if (interacts.length) {
-        md += `### Interactive & Accent\n\n`;
-        interacts.forEach((c, i) => {
-            const name = semanticName(c.hex, 'interactive', i);
-            md += `- **${name}** (\`${c.hex}\`): ${i === 0 ? 'Primary CTA, links, focus rings' : i === 1 ? 'Secondary actions' : 'Hover / active state'}\n`;
-        });
-        md += `\n`;
-    }
-
-    // Border colors
-    if (borders.length) {
-        md += `### Borders & Dividers\n\n`;
-        borders.forEach((c, i) => {
-            const name = semanticName(c.hex, 'borders', i);
-            md += `- **${name}** (\`${c.hex}\`): ${i === 0 ? 'Default border on cards and inputs' : i === 1 ? 'Subtle / secondary border' : 'Strong / emphasis border'}\n`;
-        });
-        md += `\n`;
-    }
-
-    // CSS color tokens
-    const colorTokens = cssVars.colors || {};
-    if (Object.keys(colorTokens).length) {
-        md += `### CSS Color Tokens\n\n`;
-        md += `| Token | Value |\n`;
-        md += `|-------|-------|\n`;
-        for (const [k, v] of Object.entries(colorTokens)) {
-            md += `| \`${escMd(k)}\` | \`${escMd(v)}\` |\n`;
-        }
-        md += `\n`;
-    }
-
-    // ══════════════════════════════════════════════════════
-    // 3. TYPOGRAPHY RULES
-    // ══════════════════════════════════════════════════════
-    md += `## 3. Typography Rules\n\n`;
-
-    if (families.length) {
-        md += `### Font Families\n\n`;
-        md += `| Role | Family | Fallback |\n`;
-        md += `|------|--------|----------|\n`;
-        families.forEach((f, i) => {
-            const role = i === 0 ? 'Primary' : i === 1 ? 'Secondary / Monospace' : 'Tertiary';
-            md += `| ${role} | \`${escMd(f)}\` | system-ui, sans-serif |\n`;
-        });
-        md += `\n`;
-    }
-
-    if (typo.length) {
-        md += `### Hierarchy\n\n`;
-        md += `| Role | Font | Size | Weight | Line Height | Letter Spacing | Notes |\n`;
-        md += `|------|------|------|--------|-------------|----------------|-------|\n`;
-        for (const t of typo) {
-            const px = parseFloat(t.size) || 16;
-            const rem = (px / 16).toFixed(2);
-            const notes = t.textTransform && t.textTransform !== 'none' ? `\`text-transform: ${t.textTransform}\`` : '—';
-            md += `| ${escMd(t.label)} | \`${escMd(t.family)}\` | ${escMd(t.size)} (${rem}rem) | ${t.weight} | ${escMd(t.lineHeight || '—')} | ${escMd(t.letterSpacing || 'normal')} | ${notes} |\n`;
-        }
-        md += `\n`;
-    }
-
-    md += `### Principles\n\n`;
-    if (weights.length === 1) md += `- **Single-weight system**: Only \`${weights[0]}\` is used — no hierarchy through weight variation.\n`;
-    else if (weights.length === 2) md += `- **Two-weight system**: \`${weights.join('` / `')}\` — clean, disciplined hierarchy.\n`;
-    else md += `- **Multi-weight system**: ${weights.length} weights (\`${weights.join('`, `')}\`) create a rich typographic hierarchy.\n`;
-    if (transforms.includes('uppercase')) md += `- **Uppercase convention**: UI text uses \`text-transform: uppercase\`, creating a systematic, formal voice.\n`;
-    const hasTracking = typo.some(t => t.letterSpacing && t.letterSpacing !== 'normal' && t.letterSpacing !== '0px');
-    if (hasTracking) md += `- **Letter-spacing as identity**: Tracked type is a deliberate design signal — preserve letter-spacing values exactly.\n`;
-    const tightLines = typo.filter(t => parseFloat(t.lineHeight) < 1.3);
-    if (tightLines.length > typo.length / 2) md += `- **Tight line-heights**: Most text uses compressed line-heights — efficient, information-dense layout.\n`;
-    else md += `- **Open line-heights**: Generous line-heights favour readability over density.\n`;
-    md += `\n`;
-
-    // Font tokens (inline, not a separate section)
-    const fontTokens = cssVars.fonts || {};
-    if (Object.keys(fontTokens).length) {
-        md += `### Font Tokens\n\n`;
-        md += `| Token | Value |\n`;
-        md += `|-------|-------|\n`;
-        for (const [k, v] of Object.entries(fontTokens)) {
-            md += `| \`${escMd(k)}\` | \`${escMd(v)}\` |\n`;
-        }
-        md += `\n`;
-    }
-
-    // ══════════════════════════════════════════════════════
-    // 4. COMPONENT STYLINGS
-    // ══════════════════════════════════════════════════════
-    md += `## 4. Component Stylings\n\n`;
-    md += `> Populated automatically from page scan. **Create DS** fills missing values with exact computed styles.\n\n`;
-    md += generateComponentsTable(data.semanticTokens || {});
-    md += `\n**Required States** — every interactive component in the table above must implement:\n`;
-    md += `\`default\` · \`hover\` · \`focus-visible\` · \`active\` · \`disabled\` · \`loading\` · \`error\`\n\n`;
-    md += `> **Keyboard**: all interactive components must be fully operable via keyboard. `;
-    md += `**Touch**: minimum 44px tap target, minimum 8px gap between tappable elements.\n\n`;
-
-    // ══════════════════════════════════════════════════════
-    // 5. LAYOUT PRINCIPLES
-    // ══════════════════════════════════════════════════════
-    md += `## 5. Layout Principles\n\n`;
-
-    // Spacing system
-    md += `### Spacing System\n\n`;
-    if (spacing.scale?.length) {
-        const base = spacing.baseUnit || 4;
-        md += `- Base unit: **${base}px**\n`;
-        md += `- Scale: ${spacing.scale.map(v => `${v}px`).join(', ')}\n\n`;
-    } else if (spacing.baseUnit) {
-        md += `- Base unit: **${spacing.baseUnit}px**\n\n`;
-    } else {
-        md += `No spacing scale detected.\n\n`;
-    }
-
-    // Size tokens (inline)
-    const sizeTokens = cssVars.sizes || {};
-    if (Object.keys(sizeTokens).length) {
-        md += `**Size Tokens:**\n`;
-        md += `| Token | Value |\n`;
-        md += `|-------|-------|\n`;
-        for (const [k, v] of Object.entries(sizeTokens)) {
-            md += `| \`${escMd(k)}\` | \`${escMd(v)}\` |\n`;
-        }
-        md += `\n`;
-    }
-
-    // Grid & container
-    const layoutStats = [];
-    if (layout.maxWidth)                                              layoutStats.push(['Container max-width', layout.maxWidth]);
-    if (layout.containerPadding && layout.containerPadding !== '0px') layoutStats.push(['Container padding', layout.containerPadding]);
-    if (layout.gridColumns)                                           layoutStats.push(['Grid columns', String(layout.gridColumns)]);
-    if (layout.gridGap)                                               layoutStats.push(['Grid gap', layout.gridGap]);
-    if (layout.flexLayouts > 0)                                       layoutStats.push(['Flex containers', `${layout.flexLayouts}`]);
-    if (layout.gridLayouts > 0)                                       layoutStats.push(['Grid containers', `${layout.gridLayouts}`]);
-
-    if (layoutStats.length) {
-        md += `### Grid & Container\n\n`;
-        md += `| Property | Value |\n`;
-        md += `|----------|-------|\n`;
-        for (const [k, v] of layoutStats) md += `| ${k} | \`${escMd(v)}\` |\n`;
-        md += `\n`;
-    }
-
-    // Whitespace philosophy
-    md += `### Whitespace Philosophy\n\n`;
-    if (isDark) {
-        md += `Dark backgrounds create natural depth — whitespace is experienced as contrast rather than blank space. `;
-    } else {
-        md += `The light canvas provides breathing room between content blocks. `;
-    }
-    if (densityLabel === 'rich') {
-        md += `The rich spacing scale (${spacing.scale?.length} steps) supports precise, intentional rhythm throughout the layout.\n\n`;
-    } else if (densityLabel === 'moderate') {
-        md += `A moderate spacing scale creates consistent rhythm without over-engineering.\n\n`;
-    } else {
-        md += `Minimal spacing steps keep the layout simple — rely on the defined scale and avoid one-off values.\n\n`;
-    }
-
-    // Border radius scale
-    md += `### Border Radius Scale\n\n`;
+    // Radius table
     if (radii.length) {
-        const sortedRadii = [...radii].sort((a, b) => parseFloat(a.value) - parseFloat(b.value));
+        md += `### Radius\n\n`;
+        md += `| Token | Value | Used for |\n`;
+        md += `|-------|-------|----------|\n`;
+        const seenR = new Set();
         for (const r of sortedRadii) {
-            const px = parseFloat(r.value) || 0;
-            const shape = px === 0 ? 'Sharp / rectangular' : px >= 9999 ? 'Fully circular' : px >= 50 ? 'Pill / fully rounded' : px >= 24 ? 'Section / large containers' : px >= 16 ? 'Feature cards / panels' : px >= 8 ? 'Standard cards' : px >= 4 ? 'Inputs / small elements' : 'Slightly rounded';
-            md += `- **${px}px** (\`${r.value}\`): ${shape}${r.label ? ` — ${r.label}` : ''}\n`;
+            const px = parseFloat(r.value);
+            let token, usedFor;
+            if (r.value === '50%' || r.value === '100%' || px >= 500) { token = 'radius.pill'; usedFor = 'Tag-style pills, round buttons'; }
+            else if (px >= 13 && px <= 48)                             { token = 'radius.lg';   usedFor = 'Cards, modals'; }
+            else if (px >= 5  && px <= 12)                             { token = 'radius.md';   usedFor = 'Buttons, small cards'; }
+            else if (px > 0   && px <= 4)                              { token = 'radius.sm';   usedFor = 'Inputs, badges, chips'; }
+            else                                                        { token = `radius.${Math.round(px) || r.value}`; usedFor = 'Custom'; }
+            if (seenR.has(token)) continue;
+            seenR.add(token);
+            md += `| \`${token}\` | \`${escMd(r.value)}\` | ${usedFor} |\n`;
         }
         md += `\n`;
+    }
+
+    // Spacing
+    md += `### Spacing\n\n`;
+    if (spaceScale.length) {
+        md += `- **Base unit:** \`${spaceBase}px\`\n`;
+        md += `- **Scale:** ${[...spaceScale].sort((a, b) => a - b).map(v => `${v}px`).join(', ')}\n\n`;
+    } else if (spacing.baseUnit) {
+        md += `- **Base unit:** \`${spacing.baseUnit}px\`\n\n`;
     } else {
-        md += `No border radius tokens detected — elements may use sharp corners or inline values.\n\n`;
+        md += `No spacing scale captured — use **Create Design System** to extract.\n\n`;
     }
 
-    // Breakpoints
-    if (layout.breakpoints?.length) {
-        md += `\n`;
-    }
-
-    // ══════════════════════════════════════════════════════
-    // 6. DEPTH & ELEVATION
-    // ══════════════════════════════════════════════════════
-    md += `## 6. Depth & Elevation\n\n`;
-
-    if (shadows.length) {
-        md += `| Level | Name | CSS Value | Use Case |\n`;
-        md += `|-------|------|-----------|----------|\n`;
-        shadows.forEach((s, i) => {
-            const use = i === 0 ? 'Subtle lift (cards, inputs)' : i === 1 ? 'Raised elements (dropdowns, popovers)' : i === 2 ? 'Floating elements (modals, sheets)' : 'Highest emphasis (toasts, tooltips)';
-            md += `| ${i} | ${escMd(s.label)} | \`${escMd(s.value)}\` | ${use} |\n`;
-        });
-        md += `\n`;
-
-        md += `**Shadow Philosophy:** The system uses ${shadows.length} shadow level(s). Elevation communicates hierarchy — reserve higher levels for overlays and modal states. Don't introduce shadows outside this scale.\n\n`;
-    } else {
-        md += `**Flat design** — no shadows detected.\n\n`;
-        md += `> Depth is communicated through color contrast and spacing alone. Don't introduce drop shadows — the flat surface is intentional.\n\n`;
-    }
-
-    // ══════════════════════════════════════════════════════
-    // 7. DO'S AND DON'TS
-    // ══════════════════════════════════════════════════════
-    md += `## 7. Do's and Don'ts\n\n`;
-
-    const dos   = [];
-    const donts = [];
-
-    if (families.length) {
-        dos.push(`Use \`${families[0]}\` as the primary typeface`);
-        donts.push(`Introduce fonts outside \`${families.join(' / ')}\``);
-    }
-    if (bgs[0]) {
-        dos.push(`Use \`${bgs[0].hex}\` as the page canvas background`);
-        donts.push(`Swap the canvas for a different background tone`);
-    }
-    dos.push(`Stay within the extracted color palette`);
-    donts.push(`Introduce off-palette colors`);
-    if (spacing.baseUnit) {
-        dos.push(`Snap all spacing to the ${spacing.baseUnit}px base unit`);
-        donts.push(`Use arbitrary spacing values outside the defined scale`);
-    }
-    if (radii.length) {
-        const sortedForDo = [...radii].sort((a, b) => parseFloat(a.value) - parseFloat(b.value));
-        const minR = sortedForDo[0];
-        const maxR = sortedForDo[sortedForDo.length - 1];
-        const radiusDesc = minR.value === maxR.value
-            ? `\`${minR.value}\``
-            : `\`${minR.value}\` – \`${maxR.value}\``;
-        dos.push(`Use the defined radius scale (${radiusDesc}) for all elements`);
-        donts.push(`Mix arbitrary border-radius values not in the scale`);
-    }
-    if (isFlat) {
-        dos.push(`Use colour contrast for depth — the design is intentionally flat`);
-        donts.push(`Add shadows — they conflict with the flat surface philosophy`);
-    } else {
-        dos.push(`Use the ${shadows.length}-level shadow scale for elevation`);
-        donts.push(`Apply shadows outside the defined elevation scale`);
-    }
-    if (transforms.includes('uppercase')) {
-        dos.push(`Apply \`text-transform: uppercase\` for UI labels and navigation`);
-        donts.push(`Use sentence-case for elements that belong in uppercase`);
-    }
-    if (weights.length <= 2) {
-        dos.push(`Keep to ${weights.length === 1 ? `the single weight (\`${weights[0]}\`)` : `\`${weights.join('` / `')}\` weights`} only`);
-        donts.push(`Add intermediate weights not present in the type system`);
-    }
-    if (hasTracking) {
-        dos.push(`Preserve letter-spacing values exactly — they are a key identity signal`);
-        donts.push(`Reset or ignore letter-spacing on styled text`);
-    }
-    dos.push(`Reference the component CSS recipes above for new UI`);
-    donts.push(`Deviate from defined component padding, radius, or border without reason`);
-
-    md += `### Must (non-negotiable)\n\n`;
-    dos.slice(0, 3).forEach(d => { md += `- **Must**: ${d}\n`; });
-    md += `- **Must**: Every interactive component must define all 7 states (default, hover, focus-visible, active, disabled, loading, error)\n`;
-    md += `- **Must**: All text must meet WCAG 2.2 AA contrast — 4.5:1 for body text, 3:1 for large text (≥18px regular or ≥14px bold)\n`;
-    md += `- **Must**: Focus indicators must be visible (\`focus-visible\`) on every interactive element\n`;
-    md += `\n`;
-
-    md += `### Should (strong recommendation)\n\n`;
-    dos.slice(3).forEach(d => { md += `- **Should**: ${d}\n`; });
-    md += `\n`;
-
-    md += `### Don't\n\n`;
-    donts.forEach(d => { md += `- ${d}\n`; });
-    md += `\n`;
-
-    // ══════════════════════════════════════════════════════
-    // 8. ACCESSIBILITY
-    // ══════════════════════════════════════════════════════
-    md += `## 8. Accessibility\n\n`;
-    md += `- **Target**: WCAG 2.2 AA minimum\n`;
-    md += `- **Contrast**: Body text must meet 4.5:1; large text (≥18px) must meet 3:1\n`;
-    if (texts[0] && bgs[0]) {
-        // Compute rough contrast ratio
-        function relLum(hex) {
-            const r = parseInt(hex.slice(1,3),16)/255, g = parseInt(hex.slice(3,5),16)/255, b = parseInt(hex.slice(5,7),16)/255;
-            const toL = c => c <= 0.03928 ? c/12.92 : Math.pow((c+0.055)/1.055, 2.4);
-            return 0.2126*toL(r) + 0.7152*toL(g) + 0.0722*toL(b);
-        }
-        try {
-            const L1 = relLum(texts[0].hex), L2 = relLum(bgs[0].hex);
-            const ratio = ((Math.max(L1,L2)+0.05)/(Math.min(L1,L2)+0.05)).toFixed(1);
-            const pass = parseFloat(ratio) >= 4.5 ? '✓ passes' : '✗ check required';
-            md += `- **Detected contrast**: \`${texts[0].hex}\` on \`${bgs[0].hex}\` = **${ratio}:1** (${pass} AA)\n`;
-        } catch (_) {}
-    }
-    md += `- **Keyboard**: Tab order must follow visual reading order; no keyboard traps\n`;
-    md += `- **Focus**: \`focus-visible\` ring required on all interactive elements; do not suppress with \`outline: none\` without a custom replacement\n`;
-    md += `- **Semantics**: Use native HTML elements (\`<button>\`, \`<input>\`, \`<nav>\`) before adding ARIA roles\n`;
-    md += `- **Motion**: Respect \`prefers-reduced-motion\` — disable or reduce transitions for users who opt out\n`;
-    md += `- **Touch**: Minimum 44×44px tap targets; minimum 8px gap between adjacent targets\n`;
-    md += `\n`;
-
-    // ══════════════════════════════════════════════════════
-    // 9. RESPONSIVE BEHAVIOR (was 8)
-    // ══════════════════════════════════════════════════════
-    // ══════════════════════════════════════════════════════
-    // RESPONSIVE BEHAVIOR
-    // ══════════════════════════════════════════════════════
-    md += `## 9. Responsive Behavior\n\n`;
-
-    md += `### Breakpoints\n\n`;
-    if (layout.breakpoints?.length) {
-        md += `| Name | Width | Key Changes |\n`;
-        md += `|------|-------|-------------|\n`;
-        const bps = [...layout.breakpoints].sort((a, b) => a - b);
-        bps.forEach((bp, i) => {
-            const prev = bps[i - 1];
-            const range = prev ? `${prev + 1}px – ${bp}px` : `< ${bp}px`;
-            const label = bp < 480 ? 'Mobile Small' : bp < 768 ? 'Mobile' : bp < 1024 ? 'Tablet' : bp < 1280 ? 'Desktop S' : bp < 1536 ? 'Desktop' : 'Wide';
-            const changes = bp < 480 ? 'Single column, tight padding' : bp < 768 ? 'Standard mobile, stacked layout' : bp < 1024 ? '2-column grids, condensed nav' : 'Full layout, expanded sections';
-            md += `| ${label} | ${range} | ${changes} |\n`;
-        });
-    } else {
-        md += `| Name | Width | Key Changes |\n`;
-        md += `|------|-------|-------------|\n`;
-        md += `| Mobile | < 768px | Single column, stacked layout |\n`;
-        md += `| Tablet | 768px – 1023px | 2-column grids |\n`;
-        md += `| Desktop | 1024px+ | Full layout |\n`;
-    }
-    md += `\n`;
-
-    // Touch targets
-    md += `### Touch Targets\n\n`;
-    const btnComp = components.find(c => c.category === 'button');
-    if (btnComp?.properties?.['Padding']) {
-        md += `- Buttons: \`${btnComp.properties['Padding']}\` padding — verify minimum 44px tap area on mobile\n`;
-    } else {
-        md += `- Buttons: ensure minimum 44px height for adequate touch area\n`;
-    }
-    md += `- Interactive elements: use generous padding to ease mobile tapping\n`;
-    md += `- Avoid placing tappable elements closer than 8px apart\n`;
-    md += `\n`;
-
-    // Collapsing strategy
-    md += `### Collapsing Strategy\n\n`;
-    if (typo.length > 1) {
-        const displayType = typo.find(t => ['h1', 'Heading 1', 'Display', 'Hero'].some(k => t.label?.includes(k)));
-        if (displayType) {
-            md += `- Hero / display text (${displayType.size}): scale down proportionally on mobile\n`;
-        }
-    }
-    md += `- Navigation: horizontal → hamburger / collapsed at mobile breakpoint\n`;
-    if (layout.gridColumns && layout.gridColumns > 1) {
-        md += `- Feature grids: ${layout.gridColumns}-column → 2-column → single column on mobile\n`;
-    } else {
-        md += `- Multi-column layouts: collapse to single column on mobile\n`;
-    }
-    md += `- Cards: maintain border-radius and padding ratios across breakpoints\n`;
-    md += `- Full-width sections: preserve full-width but compress vertical padding\n`;
-    md += `\n`;
-
-    // ══════════════════════════════════════════════════════
-    // 9. AGENT PROMPT GUIDE
-    // ══════════════════════════════════════════════════════
-    md += `## 10. Agent Prompt Guide\n\n`;
-
-    // Quick color reference as bullets (matches reference format)
-    md += `### Quick Color Reference\n\n`;
-    if (bgs[0])       md += `- Background: \`${bgs[0].hex}\`\n`;
-    if (bgs[1])       md += `- Surface: \`${bgs[1].hex}\`\n`;
-    if (texts[0])     md += `- Text: \`${texts[0].hex}\`\n`;
-    if (texts[1])     md += `- Secondary text: \`${texts[1].hex}\`\n`;
-    if (interacts[0]) md += `- Accent / CTA: \`${interacts[0].hex}\`\n`;
-    if (interacts[1]) md += `- Secondary action: \`${interacts[1].hex}\`\n`;
-    if (borders[0])   md += `- Border: \`${borders[0].hex}\`\n`;
-    if (families[0])  md += `- Font: \`${families[0]}\`\n`;
-    if (spacing.baseUnit) md += `- Spacing base: \`${spacing.baseUnit}px\`\n`;
-    if (radii.length) {
-        const sortedR = [...radii].sort((a, b) => parseFloat(a.value) - parseFloat(b.value));
-        if (sortedR[0])                              md += `- Radius (sm): \`${sortedR[0].value}\`\n`;
-        if (sortedR.length > 1)                      md += `- Radius (lg): \`${sortedR[sortedR.length - 1].value}\`\n`;
-    }
-    md += `\n`;
-
-    // Example prompts built from real extracted values
-    md += `### Example Component Prompts\n\n`;
-
-    const primaryBg  = bgs[0]?.hex       || '#ffffff';
-    const primaryTxt = texts[0]?.hex      || '#000000';
-    const accent     = interacts[0]?.hex  || '#0066ff';
-    const font       = families[0]        || 'system-ui';
-    const sortedRadiiAll = [...radii].sort((a, b) => parseFloat(a.value) - parseFloat(b.value));
-    const smallR     = sortedRadiiAll[0]?.value || '4px';
-    const radius     = sortedRadiiAll[sortedRadiiAll.length - 1]?.value || '8px';
-    const borderCol  = borders[0]?.hex   || '#e5e5e5';
-    const shadowVal  = shadows[0]?.value || 'none';
-    const spBase     = spacing.baseUnit  || 8;
-
-    // Button prompt
-    if (btnComp) {
-        const p = btnComp.properties || {};
-        md += `- "Create a button: background \`${p['Background'] || accent}\`, color \`${p['Text Color'] || '#fff'}\`, `;
-        md += `font-size \`${p['Font Size'] || '14px'}\` weight \`${p['Font Weight'] || '600'}\` \`${font}\`, `;
-        md += `padding \`${p['Padding'] || `${spBase}px ${spBase * 2}px`}\`, border-radius \`${p['Border Radius'] || radius}\``;
-        if (p['Border'] && p['Border'] !== '—') md += `, border \`${p['Border']}\``;
-        if (p['Box Shadow'] && p['Box Shadow'] !== '—') md += `, box-shadow \`${p['Box Shadow']}\``;
-        md += `."\n`;
-    } else {
-        md += `- "Create a button: background \`${accent}\`, color \`#fff\`, font \`14px 600 ${font}\`, padding \`${spBase}px ${spBase * 2}px\`, border-radius \`${radius}\`."\n`;
-    }
-
-    // Card prompt
-    const cardComp = components.find(c => c.category === 'card');
-    if (cardComp) {
-        const p = cardComp.properties || {};
-        let cardPrompt = `Create a card: background \`${p['Background'] || primaryBg}\`, border-radius \`${p['Border Radius'] || smallR}\``;
-        if (p['Border'] && p['Border'] !== '—') cardPrompt += `, border \`${p['Border']}\``;
-        if (p['Box Shadow'] && p['Box Shadow'] !== '—') cardPrompt += `, box-shadow \`${p['Box Shadow']}\``;
-        cardPrompt += `, padding \`${spBase * 2}px\`, font \`${font}\`, color \`${primaryTxt}\`.`;
-        md += `- "${cardPrompt}"\n`;
-    } else if (shadows.length || borders.length) {
-        md += `- "Create a card: background \`${primaryBg}\`, border-radius \`${smallR}\`, border \`1px solid ${borderCol}\`${shadows.length ? `, box-shadow \`${shadowVal}\`` : ''}, padding \`${spBase * 2}px\`, color \`${primaryTxt}\`."\n`;
-    }
-
-    // Input prompt
-    const inputComp = components.find(c => c.category === 'input');
-    if (inputComp) {
-        const p = inputComp.properties || {};
-        md += `- "Create an input: background \`${p['Background'] || primaryBg}\`, color \`${p['Text Color'] || primaryTxt}\`, `;
-        md += `font-size \`${p['Font Size'] || '14px'}\` \`${font}\`, border \`${p['Border'] || `1px solid ${borderCol}`}\`, `;
-        md += `border-radius \`${p['Border Radius'] || smallR}\`, padding \`${p['Padding'] || `${spBase}px ${spBase * 1.5}px`}\`."\n`;
-    }
-
-    // Heading prompt from first typo entry
+    // Typography table
     if (typo.length) {
-        const h = typo[0];
-        md += `- "Create a heading: font-family \`${h.family}\`, font-size \`${h.size}\`, font-weight \`${h.weight}\`, line-height \`${h.lineHeight || '1.2'}\`${h.letterSpacing && h.letterSpacing !== 'normal' ? `, letter-spacing \`${h.letterSpacing}\`` : ''}, color \`${primaryTxt}\`."\n`;
+        md += `### Typography\n\n`;
+        md += `| Role | Family | Size | Weight | Line height |\n`;
+        md += `|------|--------|------|--------|-------------|\n`;
+
+        function typoRole(t) {
+            const lbl = (t.label || '').toLowerCase();
+            const tag = (t.tag  || '').toLowerCase();
+            if (lbl.includes('display') || lbl.includes('hero'))               return 'Display';
+            if (lbl.includes('h1') || lbl.includes('heading 1') || tag==='h1') return 'H1';
+            if (lbl.includes('h2') || lbl.includes('heading 2') || tag==='h2') return 'H2';
+            if (lbl.includes('h3') || lbl.includes('heading 3') || tag==='h3') return 'H3';
+            if (lbl.includes('caption'))                                        return 'Caption';
+            if (lbl.includes('small') || lbl.includes('body small'))           return 'Body Small';
+            if (lbl.includes('body') || tag === 'p') {
+                const bodyEntries = typo.filter(x => (x.label||'').toLowerCase().includes('body') || x.tag === 'p');
+                return bodyEntries.indexOf(t) === 0 ? 'Body' : 'Body Small';
+            }
+            const sorted = [...typo].sort((a, b) => (parseFloat(b.size)||16) - (parseFloat(a.size)||16));
+            const rank = sorted.indexOf(t);
+            return ['Display','H1','H2','H3','Body','Body Small','Caption'][rank] || `Style ${rank + 1}`;
+        }
+
+        const seenRole = new Set();
+        for (const t of typo) {
+            const role = typoRole(t);
+            if (seenRole.has(role)) continue;
+            seenRole.add(role);
+            md += `| ${role} | \`${escMd(t.family || '—')}\` | \`${t.size || '—'}\` | \`${t.weight || '—'}\` | \`${t.lineHeight || '—'}\` |\n`;
+        }
+        md += `\n`;
+        if (families.length) md += `**Font stack:** \`${families.join(', ')}\`\n`;
+        if (weights.length)  md += `**Weights in use:** \`${weights.join(', ')}\`\n`;
+        md += `\n`;
+    }
+    md += `---\n\n`;
+
+    // ── 3. COMPONENTS ─────────────────────────────────────────────────────────
+    md += `## 3. Components\n\n`;
+    md += generateComponentsBlocks(st);
+
+    if (data.componentVariants && Object.keys(data.componentVariants).length > 0) {
+        md += generateVariantsMd(data.componentVariants);
     }
 
+    md += `---\n\n`;
+
+    // ── 4. LAYOUT ─────────────────────────────────────────────────────────────
+    md += `## 4. Layout\n\n`;
+    let hasLayout = false;
+    if (layout.maxWidth) { md += `- **Container max-width:** \`${escMd(layout.maxWidth)}\`\n`; hasLayout = true; }
+    if (layout.containerPadding && layout.containerPadding !== '0px') { md += `- **Gutter:** \`${escMd(layout.containerPadding)}\`\n`; hasLayout = true; }
+    if (layout.gridColumns) { md += `- **Grid columns:** \`${layout.gridColumns}\` (desktop)\n`; hasLayout = true; }
+    if (spaceScale.length) {
+        const maxSpace = [...spaceScale].sort((a, b) => a - b).pop();
+        md += `- **Section vertical rhythm:** \`${maxSpace}px\` between major sections\n`;
+        hasLayout = true;
+    }
+    if (!hasLayout) md += `No layout constraints detected — use **Create Design System** to capture grid and spacing.\n`;
+    md += `\n---\n\n`;
+
+    // ── 5. DEPTH & MOTION ─────────────────────────────────────────────────────
+    md += `## 5. Depth & Motion\n\n`;
+    if (shadows.length) {
+        md += `- **Shadow scale:** ${shadows.length} level(s) — ${shadows.map(s => `\`${escMd(s.value)}\``).join(' / ')}\n`;
+    } else {
+        md += `- **Shadow scale:** None — flat design system.\n`;
+    }
+    md += `- **Transition:** \`200ms ease\` (CSS default — not explicitly captured)\n`;
+    md += `\n---\n\n`;
+
+    // ── 6. RESPONSIVE ─────────────────────────────────────────────────────────
+    md += `## 6. Responsive\n\n`;
+    md += `| Breakpoint | Range | Behavior |\n`;
+    md += `|------------|-------|----------|\n`;
+    if (layout.breakpoints?.length) {
+        const bpSorted = [...layout.breakpoints].sort((a, b) => a - b);
+        const mobileMax = bpSorted.find(bp => bp >= 400 && bp <= 700) || 640;
+        const tabletMax = bpSorted.find(bp => bp >= 900 && bp <= 1200) || 1024;
+        md += `| Mobile | \`< ${mobileMax}px\` | Single column, collapsed nav |\n`;
+        md += `| Tablet | \`${mobileMax}px – ${tabletMax}px\` | 2-col grid, condensed nav |\n`;
+        md += `| Desktop | \`≥ ${tabletMax + 1}px\` | Full layout |\n`;
+    } else {
+        md += `| Mobile | \`< 640px\` | Single column, collapsed nav |\n`;
+        md += `| Tablet | \`640px – 1024px\` | 2-col grid, condensed nav |\n`;
+        md += `| Desktop | \`≥ 1025px\` | Full layout |\n`;
+    }
+    md += `\n---\n\n`;
+
+    // ── 7. PRINCIPLES ─────────────────────────────────────────────────────────
+    md += `## 7. Principles\n\n`;
+    {
+        const principles = [];
+        if (texts[0] && bgs[0]) {
+            const ratio = computeContrastRatio(texts[0].hex, bgs[0].hex);
+            const level = parseFloat(ratio) >= 7 ? 'WCAG AAA' : parseFloat(ratio) >= 4.5 ? 'WCAG AA' : 'below AA — verify';
+            principles.push(`${isDark ? 'Dark' : 'Light'}-mode first — canvas \`${bgs[0].hex}\` paired with \`${texts[0].hex}\` text yields **${ratio}:1** contrast (${level}).`);
+        }
+        if (hasPill) {
+            const pillR = sortedRadii.find(r => parseFloat(r.value) >= 500 || r.value === '50%')?.value || '9999px';
+            principles.push(`Pill-shaped interactive elements (radius \`${pillR}\`) signal a rounded, approachable aesthetic.`);
+        } else if (hasRounding) {
+            principles.push(`Consistently rounded corners (radius \`${defaultRadius}\`) create a friendly, modern aesthetic.`);
+        }
+        if (families.length === 1) {
+            principles.push(`Single typeface system (\`${families[0]}\`)${weights.length > 1 ? ` with ${weights.length} weights (${weights.join('/')})` : ''} — hierarchy through weight, not font switching.`);
+        } else if (families.length > 1) {
+            principles.push(`Dual typeface system: \`${families[0]}\` (display/body) + \`${families[1]}\` (secondary/mono).`);
+        }
+        if (spaceScale.length > 6) {
+            principles.push(`Rich spacing scale (${spaceScale.length} steps, base ${spaceBase}px) enables precise, intentional rhythm.`);
+        } else if (spaceScale.length > 0) {
+            principles.push(`Focused spacing scale (${spaceScale.length} steps, base ${spaceBase}px) — snap all values to the defined scale.`);
+        }
+        if (isFlat) {
+            principles.push(`Flat design — depth communicated through color contrast alone, not shadows.`);
+        } else {
+            principles.push(`${shadows.length}-level shadow scale signals elevation hierarchy — reserve higher levels for overlays.`);
+        }
+        principles.push(`${detectedCount} of ${totalExpected} expected components captured. Run Create DS on additional pages (auth, settings, dashboard) for full coverage.`);
+        principles.slice(0, 6).forEach(p => { md += `- ${p}\n`; });
+    }
+    md += `\n---\n\n`;
+
+    // ── 8. ACCESSIBILITY BASELINE ─────────────────────────────────────────────
+    md += `## 8. Accessibility baseline\n\n`;
+    if (texts[0] && bgs[0]) {
+        const ratio = computeContrastRatio(texts[0].hex, bgs[0].hex);
+        const pass  = parseFloat(ratio) >= 4.5 ? '✓ passes' : '✗ fails';
+        md += `- **Contrast:** primary text on canvas = \`${ratio}:1\` (${pass} WCAG AA)\n`;
+    } else {
+        md += `- **Contrast:** — (not enough color data)\n`;
+    }
+    md += `- **Focus rings:** not captured — verify \`focus-visible\` ring on all interactive elements\n`;
+    md += `- **Min tap target:** — (not captured — WCAG 2.2 AA requires 44px)\n`;
+    md += `- **Reduced motion:** — (not captured — add \`prefers-reduced-motion\` media query)\n`;
+    md += `\n---\n\n`;
+
+    // ── APPENDIX A — RAW CSS VARS ─────────────────────────────────────────────
+    const colorVars = cssVars.colors || {};
+    const sizeVars  = cssVars.sizes  || {};
+    const fontVars  = cssVars.fonts  || {};
+    const allVarCount = Object.keys(colorVars).length + Object.keys(sizeVars).length + Object.keys(fontVars).length;
+
+    if (allVarCount > 0) {
+        md += `## Appendix A — Raw CSS custom properties\n\n`;
+        md += `<details>\n<summary>Click to expand (${allVarCount} variables)</summary>\n\n`;
+        md += `\`\`\`css\n`;
+        if (Object.keys(colorVars).length) {
+            md += `/* Color */\n`;
+            for (const [k, v] of Object.entries(colorVars)) md += `${k}: ${v};\n`;
+            md += `\n`;
+        }
+        if (Object.keys(fontVars).length) {
+            md += `/* Font */\n`;
+            for (const [k, v] of Object.entries(fontVars)) md += `${k}: ${v};\n`;
+            md += `\n`;
+        }
+        if (Object.keys(sizeVars).length) {
+            md += `/* Size */\n`;
+            for (const [k, v] of Object.entries(sizeVars)) md += `${k}: ${v};\n`;
+        }
+        md += `\`\`\`\n\n</details>\n\n---\n\n`;
+    }
+
+    // ── APPENDIX B — EXTRACTION METADATA ─────────────────────────────────────
+    md += `## Appendix B — Extraction metadata\n\n`;
+    md += `| Field | Value |\n`;
+    md += `|-------|-------|\n`;
+    md += `| Extractor version | \`1.0.0\` |\n`;
+    md += `| Pages scanned | \`${escMd(data.pageUrl || domain)}\` |\n`;
+    md += `| Color-scheme detected | \`${isDark ? 'dark' : 'light'}\` |\n`;
+    md += `| Components detected | \`${detectedCount} / ${totalExpected}\` |\n`;
+    md += `| Manual overrides via Create DS | \`${dsOverrides}\` |\n`;
     md += `\n`;
 
-    md += `### Iteration Guide\n\n`;
-    md += `1. **Canvas first** — set background to \`${primaryBg}\` before anything else\n`;
-    md += `2. **Typography** — apply font-family \`${font}\`, then set sizes and weights from the type scale\n`;
-    md += `3. **Color** — use the palette above; accent \`${accent}\` for actions, \`${primaryTxt}\` for text\n`;
-    md += `4. **Spacing** — snap all padding/margin/gap to the ${spBase}px base unit\n`;
-    md += `5. **Radius** — ${smallR === radius ? `use \`${smallR}\` consistently across all elements` : `use \`${smallR}\` for small elements (inputs, badges), \`${radius}\` for cards and panels`}\n`;
-    md += `6. **Elevation** — ${isFlat ? 'keep surfaces flat; use colour contrast for depth' : `apply the ${shadows.length}-level shadow scale; level 0 for cards, higher for modals`}\n`;
-    md += `7. **Components** — reference the CSS recipes in Section 4 for exact sizing and tokens\n`;
-    md += `\n`;
+    return md;
+}
 
+function generateVariantsMd(componentVariants) {
+    let md = `---\n\n## 11. Component Variants\n\n`;
+    md += `> Components with multiple captured variants. Reference by name when generating UI — e.g. *"use Card Variant 2"* to switch implementations.\n\n`;
+
+    for (const [, { label, variants, activeIndex }] of Object.entries(componentVariants)) {
+        md += `### ${escMd(label)}\n`;
+        md += `**Default:** Variant ${activeIndex + 1}\n\n`;
+
+        // Collect all unique token keys across all variants
+        const allKeys = [...new Set(variants.flatMap(v => Object.keys(v.tokens)))];
+
+        // Header row
+        const headers = ['Property', ...variants.map((_, i) =>
+            i === activeIndex ? `Variant ${i + 1} *(default)*` : `Variant ${i + 1}`)];
+        md += `| ${headers.join(' | ')} |\n`;
+        md += `| ${headers.map(() => '---').join(' | ')} |\n`;
+
+        for (const key of allKeys) {
+            const rowLabel = key.replace(/([A-Z])/g, ' $1').replace(/^./, c => c.toUpperCase()).trim();
+            const cells = variants.map(v => {
+                const val = v.tokens[key];
+                return (!val || val === 'none' || val === '0px' || val === 'transparent') ? '—' : escMd(val);
+            });
+            if (cells.every(c => c === '—')) continue;
+            md += `| ${rowLabel} | ${cells.join(' | ')} |\n`;
+        }
+        md += `\n`;
+    }
     return md;
 }
 

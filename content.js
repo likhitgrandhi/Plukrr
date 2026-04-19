@@ -171,8 +171,6 @@
         if (el === overlay || el.id === 'ai-design-copier-overlay' || el.id === 'ai-design-copier-toast') return;
         if (elementPickerPanel && elementPickerPanel.contains(el)) return;
         if (el.closest('#element-picker-panel')) return;
-        if (el.closest('#plukrr-ds-builder-panel')) return;
-
         currentHoveredElement = el;
         updateOverlay(el);
     }
@@ -4178,166 +4176,35 @@
     // ============================================
 
     const DS_BUILDER_STEP_DEFINITIONS = [
-        { index: 0,  stepKey: 'primaryButton',   label: 'Button · Primary',      prompt: 'Click a <strong>Primary Button</strong>',               sub: 'The main CTA or submit button',             auto: false, skippable: false },
-        { index: 1,  stepKey: 'secondaryButton', label: 'Button · Secondary',    prompt: 'Click a <strong>Secondary Button</strong>',              sub: 'Outlined or ghost button variant',           auto: false, skippable: true  },
-        { index: 2,  stepKey: 'destructive',     label: 'Button · Destructive',  prompt: 'Click a <strong>Delete / Danger Button</strong>',        sub: 'Red or warning action button',               auto: false, skippable: true  },
-        { index: 3,  stepKey: 'input',           label: 'Input',                 prompt: 'Click an <strong>Input Field</strong>',                  sub: 'Any text input or search box',               auto: false, skippable: false },
-        { index: 4,  stepKey: 'navigation',      label: 'Navigation Menu',       prompt: 'Click the <strong>Navigation Bar or Sidebar</strong>',   sub: 'The main nav or side menu',                  auto: false, skippable: true  },
-        { index: 5,  stepKey: 'card',            label: 'Card',                  prompt: 'Click a <strong>Card or Surface</strong>',               sub: 'A raised or bordered content area',          auto: false, skippable: true  },
-        { index: 6,  stepKey: 'badge',           label: 'Badge',                 prompt: 'Click a <strong>Badge or Tag</strong>',                  sub: 'A small label or status chip',               auto: false, skippable: true  },
-        { index: 7,  stepKey: 'accent',          label: 'Links',                 prompt: 'Click a <strong>Link or Accent Element</strong>',        sub: 'An inline link or highlighted text',         auto: false, skippable: true  },
-        { index: 8,  stepKey: 'muted',           label: 'Muted Surface',         prompt: 'Click a <strong>Muted / Secondary Surface</strong>',     sub: 'A subtle background or secondary panel',     auto: false, skippable: true  },
-        { index: 9,  stepKey: 'pageBackground',  label: 'Page Background',       prompt: 'Reading <strong>page background</strong>…',             sub: 'Auto-detected from document body',           auto: true,  skippable: false },
-        { index: 10, stepKey: 'heading',         label: 'Heading',               prompt: 'Click a <strong>Heading</strong>',                       sub: 'An h1, h2, or page title',                   auto: false, skippable: false },
-        { index: 11, stepKey: 'bodyText',        label: 'Body Text',             prompt: 'Click a <strong>Paragraph or Body Text</strong>',        sub: 'Normal content text',                        auto: false, skippable: false },
+        { index: 0,  stepKey: 'primaryButton',   label: 'Primary Button',    prompt: 'Click a <strong>Primary Button</strong>',                sub: 'The main CTA or submit button',              auto: false, skippable: false },
+        { index: 1,  stepKey: 'secondaryButton', label: 'Secondary Button',  prompt: 'Click a <strong>Secondary Button</strong>',               sub: 'Outlined or ghost button variant',            auto: false, skippable: true  },
+        { index: 2,  stepKey: 'input',           label: 'Input Field',       prompt: 'Click an <strong>Input Field</strong>',                   sub: 'Any text input or search box',               auto: false, skippable: false },
+        { index: 3,  stepKey: 'pageBackground',  label: 'Page Background',   prompt: 'Reading <strong>page background</strong>…',              sub: 'Auto-detected from document body',            auto: true,  skippable: false },
+        { index: 4,  stepKey: 'card',            label: 'Card',              prompt: 'Click a <strong>Card or Surface</strong>',                sub: 'A raised or bordered content area',           auto: false, skippable: true  },
+        { index: 5,  stepKey: 'muted',           label: 'Muted Surface',     prompt: 'Click a <strong>Muted / Secondary Surface</strong>',      sub: 'A subtle background or secondary panel',      auto: false, skippable: true  },
+        { index: 6,  stepKey: 'navigation',      label: 'Navigation',        prompt: 'Click the <strong>Navigation Bar or Sidebar</strong>',    sub: 'The main nav or side menu',                   auto: false, skippable: true  },
+        { index: 7,  stepKey: 'badge',           label: 'Badge / Tag',       prompt: 'Click a <strong>Badge or Tag</strong>',                   sub: 'A small label or status chip',               auto: false, skippable: true  },
+        { index: 8,  stepKey: 'heading',         label: 'Heading',           prompt: 'Click a <strong>Heading</strong>',                        sub: 'An h1, h2, or page title',                   auto: false, skippable: false },
+        { index: 9,  stepKey: 'bodyText',        label: 'Body Text',         prompt: 'Click a <strong>Paragraph or Body Text</strong>',         sub: 'Normal content text',                        auto: false, skippable: false },
+        { index: 10, stepKey: 'destructive',     label: 'Danger Button',     prompt: 'Click a <strong>Delete / Danger Button</strong>',         sub: 'Red or warning action button',               auto: false, skippable: true  },
+        { index: 11, stepKey: 'accent',          label: 'Link / Accent',     prompt: 'Click a <strong>Link or Accent Element</strong>',         sub: 'An inline link or highlighted text',         auto: false, skippable: true  },
+        { index: 12, stepKey: 'avatar',          label: 'Avatar',            prompt: 'Click an <strong>Avatar or Profile Image</strong>',       sub: 'User avatar or profile picture element',     auto: false, skippable: true  },
+        { index: 13, stepKey: 'checkbox',        label: 'Checkbox',          prompt: 'Click a <strong>Checkbox</strong>',                       sub: 'A checkbox or multi-select control',         auto: false, skippable: true  },
+        { index: 14, stepKey: 'radio',           label: 'Radio Button',      prompt: 'Click a <strong>Radio Button</strong>',                   sub: 'A radio or single-select control',           auto: false, skippable: true  },
+        { index: 15, stepKey: 'switch',          label: 'Switch / Toggle',   prompt: 'Click a <strong>Switch or Toggle</strong>',               sub: 'An on/off toggle control',                   auto: false, skippable: true  },
+        { index: 16, stepKey: 'select',          label: 'Select',            prompt: 'Click a <strong>Select Dropdown</strong>',                sub: 'A native or custom select input',            auto: false, skippable: true  },
+        { index: 17, stepKey: 'table',           label: 'Table',             prompt: 'Click a <strong>Table or Data Grid</strong>',             sub: 'Any table, grid, or list of rows',           auto: false, skippable: true  },
+        { index: 18, stepKey: 'accordion',       label: 'Accordion',         prompt: 'Click an <strong>Accordion Item</strong>',                sub: 'An expandable / collapsible section',        auto: false, skippable: true  },
+        { index: 19, stepKey: 'alert',           label: 'Alert',             prompt: 'Click an <strong>Alert or Banner</strong>',               sub: 'A notification, warning, or callout',        auto: false, skippable: true  },
+        { index: 20, stepKey: 'toast',           label: 'Toast',             prompt: 'Click a <strong>Toast or Snackbar</strong>',              sub: 'A temporary notification message',           auto: false, skippable: true  },
+        { index: 21, stepKey: 'tooltip',         label: 'Tooltip',           prompt: 'Click a <strong>Tooltip or Hint</strong>',                sub: 'A small floating label on hover',            auto: false, skippable: true  },
+        { index: 22, stepKey: 'dropdown',        label: 'Dropdown Menu',     prompt: 'Click an open <strong>Dropdown Menu</strong>',            sub: 'An open dropdown or popover menu',           auto: false, skippable: true  },
+        { index: 23, stepKey: 'contextMenu',     label: 'Context Menu',      prompt: 'Click a <strong>Context Menu</strong>',                   sub: 'A right-click or action menu',               auto: false, skippable: true  },
+        { index: 24, stepKey: 'drawerModal',     label: 'Drawer / Modal',    prompt: 'Click a <strong>Modal Dialog or Drawer</strong>',         sub: 'An overlay panel or side drawer',            auto: false, skippable: true  },
+        { index: 25, stepKey: 'sidebarPanel',    label: 'Sidebar Panel',     prompt: 'Click a <strong>Sidebar or Side Panel</strong>',          sub: 'A fixed side navigation or panel',           auto: false, skippable: true  },
     ];
 
     let _dsGuidedClickHandler = null;
-    let _dsPausedStep = null;    // stepDef stored while paused
-    let _dsPausedIndex = null;   // stepIndex stored while paused
-
-    // ---- Panel HTML ----
-
-    function _dsBuildPanelHTML(stepDef, stepIndex, paused) {
-        const total = DS_BUILDER_STEP_DEFINITIONS.length;
-        const pct = Math.round((stepIndex / total) * 100);
-
-        if (paused) {
-            return `
-                <div class="plkr-ds-header">
-                    <span class="plkr-ds-brand">Plukrr</span>
-                    <span class="plkr-ds-status-pill paused">⏸ Paused</span>
-                    <span class="plkr-ds-counter">${stepIndex + 1}/${total}</span>
-                </div>
-                <div class="plkr-ds-progress-track"><div class="plkr-ds-progress-fill" style="width:${pct}%"></div></div>
-                <div class="plkr-ds-body">
-                    <div class="plkr-ds-prompt paused">${stepDef.label}</div>
-                    <div class="plkr-ds-sub">Navigate freely, then tap <strong>Resume</strong> when you find the right element.</div>
-                </div>
-                <div class="plkr-ds-actions">
-                    <button class="plkr-ds-btn plkr-ds-resume" id="plkrDsResume">▶ Resume</button>
-                    <button class="plkr-ds-btn plkr-ds-cancel" id="plkrDsCancel">✕</button>
-                </div>`;
-        }
-
-        const skipBtn = stepDef.skippable
-            ? `<button class="plkr-ds-btn plkr-ds-skip" id="plkrDsSkip">Skip</button>`
-            : '';
-        return `
-            <div class="plkr-ds-header">
-                <span class="plkr-ds-brand">Plukrr</span>
-                <span class="plkr-ds-status-pill selecting">● Selecting</span>
-                <span class="plkr-ds-counter">${stepIndex + 1}/${total}</span>
-            </div>
-            <div class="plkr-ds-progress-track"><div class="plkr-ds-progress-fill" style="width:${pct}%"></div></div>
-            <div class="plkr-ds-body">
-                <div class="plkr-ds-prompt">${stepDef.prompt}</div>
-                <div class="plkr-ds-sub">${stepDef.sub}</div>
-            </div>
-            <div class="plkr-ds-actions">
-                ${skipBtn}
-                <button class="plkr-ds-btn plkr-ds-pause" id="plkrDsPause">⏸ Pause</button>
-                <button class="plkr-ds-btn plkr-ds-cancel" id="plkrDsCancel">✕</button>
-            </div>`;
-    }
-
-    function createDsBuilderPanel(stepDef, stepIndex, paused) {
-        removeDsBuilderPanel();
-
-        const style = document.createElement('style');
-        style.id = 'plkr-ds-builder-style';
-        style.textContent = `
-            #plukrr-ds-builder-panel {
-                position: fixed !important; bottom: 20px !important; right: 20px !important;
-                width: 272px !important; z-index: 2147483646 !important;
-                background: #ffffff !important; border: 1px solid #e5e7eb !important;
-                border-radius: 12px !important; box-shadow: 0 8px 32px rgba(0,0,0,0.18) !important;
-                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
-                font-size: 13px !important; color: #111827 !important; padding: 14px !important;
-                box-sizing: border-box !important;
-            }
-            .plkr-ds-header { display:flex !important; justify-content:space-between !important; align-items:center !important; gap:6px !important; margin-bottom:8px !important; }
-            .plkr-ds-brand { font-weight:700 !important; font-size:13px !important; color:#10b981 !important; flex-shrink:0 !important; }
-            .plkr-ds-status-pill { font-size:10px !important; font-weight:600 !important; border-radius:20px !important; padding:2px 8px !important; flex-grow:1 !important; }
-            .plkr-ds-status-pill.selecting { background:#dcfce7 !important; color:#16a34a !important; }
-            .plkr-ds-status-pill.paused { background:#fef9c3 !important; color:#92400e !important; }
-            .plkr-ds-counter { font-size:11px !important; color:#6b7280 !important; flex-shrink:0 !important; }
-            .plkr-ds-progress-track { background:#e5e7eb !important; border-radius:4px !important; height:4px !important; margin-bottom:12px !important; }
-            .plkr-ds-progress-fill { background:#10b981 !important; height:4px !important; border-radius:4px !important; transition:width 0.3s !important; }
-            .plkr-ds-body { margin-bottom:12px !important; }
-            .plkr-ds-prompt { font-weight:600 !important; font-size:14px !important; margin-bottom:4px !important; line-height:1.4 !important; }
-            .plkr-ds-prompt.paused { font-weight:500 !important; color:#374151 !important; }
-            .plkr-ds-sub { font-size:12px !important; color:#6b7280 !important; line-height:1.4 !important; }
-            .plkr-ds-actions { display:flex !important; align-items:center !important; gap:6px !important; }
-            .plkr-ds-btn { border:none !important; border-radius:6px !important; padding:6px 10px !important; font-size:12px !important; cursor:pointer !important; font-weight:500 !important; line-height:1 !important; }
-            .plkr-ds-resume { background:#10b981 !important; color:#fff !important; flex-grow:1 !important; }
-            .plkr-ds-resume:hover { background:#059669 !important; }
-            .plkr-ds-pause { background:#f3f4f6 !important; color:#374151 !important; }
-            .plkr-ds-pause:hover { background:#e5e7eb !important; }
-            .plkr-ds-skip { background:#f3f4f6 !important; color:#374151 !important; }
-            .plkr-ds-skip:hover { background:#e5e7eb !important; }
-            .plkr-ds-cancel { background:transparent !important; color:#9ca3af !important; padding:6px 8px !important; }
-            .plkr-ds-cancel:hover { color:#dc2626 !important; }
-        `;
-        document.head.appendChild(style);
-
-        const panel = document.createElement('div');
-        panel.id = 'plukrr-ds-builder-panel';
-        panel.innerHTML = _dsBuildPanelHTML(stepDef, stepIndex, paused);
-        document.body.appendChild(panel);
-
-        _dsAttachPanelEvents(stepDef, stepIndex, paused);
-    }
-
-    function updateDsBuilderPanel(stepDef, stepIndex, paused) {
-        const panel = document.getElementById('plukrr-ds-builder-panel');
-        if (!panel) { createDsBuilderPanel(stepDef, stepIndex, paused); return; }
-        panel.innerHTML = _dsBuildPanelHTML(stepDef, stepIndex, paused);
-        _dsAttachPanelEvents(stepDef, stepIndex, paused);
-    }
-
-    function _dsAttachPanelEvents(stepDef, stepIndex, paused) {
-        document.getElementById('plkrDsCancel')?.addEventListener('click', () => {
-            removeDsBuilderPanel();
-            if (overlay) overlay.style.display = 'none';
-            _dsRemoveGuidedClickHandler();
-            chrome.runtime.sendMessage({ type: 'DS_BUILDER_CANCELLED' });
-        });
-
-        if (paused) {
-            document.getElementById('plkrDsResume')?.addEventListener('click', () => {
-                _dsPausedStep = null; _dsPausedIndex = null;
-                updateDsBuilderPanel(stepDef, stepIndex, false);
-                startGuidedStep(stepDef, stepIndex);
-            });
-        } else {
-            document.getElementById('plkrDsPause')?.addEventListener('click', () => {
-                pauseGuidedStep(stepDef, stepIndex);
-            });
-            document.getElementById('plkrDsSkip')?.addEventListener('click', () => {
-                _dsRemoveGuidedClickHandler();
-                if (overlay) overlay.style.display = 'none';
-                chrome.runtime.sendMessage({ type: 'DS_STEP_COMPLETED', stepKey: stepDef.stepKey, styles: null, stepIndex });
-            });
-        }
-    }
-
-    function pauseGuidedStep(stepDef, stepIndex) {
-        _dsPausedStep = stepDef;
-        _dsPausedIndex = stepIndex;
-        _dsRemoveGuidedClickHandler();
-        if (overlay) overlay.style.display = 'none';
-        updateDsBuilderPanel(stepDef, stepIndex, true);
-        chrome.runtime.sendMessage({ type: 'DS_BUILDER_PAUSED' });
-    }
-
-    function removeDsBuilderPanel() {
-        document.getElementById('plukrr-ds-builder-panel')?.remove();
-        document.getElementById('plkr-ds-builder-style')?.remove();
-        _dsRemoveGuidedClickHandler();
-        _dsPausedStep = null;
-        _dsPausedIndex = null;
-    }
 
     function _dsRemoveGuidedClickHandler() {
         if (_dsGuidedClickHandler) {
@@ -4540,6 +4407,161 @@
                 ring: toH(s.color),
             };
         }
+        if (key === 'avatar') {
+            const bg = surfaceBg(el);
+            const sz = Math.min(el.offsetWidth, el.offsetHeight);
+            return {
+                avatarBg: bg,
+                avatarBorderRadius: s.borderRadius,
+                avatarSize: sz > 0 ? `${sz}px` : null,
+                avatarBorderColor: s.borderTopWidth !== '0px' ? toH(s.borderTopColor) : null,
+            };
+        }
+        if (key === 'checkbox') {
+            const sz = Math.min(el.offsetWidth, el.offsetHeight);
+            return {
+                checkboxBorderColor: toH(s.borderTopColor),
+                checkboxBorderRadius: s.borderRadius,
+                checkboxSize: sz > 0 ? `${sz}px` : null,
+                checkboxBg: toH(s.backgroundColor) || null,
+            };
+        }
+        if (key === 'radio') {
+            const sz = Math.min(el.offsetWidth, el.offsetHeight);
+            return {
+                radioBorderColor: toH(s.borderTopColor),
+                radioSize: sz > 0 ? `${sz}px` : null,
+                radioBg: toH(s.backgroundColor) || null,
+            };
+        }
+        if (key === 'switch') {
+            const bg = surfaceBg(el);
+            return {
+                switchBg: bg,
+                switchBorderRadius: s.borderRadius,
+                switchWidth: el.offsetWidth > 0 ? `${el.offsetWidth}px` : null,
+                switchHeight: el.offsetHeight > 0 ? `${el.offsetHeight}px` : null,
+            };
+        }
+        if (key === 'select') {
+            const bg = surfaceBg(el);
+            return {
+                selectBg: bg,
+                selectBorderRadius: s.borderRadius,
+                selectBorderColor: toH(s.borderTopColor),
+                selectHeight: s.height !== 'auto' && s.height !== '0px' ? s.height : null,
+                selectFontSize: s.fontSize,
+                selectPaddingTop: s.paddingTop !== '0px' ? s.paddingTop : null,
+                selectPaddingRight: s.paddingRight !== '0px' ? s.paddingRight : null,
+            };
+        }
+        if (key === 'table') {
+            let tableEl = el;
+            while (tableEl && tableEl.tagName?.toLowerCase() !== 'table' && tableEl !== document.body) tableEl = tableEl.parentElement;
+            if (!tableEl || tableEl === document.body) tableEl = el;
+            const ts = window.getComputedStyle(tableEl);
+            const result = {
+                tableBg: toH(ts.backgroundColor) || null,
+                tableBorderColor: toH(ts.borderTopColor) || null,
+            };
+            const th = tableEl.querySelector?.('th') || (el.tagName?.toLowerCase() === 'th' ? el : null);
+            if (th) {
+                const ths = window.getComputedStyle(th);
+                result.tableHeaderBg = toH(ths.backgroundColor) || null;
+                result.tableHeaderForeground = toH(ths.color);
+                result.tableHeaderFontWeight = ths.fontWeight;
+                result.tableHeaderPaddingTop = ths.paddingTop;
+                result.tableHeaderPaddingRight = ths.paddingRight;
+            }
+            return result;
+        }
+        if (key === 'accordion') {
+            const bg = surfaceBg(el);
+            return {
+                accordionBg: bg,
+                accordionBorderColor: s.borderTopWidth !== '0px' ? toH(s.borderTopColor) : null,
+                accordionBorderRadius: s.borderRadius,
+                accordionTriggerForeground: toH(s.color),
+                accordionPaddingTop: s.paddingTop !== '0px' ? s.paddingTop : null,
+                accordionPaddingRight: s.paddingRight !== '0px' ? s.paddingRight : null,
+            };
+        }
+        if (key === 'alert') {
+            const bg = surfaceBg(el);
+            return {
+                alertBg: bg,
+                alertForeground: toH(s.color),
+                alertBorderColor: s.borderTopWidth !== '0px' ? toH(s.borderTopColor) : null,
+                alertBorderRadius: s.borderRadius,
+                alertPaddingTop: s.paddingTop !== '0px' ? s.paddingTop : null,
+                alertPaddingRight: s.paddingRight !== '0px' ? s.paddingRight : null,
+                alertBoxShadow: nonNone(s.boxShadow),
+            };
+        }
+        if (key === 'toast') {
+            const bg = surfaceBg(el);
+            return {
+                toastBg: bg,
+                toastForeground: toH(s.color),
+                toastBorderColor: s.borderTopWidth !== '0px' ? toH(s.borderTopColor) : null,
+                toastBorderRadius: s.borderRadius,
+                toastBoxShadow: nonNone(s.boxShadow),
+                toastPaddingTop: s.paddingTop !== '0px' ? s.paddingTop : null,
+                toastPaddingRight: s.paddingRight !== '0px' ? s.paddingRight : null,
+            };
+        }
+        if (key === 'tooltip') {
+            const bg = surfaceBg(el);
+            return {
+                tooltipBg: bg,
+                tooltipForeground: toH(s.color),
+                tooltipBorderRadius: s.borderRadius,
+                tooltipFontSize: s.fontSize,
+                tooltipPaddingTop: s.paddingTop !== '0px' ? s.paddingTop : null,
+                tooltipPaddingRight: s.paddingRight !== '0px' ? s.paddingRight : null,
+                tooltipBoxShadow: nonNone(s.boxShadow),
+            };
+        }
+        if (key === 'dropdown') {
+            const bg = surfaceBg(el);
+            return {
+                popover: bg,
+                popoverForeground: toH(s.color),
+                popoverBorderRadius: s.borderRadius,
+                popoverBoxShadow: nonNone(s.boxShadow),
+                popoverBorderColor: s.borderTopWidth !== '0px' ? toH(s.borderTopColor) : null,
+            };
+        }
+        if (key === 'contextMenu') {
+            const bg = surfaceBg(el);
+            return {
+                contextMenuBg: bg,
+                contextMenuForeground: toH(s.color),
+                contextMenuBorderRadius: s.borderRadius,
+                contextMenuBoxShadow: nonNone(s.boxShadow),
+                contextMenuBorderColor: s.borderTopWidth !== '0px' ? toH(s.borderTopColor) : null,
+            };
+        }
+        if (key === 'drawerModal') {
+            const bg = surfaceBg(el);
+            return {
+                dialogBg: bg,
+                dialogForeground: toH(s.color),
+                dialogBorderRadius: s.borderRadius,
+                dialogBoxShadow: nonNone(s.boxShadow),
+                dialogPaddingTop: s.paddingTop !== '0px' ? s.paddingTop : null,
+                dialogPaddingRight: s.paddingRight !== '0px' ? s.paddingRight : null,
+            };
+        }
+        if (key === 'sidebarPanel') {
+            const bg = surfaceBg(el);
+            return {
+                sheetBg: bg,
+                sheetForeground: toH(s.color),
+                sheetBorderColor: s.borderTopWidth !== '0px' ? toH(s.borderTopColor) : null,
+                sheetBorderRadius: s.borderRadius,
+            };
+        }
         return {};
     }
 
@@ -4595,7 +4617,6 @@
 
         _dsGuidedClickHandler = function(e) {
             const raw = e.target;
-            if (raw.closest('#plukrr-ds-builder-panel')) return;
             e.preventDefault();
             e.stopPropagation();
 
@@ -4729,11 +4750,6 @@
                 : DS_BUILDER_STEP_DEFINITIONS[request.stepIndex];
             if (!stepDef) { sendResponse({ status: 'done' }); return true; }
             const startPaused = !!request.paused;
-            if (request.fresh) {
-                createDsBuilderPanel(stepDef, request.stepIndex, startPaused);
-            } else {
-                updateDsBuilderPanel(stepDef, request.stepIndex, startPaused);
-            }
             if (!startPaused) {
                 if (stepDef.auto) autoCaptureBodyStep(stepDef, request.stepIndex);
                 else startGuidedStep(stepDef, request.stepIndex);
@@ -4743,7 +4759,7 @@
         }
 
         if (request.action === 'CANCEL_DS_BUILDER') {
-            removeDsBuilderPanel();
+            _dsRemoveGuidedClickHandler();
             cancelSelection();
             sendResponse({ status: 'cancelled' });
             return true;
@@ -5892,7 +5908,7 @@
                 try {
                     const els = document.querySelectorAll(tagStr);
                     for (const el of els) {
-                        if (el.closest('#plukrr-sidebar,#plukrr-picker,#dc-overlay,#plukrr-ds-builder-panel')) continue;
+                        if (el.closest('#plukrr-sidebar,#plukrr-picker,#dc-overlay')) continue;
                         if (test(el)) return el;
                         if (--limit <= 0) break;
                     }
@@ -6979,7 +6995,7 @@
             function mapClasses(selector, role) {
                 try {
                     document.querySelectorAll(selector).forEach(el => {
-                        if (el.closest('#plukrr-sidebar,#plukrr-picker,#dc-overlay,#plukrr-ds-builder-panel')) return;
+                        if (el.closest('#plukrr-sidebar,#plukrr-picker,#dc-overlay')) return;
                         el.classList.forEach(cls => { if (!classRole[cls]) classRole[cls] = role; });
                     });
                 } catch (_) {}
