@@ -1685,11 +1685,10 @@ function renderDsBuilderSidebar() {
 
     const cards = DS_STEP_DISPLAY.map((step, i) => {
         const status = statuses[step.stepKey];
-        const isSelectingStep = (i === currentDsStep) && !status;
-        const val = st[step.valueKey]?.value;
-
         const isDone = status === 'completed';
         const isSkipped = status === 'skipped';
+        const isSelectingStep = (i === currentDsStep) && !isDone;
+        const val = st[step.valueKey]?.value;
 
         const stepVariants = dsBuilderData.stepVariants?.[step.stepKey] || [];
         const activeIdx = dsBuilderData.activeVariants?.[step.stepKey] ?? 0;
@@ -1734,10 +1733,6 @@ function renderDsBuilderSidebar() {
                     <button data-step="${i}" class="ds-add-variant-btn" data-step-key="${step.stepKey}" style="font-size:10px;padding:4px 8px;border-radius:5px;border:1px solid #10b981;background:#f0fdf4;color:#10b981;cursor:pointer;font-weight:500;white-space:nowrap">+ Variant</button>
                 </div>`;
             }
-        } else if (isSkipped) {
-            cardBg = '#fafafa'; cardBorder = '#e5e7eb';
-            badgeHtml = `<div style="width:18px;height:18px;border-radius:50%;background:#e5e7eb;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:9px;color:#9ca3af">—</div>`;
-            btnHtml = `<button data-step="${i}" class="ds-card-btn" style="font-size:10px;padding:4px 8px;border-radius:5px;border:1px solid #d1d5db;background:#fff;color:#6b7280;cursor:pointer;font-weight:500;white-space:nowrap">Select</button>`;
         } else if (isSelectingStep) {
             cardBg = '#fffbeb'; cardBorder = '#fde68a';
             badgeHtml = `<div style="width:18px;height:18px;border-radius:50%;background:#f59e0b;display:flex;align-items:center;justify-content:center;flex-shrink:0">
@@ -1747,6 +1742,10 @@ function renderDsBuilderSidebar() {
                 <span style="font-size:10px;color:#d97706;font-weight:600">selecting…</span>
                 <button class="ds-step-cancel-btn" data-step="${i}" style="font-size:10px;padding:3px 8px;border-radius:5px;border:1px solid #d1d5db;background:#fff;color:#6b7280;cursor:pointer;font-weight:500;white-space:nowrap">✕ Cancel</button>
             </div>`;
+        } else if (isSkipped) {
+            cardBg = '#fafafa'; cardBorder = '#e5e7eb';
+            badgeHtml = `<div style="width:18px;height:18px;border-radius:50%;background:#e5e7eb;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:9px;color:#9ca3af">—</div>`;
+            btnHtml = `<button data-step="${i}" class="ds-card-btn" style="font-size:10px;padding:4px 8px;border-radius:5px;border:1px solid #d1d5db;background:#fff;color:#6b7280;cursor:pointer;font-weight:500;white-space:nowrap">Select</button>`;
         } else {
             cardBg = '#fff'; cardBorder = '#e5e7eb';
             badgeHtml = `<div style="width:18px;height:18px;border-radius:50%;border:1.5px solid #d1d5db;flex-shrink:0"></div>`;
