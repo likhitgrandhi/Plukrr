@@ -1,19 +1,20 @@
 /* ============================================
-   Admin New Listing — Full-page CMS form
-   Follows Mobbin design spec tokens
+   Admin New Listing — Gumroad Design System
+   Canvas #242423 · Cream nav #F4F4F0
+   White cards · Dark inputs · Pink CTA
    ============================================ */
 
 .admin-root {
   display: flex;
   flex-direction: column;
   height: 100vh;
-  background: #f7f7f7;
-  font-family: 'Inter Tight', system-ui, sans-serif;
-  color: #000000;
+  background: #F4F4F0;
+  font-family: 'Plus Jakarta Sans', 'ABC Favorit', Arial, system-ui, sans-serif;
+  color: #242423;
   -webkit-font-smoothing: antialiased;
 }
 
-/* ---- Sticky top bar ---- */
+/* ---- Sticky top bar: cream ---- */
 .admin-topbar {
   position: sticky;
   top: 0;
@@ -22,9 +23,9 @@
   align-items: center;
   justify-content: space-between;
   padding: 0 32px;
-  height: 64px;
-  background: #ffffff;
-  border-bottom: 1px solid #EDEDED;
+  height: 72px;
+  background: #F4F4F0;
+  border-bottom: 1px solid rgb(0, 0, 0);
   flex-shrink: 0;
 }
 
@@ -38,36 +39,34 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  height: 36px;
-  padding: 0 14px;
-  font-size: 13px;
-  font-weight: 600;
-  font-family: 'Inter Tight', sans-serif;
-  background: none;
-  border: 1px solid #EDEDED;
-  border-radius: 9999px;
+  min-height: 40px;
+  padding: 0 16px;
+  font-size: 16px;
+  font-weight: 500;
+  font-family: Arial, sans-serif;
+  background: #FFFFFF;
+  border: 1px solid #000000;
+  border-radius: 6px;
   cursor: pointer;
-  color: #707070;
-  transition: border-color 0.12s, color 0.12s;
-  letter-spacing: 0.2px;
+  color: #000000;
+  transition: background 200ms ease;
 }
 
 .admin-back-btn:hover {
-  border-color: #141414;
-  color: #000000;
+  background: #F4F4F0;
 }
 
 .admin-topbar-divider {
   width: 1px;
   height: 20px;
-  background: #EDEDED;
+  background: rgba(0, 0, 0, 0.15);
 }
 
 .admin-topbar-title {
-  font-size: 15px;
-  font-weight: 650;
+  font-size: 18px;
+  font-weight: 700;
   color: #000000;
-  letter-spacing: -0.01em;
+  font-family: 'Plus Jakarta Sans', 'ABC Favorit', Arial, sans-serif;
 }
 
 .admin-topbar-right {
@@ -81,15 +80,14 @@
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  min-height: 44px;
+  min-height: 48px;
   padding: 0 24px;
-  font-size: 14px;
-  font-weight: 600;
-  font-family: 'Inter Tight', sans-serif;
-  letter-spacing: 0.2px;
-  border-radius: 9999px;
+  font-size: 16px;
+  font-weight: 500;
+  font-family: Arial, sans-serif;
+  border-radius: 4px;
   cursor: pointer;
-  transition: background 0.12s, color 0.12s, opacity 0.12s;
+  transition: background 200ms ease;
 }
 
 .admin-btn:disabled {
@@ -97,24 +95,26 @@
   cursor: not-allowed;
 }
 
+/* Primary: pink */
 .admin-btn-primary {
-  background: #262626;
-  color: #ffffff;
+  background: #FF90E8;
+  color: #000000;
   border: 1px solid #000000;
 }
 
 .admin-btn-primary:hover:not(:disabled) {
-  background: #3a3a3a;
+  background: #FFC900;
 }
 
+/* Secondary: white */
 .admin-btn-secondary {
-  background: rgba(64, 64, 64, 0.06);
-  color: #141414;
-  border: 1px solid #141414;
+  background: #FFFFFF;
+  color: #000000;
+  border: 1px solid #000000;
 }
 
 .admin-btn-secondary:hover:not(:disabled) {
-  background: rgba(64, 64, 64, 0.12);
+  background: #F4F4F0;
 }
 
 /* ---- Scrollable body ---- */
@@ -137,11 +137,11 @@
   align-items: start;
 }
 
-/* ---- Cards ---- */
+/* ---- Cards: white surfaces on dark canvas ---- */
 .admin-card {
-  background: #ffffff;
-  border: 1px solid rgba(0, 0, 0, 0.08);
-  border-radius: 24px;
+  background: #FFFFFF;
+  border: none;
+  border-radius: 4px;
   padding: 28px 32px;
   margin-bottom: 20px;
 }
@@ -152,11 +152,12 @@
 
 .admin-section-label {
   font-size: 11px;
-  font-weight: 600;
+  font-weight: 500;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: #ADADAD;
+  color: rgba(0, 0, 0, 0.4);
   margin-bottom: 20px;
+  font-family: 'Plus Jakarta Sans', 'ABC Favorit', Arial, sans-serif;
 }
 
 .admin-section-header {
@@ -172,20 +173,19 @@
 
 .admin-add-btn {
   font-size: 12px;
-  font-weight: 600;
-  font-family: 'Inter Tight', sans-serif;
-  letter-spacing: 0.2px;
-  color: #262626;
+  font-weight: 500;
+  font-family: Arial, sans-serif;
+  color: #FF90E8;
   background: none;
   border: none;
   cursor: pointer;
   padding: 4px 8px;
-  border-radius: 9999px;
-  transition: background 0.1s;
+  border-radius: 4px;
+  transition: background 200ms ease;
 }
 
 .admin-add-btn:hover {
-  background: rgba(64, 64, 64, 0.06);
+  background: rgba(255, 144, 232, 0.1);
 }
 
 /* ---- Form fields ---- */
@@ -199,11 +199,11 @@
 
 .admin-label {
   display: block;
-  font-size: 13px;
-  font-weight: 600;
+  font-size: 16px;
+  font-weight: 500;
   color: #000000;
   margin-bottom: 8px;
-  letter-spacing: 0.2px;
+  font-family: 'Plus Jakarta Sans', 'ABC Favorit', Arial, sans-serif;
 }
 
 .admin-required {
@@ -211,79 +211,74 @@
   margin-left: 2px;
 }
 
-/* Input — follows design spec */
+/* Input: dark (spec: bg #242423) */
 .admin-input {
   width: 100%;
-  height: 48px;
+  min-height: 64px;
   padding: 0 16px;
-  font-size: 14px;
-  font-family: 'Inter Tight', sans-serif;
-  font-weight: 400;
-  letter-spacing: 0.2px;
-  background: rgba(64, 64, 64, 0.08);
-  border: 0px solid transparent;
-  border-radius: 16px;
-  color: #000000;
+  font-size: 20px;
+  font-family: 'Plus Jakarta Sans', 'ABC Favorit', Arial, sans-serif;
+  font-weight: 500;
+  background: #242423;
+  border: 1px solid #242423;
+  border-radius: 4px;
+  color: #DDDDDD;
   outline: none;
-  transition: background 0.12s;
+  transition: border-color 200ms ease;
 }
 
 .admin-input-lg {
-  height: 56px;
-  font-size: 16px;
-  font-weight: 500;
-  border-radius: 16px;
+  min-height: 64px;
+  font-size: 20px;
 }
 
 .admin-input:focus {
-  background: rgba(64, 64, 64, 0.12);
+  border-color: #DDDDDD;
 }
 
 .admin-input:focus-visible {
-  outline: 2px solid #262626;
+  outline: 2px solid #FF90E8;
   outline-offset: 2px;
 }
 
 .admin-input::placeholder {
-  color: #ADADAD;
+  color: rgba(221, 221, 221, 0.3);
 }
 
 /* Textarea */
 .admin-textarea {
   width: 100%;
   padding: 14px 16px;
-  font-size: 14px;
-  font-family: 'Inter Tight', sans-serif;
-  font-weight: 400;
+  font-size: 20px;
+  font-family: 'Plus Jakarta Sans', 'ABC Favorit', Arial, sans-serif;
+  font-weight: 500;
   line-height: 1.6;
-  letter-spacing: 0.2px;
-  background: rgba(64, 64, 64, 0.08);
-  border: 0px solid transparent;
-  border-radius: 16px;
-  color: #000000;
+  background: #242423;
+  border: 1px solid #242423;
+  border-radius: 4px;
+  color: #DDDDDD;
   outline: none;
   resize: vertical;
-  transition: background 0.12s;
+  transition: border-color 200ms ease;
 }
 
 .admin-textarea:focus {
-  background: rgba(64, 64, 64, 0.12);
+  border-color: #DDDDDD;
 }
 
 .admin-textarea:focus-visible {
-  outline: 2px solid #262626;
+  outline: 2px solid #FF90E8;
   outline-offset: 2px;
 }
 
 .admin-textarea::placeholder {
-  color: #ADADAD;
+  color: rgba(221, 221, 221, 0.3);
 }
 
 .admin-textarea-mono {
   font-family: 'SFMono-Regular', Consolas, monospace;
   font-size: 12.5px;
   line-height: 1.8;
-  letter-spacing: 0;
 }
 
 /* Select */
@@ -293,28 +288,27 @@
 
 .admin-select {
   width: 100%;
-  height: 48px;
+  min-height: 64px;
   padding: 0 40px 0 16px;
-  font-size: 14px;
-  font-family: 'Inter Tight', sans-serif;
+  font-size: 20px;
+  font-family: 'Plus Jakarta Sans', 'ABC Favorit', Arial, sans-serif;
   font-weight: 500;
-  letter-spacing: 0.2px;
-  background: rgba(64, 64, 64, 0.08);
-  border: 0px solid transparent;
-  border-radius: 16px;
-  color: #000000;
+  background: #242423;
+  border: 1px solid #242423;
+  border-radius: 4px;
+  color: #DDDDDD;
   outline: none;
   appearance: none;
   cursor: pointer;
-  transition: background 0.12s;
+  transition: border-color 200ms ease;
 }
 
 .admin-select:focus {
-  background: rgba(64, 64, 64, 0.12);
+  border-color: #DDDDDD;
 }
 
 .admin-select:focus-visible {
-  outline: 2px solid #262626;
+  outline: 2px solid #FF90E8;
   outline-offset: 2px;
 }
 
@@ -323,7 +317,7 @@
   right: 16px;
   top: 50%;
   transform: translateY(-50%);
-  color: #707070;
+  color: rgba(221, 221, 221, 0.5);
   pointer-events: none;
   display: flex;
 }
@@ -339,12 +333,12 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  font-size: 14px;
+  font-size: 16px;
   font-weight: 500;
   color: #000000;
   cursor: pointer;
-  letter-spacing: 0.2px;
   user-select: none;
+  font-family: 'Plus Jakarta Sans', 'ABC Favorit', Arial, sans-serif;
 }
 
 .admin-checkbox {
@@ -354,17 +348,17 @@
 .admin-checkbox-custom {
   width: 18px;
   height: 18px;
-  border-radius: 6px;
-  border: 1.5px solid #ADADAD;
-  background: #ffffff;
+  border-radius: 4px;
+  border: 1.5px solid rgba(0, 0, 0, 0.3);
+  background: #FFFFFF;
   flex-shrink: 0;
-  transition: background 0.1s, border-color 0.1s;
+  transition: background 200ms ease, border-color 200ms ease;
   position: relative;
 }
 
 .admin-checkbox:checked + .admin-checkbox-custom {
-  background: #262626;
-  border-color: #262626;
+  background: #FF90E8;
+  border-color: #000000;
 }
 
 .admin-checkbox:checked + .admin-checkbox-custom::after {
@@ -374,7 +368,7 @@
   top: 2px;
   width: 6px;
   height: 9px;
-  border: 1.5px solid #ffffff;
+  border: 1.5px solid #000000;
   border-top: none;
   border-left: none;
   transform: rotate(45deg);
@@ -391,24 +385,23 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  height: 44px;
-  font-size: 14px;
-  font-weight: 600;
-  font-family: 'Inter Tight', sans-serif;
-  letter-spacing: 0.2px;
-  background: rgba(64, 64, 64, 0.06);
-  border: 1.5px solid #EDEDED;
-  border-radius: 9999px;
+  min-height: 48px;
+  font-size: 16px;
+  font-weight: 500;
+  font-family: Arial, sans-serif;
+  background: rgba(0, 0, 0, 0.04);
+  border: 1.5px solid rgba(0, 0, 0, 0.15);
+  border-radius: 4px;
   cursor: pointer;
-  color: #707070;
-  transition: background 0.1s, border-color 0.1s, color 0.1s;
+  color: rgba(0, 0, 0, 0.45);
+  transition: background 200ms ease, border-color 200ms ease, color 200ms ease;
   user-select: none;
 }
 
 .admin-radio-label.selected {
-  background: #262626;
-  border-color: #262626;
-  color: #ffffff;
+  background: #FF90E8;
+  border-color: #000000;
+  color: #000000;
 }
 
 /* ---- App Icon ---- */
@@ -421,7 +414,7 @@
 .admin-icon-preview {
   width: 72px;
   height: 72px;
-  border-radius: 18px;
+  border-radius: 4px;
   flex-shrink: 0;
   display: flex;
   align-items: center;
@@ -432,7 +425,7 @@
   cursor: pointer;
   position: relative;
   overflow: hidden;
-  transition: opacity 0.12s;
+  transition: opacity 200ms ease;
 }
 
 .admin-icon-preview img {
@@ -453,8 +446,8 @@
   align-items: center;
   justify-content: center;
   opacity: 0;
-  transition: opacity 0.15s;
-  border-radius: 18px;
+  transition: opacity 200ms ease;
+  border-radius: 4px;
 }
 
 .admin-icon-meta {
@@ -463,32 +456,32 @@
 }
 
 .admin-icon-hint {
-  font-size: 13px;
-  font-weight: 600;
+  font-size: 16px;
+  font-weight: 500;
   color: #000000;
   margin-bottom: 4px;
-  letter-spacing: 0.2px;
+  font-family: 'Plus Jakarta Sans', 'ABC Favorit', Arial, sans-serif;
 }
 
 .admin-icon-sub {
-  font-size: 12px;
-  color: #ADADAD;
-  letter-spacing: 0.2px;
+  font-size: 14px;
+  font-weight: 500;
+  color: rgba(0, 0, 0, 0.4);
   line-height: 1.5;
+  font-family: 'Plus Jakarta Sans', 'ABC Favorit', Arial, sans-serif;
 }
 
 .admin-remove-text {
   background: none;
   border: none;
-  font-size: 12px;
-  font-weight: 600;
-  font-family: 'Inter Tight', sans-serif;
+  font-size: 14px;
+  font-weight: 500;
+  font-family: Arial, sans-serif;
   color: #C0123C;
   cursor: pointer;
   padding: 0;
   margin-top: 8px;
   display: block;
-  letter-spacing: 0.2px;
 }
 
 /* Color swatches */
@@ -504,7 +497,7 @@
   border-radius: 9999px;
   border: 2px solid transparent;
   cursor: pointer;
-  transition: transform 0.1s, border-color 0.1s;
+  transition: transform 200ms ease, border-color 200ms ease;
   padding: 0;
 }
 
@@ -517,25 +510,26 @@
   transform: scale(1.15);
 }
 
-/* ---- Screenshot grid ---- */
+/* ---- Dropzone ---- */
 .admin-dropzone {
-  border: 1.5px dashed #ADADAD;
-  border-radius: 16px;
+  border: 1.5px dashed rgba(0, 0, 0, 0.2);
+  border-radius: 4px;
   padding: 40px 24px;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 8px;
   cursor: pointer;
-  color: #ADADAD;
-  transition: border-color 0.12s, color 0.12s, background 0.12s;
+  color: rgba(0, 0, 0, 0.35);
+  transition: border-color 200ms ease, color 200ms ease, background 200ms ease;
   text-align: center;
+  background: rgba(36, 36, 35, 0.03);
 }
 
 .admin-dropzone:hover {
-  border-color: #262626;
-  color: #262626;
-  background: rgba(64, 64, 64, 0.03);
+  border-color: #FF90E8;
+  color: #000000;
+  background: rgba(255, 144, 232, 0.04);
 }
 
 .admin-dropzone-sm {
@@ -543,17 +537,19 @@
 }
 
 .admin-dropzone-title {
-  font-size: 14px;
-  font-weight: 600;
-  letter-spacing: 0.2px;
+  font-size: 16px;
+  font-weight: 500;
+  font-family: 'Plus Jakarta Sans', 'ABC Favorit', Arial, sans-serif;
 }
 
 .admin-dropzone-sub {
-  font-size: 12px;
-  font-weight: 400;
-  letter-spacing: 0.2px;
+  font-size: 14px;
+  font-weight: 500;
+  color: rgba(0, 0, 0, 0.3);
+  font-family: 'Plus Jakarta Sans', 'ABC Favorit', Arial, sans-serif;
 }
 
+/* ---- Screenshot grid ---- */
 .admin-screenshot-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -562,7 +558,7 @@
 
 .admin-screenshot-item {
   position: relative;
-  border-radius: 12px;
+  border-radius: 4px;
   overflow: visible;
 }
 
@@ -570,8 +566,8 @@
   width: 100%;
   aspect-ratio: 16 / 10;
   object-fit: cover;
-  border-radius: 12px;
-  border: 1px solid #EDEDED;
+  border-radius: 4px;
+  border: 1px solid rgba(0, 0, 0, 0.1);
   display: block;
 }
 
@@ -582,19 +578,19 @@
   width: 22px;
   height: 22px;
   border-radius: 9999px;
-  background: #000000;
-  border: none;
+  background: #FF90E8;
+  border: 1px solid #000000;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #ffffff;
+  color: #000000;
   z-index: 1;
-  transition: background 0.1s;
+  transition: background 200ms ease;
 }
 
 .admin-remove-btn:hover {
-  background: #C0123C;
+  background: #FFC900;
 }
 
 .admin-caption-input {
@@ -603,43 +599,42 @@
   margin-top: 6px;
   padding: 0 10px;
   font-size: 11px;
-  font-family: 'Inter Tight', sans-serif;
-  font-weight: 400;
-  letter-spacing: 0.2px;
-  background: rgba(64, 64, 64, 0.06);
-  border: none;
-  border-radius: 9999px;
-  color: #000000;
+  font-family: Arial, sans-serif;
+  font-weight: 500;
+  background: #242423;
+  border: 1px solid rgba(221, 221, 221, 0.2);
+  border-radius: 4px;
+  color: #DDDDDD;
   outline: none;
 }
 
 .admin-caption-input::placeholder {
-  color: #ADADAD;
+  color: rgba(221, 221, 221, 0.3);
 }
 
 .admin-screenshot-add {
   aspect-ratio: 16 / 10;
-  border: 1.5px dashed #ADADAD;
-  border-radius: 12px;
+  border: 1.5px dashed rgba(0, 0, 0, 0.2);
+  border-radius: 4px;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  color: #ADADAD;
-  transition: border-color 0.12s, color 0.12s;
+  color: rgba(0, 0, 0, 0.3);
+  transition: border-color 200ms ease, color 200ms ease;
 }
 
 .admin-screenshot-add:hover {
-  border-color: #262626;
-  color: #262626;
+  border-color: #FF90E8;
+  color: #FF90E8;
 }
 
 /* ---- Design MD toggle ---- */
 .admin-md-toggle {
   display: flex;
   gap: 2px;
-  background: rgba(64, 64, 64, 0.06);
-  border-radius: 9999px;
+  background: rgba(36, 36, 35, 0.06);
+  border-radius: 4px;
   padding: 2px;
   margin-bottom: 14px;
   width: fit-content;
@@ -649,51 +644,51 @@
   height: 32px;
   padding: 0 16px;
   font-size: 13px;
-  font-weight: 600;
-  font-family: 'Inter Tight', sans-serif;
-  letter-spacing: 0.2px;
+  font-weight: 500;
+  font-family: Arial, sans-serif;
   background: none;
   border: none;
-  border-radius: 9999px;
+  border-radius: 4px;
   cursor: pointer;
-  color: #707070;
-  transition: background 0.12s, color 0.12s;
+  color: rgba(0, 0, 0, 0.4);
+  transition: background 200ms ease, color 200ms ease;
 }
 
 .admin-md-tab.active {
-  background: #262626;
-  color: #ffffff;
+  background: #FF90E8;
+  color: #000000;
 }
 
 .admin-md-tab:hover:not(.active) {
   color: #000000;
 }
 
-/* File attached state */
+/* File attached */
 .admin-file-attached {
   display: flex;
   align-items: center;
   gap: 10px;
   padding: 14px 16px;
-  background: rgba(64, 64, 64, 0.06);
-  border-radius: 12px;
-  color: #000000;
+  background: #242423;
+  border: 1px solid rgba(221, 221, 221, 0.2);
+  border-radius: 4px;
+  color: #DDDDDD;
 }
 
 .admin-file-name {
   flex: 1;
-  font-size: 13px;
+  font-size: 16px;
   font-weight: 500;
-  letter-spacing: 0.2px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  font-family: 'Plus Jakarta Sans', 'ABC Favorit', Arial, sans-serif;
 }
 
 /* ---- Scrollbar ---- */
 .admin-body::-webkit-scrollbar { width: 4px; }
 .admin-body::-webkit-scrollbar-track { background: transparent; }
-.admin-body::-webkit-scrollbar-thumb { background: #EDEDED; border-radius: 9999px; }
+.admin-body::-webkit-scrollbar-thumb { background: rgba(36, 36, 35, 0.2); border-radius: 9999px; }
 
 /* ---- Motion ---- */
 @media (prefers-reduced-motion: reduce) {

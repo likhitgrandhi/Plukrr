@@ -1,6 +1,7 @@
 import { useState, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { DUMMY_APPS } from '../../data/apps';
+import { getPublishedApps } from '../../data/appStore';
 import './Gallery.css';
 
 const CATEGORIES = [
@@ -73,7 +74,8 @@ function mdToHtml(md) {
 }
 
 export default function Gallery() {
-  const [selectedApp, setSelectedApp] = useState(DUMMY_APPS[0]);
+  const [allApps] = useState(() => [...DUMMY_APPS, ...getPublishedApps()]);
+  const [selectedApp, setSelectedApp] = useState(() => allApps[0]);
   const [category, setCategory] = useState('All Categories');
   const [search, setSearch] = useState('');
   const [copied, setCopied] = useState(false);
@@ -83,7 +85,7 @@ export default function Gallery() {
   const navigate = useNavigate();
 
   const filteredApps = useMemo(() => {
-    return DUMMY_APPS.filter((app) => {
+    return allApps.filter((app) => {
       const matchesCategory = category === 'All Categories' || app.category === category;
       const matchesSearch =
         app.name.toLowerCase().includes(search.toLowerCase()) ||
@@ -91,7 +93,7 @@ export default function Gallery() {
         app.category.toLowerCase().includes(search.toLowerCase());
       return matchesCategory && matchesSearch;
     });
-  }, [category, search]);
+  }, [allApps, category, search]);
 
   function handleSelectApp(app) {
     setSelectedApp(app);
@@ -130,7 +132,16 @@ export default function Gallery() {
     <div className="gallery-root">
       {/* Top Nav */}
       <header className="gallery-topnav">
-        <span className="gallery-logo">Plukrr</span>
+        <span className="gallery-logo">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 170 50" height="40" aria-label="Plukrr">
+            <path fill="currentColor" d="m2 4.7h16.1c8.8 0 16.3 3.8 16.3 13.2 0 6.7-4.1 13.4-14.4 13.4h-6v5.3c0 3.9 0.7 6.5 2.4 8.8 0.3 0.5 0.3 1.1-0.2 1.1h-13.8c-0.5 0.1-0.5-0.6-0.2-1.1 1.6-2.6 2.2-5.5 2.2-8.8v-21.9c0-3.6-0.8-6.3-2.2-8.7-0.3-0.7-0.3-1.3-0.2-1.3zm12 3.2v20.2h2.5c4.3 0 6.8-3.3 6.8-10.2 0-6.2-2.7-10-7-10h-2.3z"/>
+            <path fill="currentColor" d="m35.4 5.9 11.4-3.9c0.7-0.2 0.8 0.1 0.8 0.6v34.8c0 3.8 0.5 5.9 1.9 8.2 0.3 0.5 0.2 0.9-0.2 0.9h-13.7c-0.5 0-0.5-0.4-0.2-0.9 1.1-2.2 1.8-4.8 1.8-8.2v-23c0-3.6-0.7-5.5-2.1-7.5-0.4-0.4-0.2-0.9 0.3-1z"/>
+            <path fill="currentColor" d="m50.4 18.2 12.1-2.3c0.5-0.1 0.5 0.3 0.4 0.7v19c0.1 4.5 1.4 6.2 3.5 6.2 2 0 3.8-2.3 3.8-4.8v-11c0-2.6-0.8-5.1-2.3-6.8-0.3-0.5-0.1-0.8 0.3-0.9l11.4-2.4c0.5-0.1 0.6 0.2 0.6 0.6v20.2c0 2.7 0.8 4.9 2.2 6.3 0.4 0.5 0.3 0.8-0.2 1l-9.3 3.2c-0.5 0.2-0.8 0.1-0.9-0.4l-1.1-5.4c-1.8 3.2-4.6 5.9-8.9 5.9-5.6 0-9.5-3.5-9.5-11.1v-9.4c0-3.6-0.6-5.5-2.2-7.7-0.3-0.4-0.3-0.8 0.1-0.9z"/>
+            <path fill="currentColor" d="m83.8 5.9 11.1-3.9c0.7-0.2 0.9 0 0.9 0.6v28.7l6.6-6.3c1.2-1.2 1.6-2.2 1.6-3.6 0-1.3-0.6-2.5-1.6-3.7-0.3-0.3 0-0.8 0.4-0.8h11.9c0.7 0 0.9 0.7 0 1.2-2.4 1.1-6.1 4.5-10.6 8.5l5.5 9.4c2.7 4.5 4.8 7.6 7 9.2 0.7 0.5 0.6 1.3 0.1 1.3h-8.1c-3.6 0-5.3-1.1-6.9-3.7l-5.8-9.9v5c0 3.4 0.7 5.5 1.9 7.7 0.4 0.5 0.1 0.9-0.2 0.9h-13.4c-0.4 0-0.5-0.5-0.2-1 1.2-2.1 1.7-4.3 1.7-7.6v-22.6c0-4.3-0.5-6.4-2.2-8.5-0.4-0.4-0.1-0.8 0.3-0.9z"/>
+            <path fill="currentColor" d="m117.3 19.6 10.3-3.5c0.8-0.3 1 0.1 1.1 0.6l0.3 6.3c1.5-3.8 4.2-7.1 8.2-7.1 3.2 0 5.7 1.8 5.8 5.1 0.1 3-2.1 6.6-5 6.6-0.7 0-2.1-0.1-2.1-0.9-0.1-1.6-1-3.7-2.8-3.6-2.1 0.2-3.3 2.4-3.3 6.3v8.9c0 3.1 0.7 5.5 2.2 7.3 0.4 0.6 0.4 0.9 0 1h-14c-0.4 0-0.4-0.6 0-1.3 1.1-1.9 1.5-4.3 1.5-7v-10.1c0-3.6-0.9-5.6-2.4-7.7-0.3-0.4-0.3-0.7 0.2-0.9z"/>
+            <path fill="currentColor" d="m144.2 19.4 9.8-3.4c0.5-0.1 1-0.1 1.1 0.7l0.4 6.5c1.5-3.8 4.1-7.2 8-7.3 3.1-0.1 5.3 1.9 5.4 4.9 0 2.8-2 6.8-4.9 6.8-0.6 0-2-0.1-2-0.8-0.1-1.7-1-3.8-2.8-3.7-2.3 0.1-3 2.5-2.9 6.3v9.3c0 3.1 0.6 5.2 2 6.8 0.3 0.4 0.2 1-0.2 1h-13.4c-0.5 0-0.6-0.4-0.2-1.1 1.1-2 1.9-4.3 1.9-7.5v-10.1c0-2.9-0.8-5-2.5-7.3-0.5-0.6-0.3-0.8 0.3-1.1z"/>
+          </svg>
+        </span>
         <div className="gallery-nav-right">
           <button className="gallery-new-btn" onClick={() => navigate('/admin/new')}>
             <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
@@ -193,8 +204,10 @@ export default function Gallery() {
                 className={`app-list-item ${selectedApp?.id === app.id ? 'selected' : ''}`}
                 onClick={() => handleSelectApp(app)}
               >
-                <span className="app-list-icon" style={{ background: app.logoColor }}>
-                  {app.logoInitial}
+                <span className="app-list-icon" style={{ background: app.logoImage ? 'transparent' : app.logoColor }}>
+                  {app.logoImage
+                    ? <img src={app.logoImage} alt={app.name} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 'inherit' }} />
+                    : app.logoInitial}
                 </span>
                 <span className="app-list-meta">
                   <span className="app-list-name">{app.name}</span>
@@ -215,8 +228,10 @@ export default function Gallery() {
             <div className="detail-view">
               {/* Header — icon + info left, actions right */}
               <div className="detail-header">
-                <span className="detail-icon" style={{ background: selectedApp.logoColor }}>
-                  {selectedApp.logoInitial}
+                <span className="detail-icon" style={{ background: selectedApp.logoImage ? 'transparent' : selectedApp.logoColor }}>
+                  {selectedApp.logoImage
+                    ? <img src={selectedApp.logoImage} alt={selectedApp.name} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 'inherit' }} />
+                    : selectedApp.logoInitial}
                 </span>
                 <div className="detail-info">
                   <h1 className="detail-name">{selectedApp.name}</h1>
