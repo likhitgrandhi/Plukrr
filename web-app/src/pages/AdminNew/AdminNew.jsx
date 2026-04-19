@@ -1,5 +1,6 @@
 import { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { savePublishedApp } from '../../data/appStore';
 import './AdminNew.css';
 
 const CATEGORIES = [
@@ -11,8 +12,8 @@ const CATEGORIES = [
 const PLATFORMS = ['Web', 'iOS', 'Android'];
 
 const LOGO_COLORS = [
-  '#5E6AD2', '#000000', '#F24E1E', '#635BFF',
-  '#E01C73', '#625DF5', '#FF6B6B', '#FF6363',
+  '#242423', '#FF90E8', '#FFC900', '#FFFFFF',
+  '#5E6AD2', '#635BFF', '#F24E1E', '#E01C73',
   '#007AFF', '#09825D', '#BB5504', '#6B7280',
 ];
 
@@ -105,7 +106,41 @@ export default function AdminNew() {
 
   async function handleSubmit(publishStatus) {
     setPublishing(true);
-    await new Promise((r) => setTimeout(r, 800)); // simulated save
+
+    if (publishStatus === 'active') {
+      const readAsDataUrl = (file) =>
+        new Promise((resolve) => {
+          const reader = new FileReader();
+          reader.onload = (e) => resolve(e.target.result);
+          reader.readAsDataURL(file);
+        });
+
+      const logoImage = form.logoFile ? await readAsDataUrl(form.logoFile) : null;
+
+      const persistedScreenshots = await Promise.all(
+        form.screenshots.map((s) => {
+          if (!s.file) return Promise.resolve({ url: s.preview || '', caption: s.caption });
+          return readAsDataUrl(s.file).then((url) => ({ url, caption: s.caption }));
+        })
+      );
+
+      savePublishedApp({
+        id: `user-${Date.now()}`,
+        slug: form.name.trim().toLowerCase().replace(/\s+/g, '-'),
+        name: form.name.trim(),
+        tagline: form.tagline.trim(),
+        description: form.description.trim(),
+        platform: form.platforms.length ? form.platforms : ['Web'],
+        category: form.category || 'Utilities',
+        logoColor: form.logoColor,
+        logoInitial: form.name.trim().charAt(0).toUpperCase(),
+        logoImage,
+        screenshots: persistedScreenshots,
+        designMd: form.mdContent || `# ${form.name.trim()}\n\nNo design system provided.`,
+      });
+    }
+
+    await new Promise((r) => setTimeout(r, 800));
     setSaved(true);
     setPublishing(false);
     setTimeout(() => navigate('/'), 1000);

@@ -1,19 +1,20 @@
-@import url('https://fonts.googleapis.com/css2?family=Nanum+Pen+Script&family=Inter:wght@400;500;600;700&display=swap');
-
-/* ============================================
-   Plukrr Web App — Design Tokens
-   Warm, premium, clean
-   ============================================ */
+@import url('https://fonts.googleapis.com/css2?family=Nanum+Pen+Script&family=Plus+Jakarta+Sans:wght@400;500;700&display=swap');
 
 :root {
-  --bg: #f7f5f2;
-  --card: #ffffff;
-  --line: #e8e4de;
-  --text: #1a1714;
-  --muted: #8a857d;
-  --accent: #ff5b7f;
-  --shadow: 0 2px 12px rgba(0, 0, 0, 0.04);
-  --font: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --bg: #F4F4F0;
+  --surface: #FFFFFF;
+  --nav-bg: #F4F4F0;
+  --muted-fill: #FFC900;
+  --text: #242423;
+  --text-on-surface: #000000;
+  --action: #FFFFFF;
+  --border: #242423;
+  --border-strong: #000000;
+  --font: 'Plus Jakarta Sans', 'ABC Favorit', Arial, system-ui, sans-serif;
+  --r-sm: 4px;
+  --r-md: 6px;
+  --r-lg: 16px;
+  --r-pill: 9999px;
 }
 
 * {
@@ -45,34 +46,36 @@ body {
 }
 
 .form-label {
-  font-size: 13px;
+  font-size: 16px;
   font-weight: 500;
-  color: var(--muted);
+  color: var(--text);
+  font-family: var(--font);
 }
 
 .form-input {
-  padding: 12px 16px;
-  font-size: 15px;
+  width: 100%;
+  min-height: 64px;
+  padding: 0 16px;
+  font-size: 20px;
   font-family: var(--font);
-  background: var(--card);
-  border: 1px solid var(--line);
-  border-radius: 12px;
+  background: var(--bg);
+  border: 1px solid rgba(36, 36, 35, 0.2);
+  border-radius: var(--r-sm);
   color: var(--text);
   outline: none;
-  transition: all 0.15s ease;
+  transition: border-color 200ms ease;
 }
 
 .form-input:focus {
-  border-color: #d6cec2;
-  box-shadow: 0 0 0 3px rgba(255, 91, 127, 0.08);
+  border-color: var(--text);
 }
 
 .form-input::placeholder {
-  color: #c5bfb6;
+  color: rgba(36, 36, 35, 0.3);
 }
 
 .form-input:disabled {
-  opacity: 0.6;
+  opacity: 0.5;
   cursor: not-allowed;
 }
 
@@ -82,26 +85,21 @@ body {
   align-items: center;
   justify-content: center;
   gap: 8px;
-  height: 48px;
+  min-height: 48px;
   padding: 0 24px;
-  font-size: 15px;
-  font-weight: 600;
-  font-family: var(--font);
-  background: var(--text);
-  color: var(--bg);
-  border: none;
-  border-radius: 12px;
+  font-size: 16px;
+  font-weight: 500;
+  font-family: Arial, sans-serif;
+  background: #FF90E8;
+  color: #000000;
+  border: 1px solid #000000;
+  border-radius: var(--r-sm);
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: background 200ms ease;
 }
 
 .btn-primary:hover:not(:disabled) {
-  opacity: 0.85;
-  transform: translateY(-1px);
-}
-
-.btn-primary:active:not(:disabled) {
-  transform: translateY(0);
+  background: var(--muted-fill);
 }
 
 .btn-primary:disabled {
@@ -113,40 +111,40 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  height: 40px;
-  padding: 0 16px;
-  font-size: 14px;
+  gap: 8px;
+  min-height: 48px;
+  padding: 0 24px;
+  font-size: 16px;
   font-weight: 500;
-  font-family: var(--font);
-  background: none;
-  color: var(--muted);
-  border: 1px solid var(--line);
-  border-radius: 10px;
+  font-family: Arial, sans-serif;
+  background: #FFFFFF;
+  color: #000000;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-md);
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: background 200ms ease;
 }
 
 .btn-secondary:hover {
-  border-color: #d6cec2;
-  color: var(--text);
+  background: #F4F4F0;
 }
 
 .btn-ghost {
   background: none;
   border: none;
-  font-size: 14px;
+  font-size: 16px;
   font-weight: 500;
-  font-family: var(--font);
-  color: var(--muted);
+  font-family: Arial, sans-serif;
+  color: var(--text);
   cursor: pointer;
   padding: 8px 12px;
-  border-radius: 8px;
-  transition: all 0.15s;
+  border-radius: var(--r-sm);
+  transition: color 200ms ease, background 200ms ease;
 }
 
 .btn-ghost:hover {
-  color: var(--text);
-  background: var(--line);
+  color: #242423;
+  background: rgba(36, 36, 35, 0.06);
 }
 
 /* Spinner */
@@ -154,8 +152,8 @@ body {
   display: inline-block;
   width: 18px;
   height: 18px;
-  border: 2px solid var(--line);
-  border-top-color: var(--accent);
+  border: 2px solid rgba(36, 36, 35, 0.15);
+  border-top-color: #FF90E8;
   border-radius: 50%;
   animation: spin 0.6s linear infinite;
 }
@@ -176,6 +174,6 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: var(--line);
+  background: rgba(36, 36, 35, 0.2);
   border-radius: 3px;
 }
