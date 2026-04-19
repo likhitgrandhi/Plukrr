@@ -15,6 +15,7 @@ let dsBuilderData = null;
 let currentDsStep = -1;
 let dsBuilderPaused = false;
 let isAddingVariantFor = null; // stepKey string while adding a new variant, null otherwise
+let isReselectingFor = null;  // stepKey string while reselecting a completed step, null otherwise
 
 // ============================================
 // INIT
@@ -961,6 +962,8 @@ function setupMainListeners() {
             // X on the bottom widget = cancel current step selection, go back to the component list
             // Do NOT wipe dsBuilderData — the user's captured steps must be preserved
             currentDsStep = -1;
+            isAddingVariantFor = null;
+            isReselectingFor = null;
             dsBuilderPaused = false;
             saveDsBuilderState();
             renderDsBuilderSidebar();
@@ -1337,6 +1340,7 @@ function accumulateStep(stepKey, styles, stepIndex, isAddVariant = false) {
     }
 
     isAddingVariantFor = null;
+    isReselectingFor = null;
     currentDsStep = -1;
     dsBuilderPaused = false;
     saveDsBuilderState();
@@ -1683,6 +1687,7 @@ function renderDsBuilderSidebar() {
         const stepVariants = dsBuilderData.stepVariants?.[step.stepKey] || [];
         const activeIdx = dsBuilderData.activeVariants?.[step.stepKey] ?? 0;
         const isAddingThis = isDone && isAddingVariantFor === step.stepKey && i === currentDsStep;
+        const isReselectingThis = isDone && isReselectingFor === step.stepKey && i === currentDsStep;
 
         let swatchHtml = '';
         if (isDone && val && /^#[0-9a-fA-F]{6}$/i.test(val)) {
@@ -1711,6 +1716,11 @@ function renderDsBuilderSidebar() {
             </div>`;
             if (isAddingThis) {
                 btnHtml = `<span style="font-size:10px;color:#10b981;font-weight:600;white-space:nowrap">adding V${stepVariants.length + 1}…</span>`;
+            } else if (isReselectingThis) {
+                btnHtml = `<div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">
+                    <span style="font-size:10px;color:#d97706;font-weight:600;white-space:nowrap">selecting…</span>
+                    <button class="ds-step-cancel-btn" data-step="${i}" style="font-size:10px;padding:3px 8px;border-radius:5px;border:1px solid #d1d5db;background:#fff;color:#6b7280;cursor:pointer;font-weight:500;white-space:nowrap">✕ Cancel</button>
+                </div>`;
             } else {
                 btnHtml = `<div style="display:flex;flex-direction:column;gap:3px;align-items:flex-end">
                     <button data-step="${i}" class="ds-card-btn ds-card-reselect" style="font-size:10px;padding:4px 8px;border-radius:5px;border:1px solid #10b981;background:#fff;color:#10b981;cursor:pointer;font-weight:500;white-space:nowrap">Re-select</button>
@@ -1778,6 +1788,7 @@ function renderDsBuilderSidebar() {
             const stepIndex = parseInt(btn.dataset.step, 10);
             if (currentDsStep === stepIndex && !statuses[DS_STEP_DISPLAY[stepIndex].stepKey]) return;
             isAddingVariantFor = null;
+            isReselectingFor = statuses[DS_STEP_DISPLAY[stepIndex].stepKey] ? DS_STEP_DISPLAY[stepIndex].stepKey : null;
             currentDsStep = stepIndex;
             dsBuilderPaused = false;
             saveDsBuilderState();
@@ -1795,6 +1806,8 @@ function renderDsBuilderSidebar() {
                 if (tab) chrome.tabs.sendMessage(tab.id, { action: 'CANCEL_DS_BUILDER' }, () => chrome.runtime.lastError);
             });
             currentDsStep = -1;
+            isAddingVariantFor = null;
+            isReselectingFor = null;
             dsBuilderPaused = false;
             saveDsBuilderState();
             renderDsBuilderSidebar();
@@ -1815,18 +1828,20 @@ function renderDsBuilderSidebar() {
     });
 
     ca.querySelectorAll('.ds-add-variant-btn').forEach(btn => {
-        btn.addEventListener('click', () => {
+        btn.addEventListener('click', async () => {
             const stepIndex = parseInt(btn.dataset.step, 10);
             const stepKey = btn.dataset.stepKey;
             if (currentDsStep === stepIndex && isAddingVariantFor === stepKey) return;
             isAddingVariantFor = stepKey;
+            isReselectingFor = null;
             currentDsStep = stepIndex;
             dsBuilderPaused = false;
             saveDsBuilderState();
             renderDsBuilderSidebar();
-            chrome.tabs.query({ active: true, currentWindow: true }, ([tab]) => {
-                if (tab) chrome.tabs.sendMessage(tab.id, { action: 'START_DS_BUILDER', stepIndex, stepKey, fresh: true }, () => chrome.runtime.lastError);
-            });
+            const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+            if (!tab) return;
+            try { await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['content.js'] }); } catch (_) {}
+            chrome.tabs.sendMessage(tab.id, { action: 'START_DS_BUILDER', stepIndex, stepKey, fresh: true }, () => chrome.runtime.lastError);
         });
     });
 
@@ -1842,6 +1857,8 @@ function renderDsBuilderSidebar() {
         });
         dsBuilderData = null;
         currentDsStep = -1;
+        isAddingVariantFor = null;
+        isReselectingFor = null;
         dsBuilderPaused = false;
         saveDsBuilderState();
         showBottomBar(true);
